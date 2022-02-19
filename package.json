@@ -1,0 +1,20 @@
+{
+  "name": "sudoer-of-myself-workspace",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": "./src/index.js",
+  "engines": {
+    "node": "^12.20.0 || ^14.13.1 || >=16.0.0"
+  },
+  "author": "ForkΨKILLET <fork_killet@qq.com>",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.0.0",
+    "esbuild": "^0.14.20",
+    "simple-async-sleep": "^1.0.3",
+    "xterm": "^4.17.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.0"
+  }
+}
