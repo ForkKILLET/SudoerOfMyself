@@ -91,7 +91,7 @@ term.startReading = async() => {
 }
 term.endReading = () => term.enableRead = false
 
-sto.level ??= -1
+sto.level ??= 0
 term.currLevel = () => levels[sto.level](term)
 term.nextLevel = () => levels[++ sto.level]?.(term)
 
