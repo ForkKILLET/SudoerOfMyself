@@ -25,7 +25,7 @@ export default ({ term, perm }) => {
 		human: async (page = "") => {
 			if (perm.find(`human.${page}`))
 				await term.echo(humanPages[page], { t: 0, c: "cyan" })
-			else term.echo(`human: ${page}: page not found.`)
+			else await term.writeln(`human: ${page}: page not found.`)
 		}
 	}
 }
