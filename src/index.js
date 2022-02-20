@@ -1,7 +1,8 @@
 import { Terminal } from "xterm"
 import chalk from "chalk"
 import sleep from "simple-async-sleep"
-import { levels } from "./plot.js"
+import levelF from "./level.js"
+import cmdF from "./command.js"
 
 const term = new Terminal({
 	rows: 30,
@@ -11,7 +12,7 @@ const term = new Terminal({
 })
 
 term.open(document.getElementById("xterm"))
-term.writePrompt = () => term.write("\r\n" + term.prompt)
+term.writePrompt = () => term.write("\n\r" + term.prompt)
 
 term.readln = async () => {
 	if (term.lnComplete) throw `"lnComplete" listener already exists.`
@@ -55,7 +56,10 @@ term.listen = (evt, fn) => {
 	return { dispose: () => ls.splice(ls.findIndex(f => f === fn), 1) }
 }
 term.listenOnce = (evt, fn) => {
-	const { dispose } = term.listen(evt, (...arg) => { fn(...arg); dispose() })
+	const { dispose } = term.listen(evt, (...arg) => {
+		if (fn(...arg)) dispose()
+	})
+	return { dispose }
 }
 term.trigger = (evt, ...arg) => term.listeners[evt]?.forEach(f => f(...arg))
 
@@ -65,26 +69,36 @@ const sto = new Proxy(localStorage, {
 	deleteProperty: (_, k) => localStorage.removeItem(k)
 })
 
-const commands = {
-	help: () => term.writeln("You are HELPLESS. No one will help you. jaja.")
-}
-
 chalk.level = 1
 term.prompt = chalk.green("Ψ ")
 term.promptLength = 2
+
+sto.perms ??= {}
+const xable = flag => (...names) => {
+	const { perms } = sto
+	names.forEach(n => perms[n] = flag)
+	sto.perms = perms
+}
+const perm = {
+	enable: xable(true),
+	disable: xable(false),
+	find: cmdn => sto.perms[cmdn]
+}
+
+const cmds = cmdF({ term, perm, chalk })
+const levels = levelF({ term, perm, cmds, chalk })
 
 term.startReading = async() => {
 	term.enableRead = true
 	while (term.enableRead) {
 		const ln = await term.readln()
 		const [ cmdn, ...arg ] = ln.split(" ")
-		const cmd = commands[cmdn]
-		if (! cmd) {
+		if (! perm.find(`cmds.${cmdn}`)) {
 			term.writeln(`${cmdn}: command not found.`)
 			term.trigger("command-not-found", cmdn)
 		}
 		else {
-			cmd(...arg)
+			await cmds[cmdn](...arg)
 			term.trigger("command-run", cmdn, arg)
 		}
 	}
@@ -92,16 +106,20 @@ term.startReading = async() => {
 term.endReading = () => term.enableRead = false
 
 sto.level ??= 0
-term.currLevel = () => levels[sto.level](term)
-term.nextLevel = () => levels[++ sto.level]?.(term)
+term.currLevel = () => levels[sto.level]?.(term, cmds)
+term.nextLevel = () => (levels[++ sto.level]?.(term, cmds), true)
 
-term.echo = async (s, t = 120) => {
-	for (const c of [ ...`* ${s}\r\n` ]) {
-		term.write(chalk.yellow(c))
-		await sleep(t)
+term.echo = async (s, { t, c } = {}) => {
+	s = (Array.isArray(s) ? s : [ s ]).map(ln => `* ${ln}\n\r`).join("")
+	for (let i = 0; i < s.length; i ++) {
+		let ch = s[i]
+		if (ch === "\u001B")
+			while (s[i] !== "m") ch += s[++ i]
+		term.write(chalk[c ?? "yellow"](ch))
+		await sleep(t ?? 120)
 	}
 }
 
 term.currLevel()
 
-Object.assign(window, { term, chalk, levels, sto })
+Object.assign(window, { term, perm, chalk, levels, cmds, sto })
