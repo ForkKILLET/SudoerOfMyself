@@ -126,8 +126,10 @@ term.startReading = async() => {
 			term.trigger("command-not-found", cmdn)
 		}
 		else {
+			term.enableRead = false
 			await cmds[cmdn](...arg)
 			term.trigger("command-run", cmdn, arg)
+			term.enableRead = true
 		}
 	}
 }
