@@ -26,12 +26,12 @@ term.historyLn = () => {
 term.readln = async () => {
 	if (term.lnComplete) throw `"lnComplete" listener already exists.`
 	term.writePrompt()
-	if (term.history.at(-1) !== term.ln) term.history.push(term.ln)
+	if (term.history.at(-1) !== term.ln && term.ln) term.history.push(term.ln)
 	term.historyIndex = 0
 	term.ln = ""
 	await new Promise(res => term.lnComplete = res)
 	delete term.lnComplete
-	return term.ln
+	return term.ln = term.ln.trim()
 }
 term.onData(key => {
 	if (! term.enableRead) return
