@@ -12,11 +12,22 @@ const term = new Terminal({
 })
 
 term.open(document.getElementById("xterm"))
-term.writePrompt = () => term.write("\n\r" + term.prompt)
+term.writePrompt = () => term.write(term.prompt)
+
+term.history = []
+term.delete = c => term.write("\b".repeat(c) + " ".repeat(c) + "\b".repeat(c))
+term.historyLn = () => {
+	term.delete(term.ln.length)
+	term.write(
+		term.ln = (term.historyIndex ? term.history.at(- term.historyIndex) : "")
+	)
+}
 
 term.readln = async () => {
 	if (term.lnComplete) throw `"lnComplete" listener already exists.`
 	term.writePrompt()
+	if (term.history.at(-1) !== term.ln) term.history.push(term.ln)
+	term.historyIndex = 0
 	term.ln = ""
 	await new Promise(res => term.lnComplete = res)
 	delete term.lnComplete
@@ -24,10 +35,10 @@ term.readln = async () => {
 }
 term.onData(key => {
 	if (! term.enableRead) return
-	switch (key) {
+	switch (key[0]) {
 	case "\u007F": // Backspace
 		if (term._core.buffer.x > term.promptLength) {
-            term.write("\b \b")
+            term.delete(1)
 			term.ln = term.ln.slice(0, -1)
         }
 		break
@@ -35,11 +46,27 @@ term.onData(key => {
 		term.writeln("")
 		term.lnComplete()
 		break
-	case "\u000c": // Ctrl-L
+	case "\u000C": // Ctrl-L
 		term.clear()
 		break
+	case "\u001B": // CSI
+		switch (key.slice(1)) {
+		case "[A":
+			if (term.historyIndex < term.history.length) {
+				term.historyIndex ++
+				term.historyLn()
+			}
+			break
+		case "[B":
+			if (term.historyIndex > 0) {
+				term.historyIndex --
+				term.historyLn()
+			}
+			break
+		}
+		break
 	default:
-		if (key < "\u0020" || (key > "\u007B" && key < "\u00a0")) {
+		if (key < "\u0020" || (key > "\u007B" && key < "\u00A0")) {
 			console.log(key.charCodeAt())
 			return
 		}
@@ -92,6 +119,7 @@ term.startReading = async() => {
 	term.enableRead = true
 	while (term.enableRead) {
 		const ln = await term.readln()
+		if (! ln) continue
 		const [ cmdn, ...arg ] = ln.split(" ")
 		if (! perm.find(`cmds.${cmdn}`)) {
 			term.writeln(`${cmdn}: command not found.`)

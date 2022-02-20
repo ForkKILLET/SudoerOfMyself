@@ -1,4 +1,5 @@
 import pack from "../package.json"
+import sleep from "simple-async-sleep"
 
 const humanPages = {
 	"": [
@@ -10,12 +11,21 @@ const humanPages = {
 	]
 }
 
-export default ({ term, perm }) => ({
-	version: () => term.writeln(`v${pack.version}, by ${pack.author}`),
-	help: () => term.writeln("You are HELPLESS. No one will help you. jaja."),
-	human: async (page = "") => {
-		if (perm.find(`human.${page}`))
-			await term.echo(humanPages[page], { t: 0, c: "cyan" })
-		else term.echo(`human: ${page}: page not found.`)
+export default ({ term, perm }) => {
+	perm.enable("cmds.version", "cmds.logo")
+	return {
+		version: () => term.writeln(`v${pack.version}, by ${pack.author}`),
+		logo: async () => {
+			const $logo = document.getElementById("logo")
+			$logo.style.display = "block"
+			await sleep(2000)
+			$logo.style.display = ""
+		},
+		help: () => term.writeln("You are HELPLESS. No one will help you. jaja."),
+		human: async (page = "") => {
+			if (perm.find(`human.${page}`))
+				await term.echo(humanPages[page], { t: 0, c: "cyan" })
+			else term.echo(`human: ${page}: page not found.`)
+		}
 	}
-})
+}

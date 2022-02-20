@@ -1,7 +1,7 @@
 export default ({ term, perm, chalk }) => [
 	() => {
-		term.write("Welcome to HumanOS. Type `help` for help.")
-		perm.enable("cmds.help", "cmds.version")
+		term.writeln("Welcome to HumanOS. Type `help` for help.")
+		perm.enable("cmds.help")
 		term.listenOnce("command-run", n => {
 			if (n === "help") return term.nextLevel()
 		})
