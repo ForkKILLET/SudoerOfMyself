@@ -1,7 +1,11 @@
 {
   "name": "sudoer-of-myself-workspace",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ForkKILLET/SudoerOfMyself.git"
+  },
   "exports": "./src/index.js",
   "engines": {
     "node": "^12.20.0 || ^14.13.1 || >=16.0.0"
@@ -11,7 +15,9 @@
   "dependencies": {
     "chalk": "^5.0.0",
     "esbuild": "^0.14.20",
+    "minimist": "^1.2.5",
     "simple-async-sleep": "^1.0.3",
+    "string-width": "^5.1.0",
     "xterm": "^4.17.0"
   },
   "devDependencies": {
