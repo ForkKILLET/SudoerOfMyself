@@ -18,7 +18,8 @@
     "minimist": "^1.2.5",
     "simple-async-sleep": "^1.0.3",
     "string-width": "^5.1.0",
-    "xterm": "^4.17.0"
+    "xterm": "^4.17.0",
+    "xterm-addon-web-links": "^0.5.1"
   },
   "devDependencies": {
     "http-server": "^14.1.0"

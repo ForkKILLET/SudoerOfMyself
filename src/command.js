@@ -23,7 +23,7 @@ export default ({ term, perm, chalk }) => {
 	perm.enable("cmds.version", "cmds.logo")
 
 	return {
-		version: () => term.writeln(`v${pack.version}, by ${pack.author}, at ${pack.repository.url}`),
+		version: () => term.writeln(`v${ pack.version }, by ${ pack.author.split(" ")[0] }, at ${ chalk.green(pack.repository.url) }`),
 
 		logo: async () => {
 			const $logo = document.getElementById("logo")

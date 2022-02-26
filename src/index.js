@@ -1,4 +1,5 @@
 import { Terminal } from "xterm"
+import { WebLinksAddon } from "xterm-addon-web-links"
 import chalk from "chalk"
 import sleep from "simple-async-sleep"
 import stringWidth from "string-width"
@@ -11,6 +12,7 @@ const term = new Terminal({
 	cursorBlink: true,
 	fontFamily: "'Fira Code', consolas, monospace"
 })
+term.loadAddon(new WebLinksAddon)
 
 term.open(document.getElementById("xterm"))
 term.writePrompt = () => term.write(term.prompt)
