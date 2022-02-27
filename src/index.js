@@ -165,16 +165,18 @@ chalk.level = 1
 term.prompt = chalk.green("$ ")
 
 sto.perms ??= {}
-const xable = flag => (...names) => {
+const able = flag => (...names) => {
 	const { perms } = sto
 	names.forEach(n => perms[n] = flag)
 	sto.perms = perms
 }
 const perm = {
-	enable: xable(true),
-	disable: xable(false),
+	enable: able(true),
+	disable: able(false),
 	find: cmdn => sto.perms[cmdn]
 }
+
+sto.cwd ??= "/"
 
 const cmds = cmdF({ term, perm, chalk })
 const levels = levelF({ term, perm, cmds, chalk })
@@ -191,7 +193,7 @@ term.startReading = async() => {
 		}
 		else {
 			term.enableRead = false
-			await cmds[cmdn](...arg)
+			await cmds[cmdn]?.(...arg)
 			await term.trigger("command-run", cmdn, arg)
 			term.enableRead = true
 		}

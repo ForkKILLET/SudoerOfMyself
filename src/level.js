@@ -51,8 +51,11 @@ export default ({ term, perm, chalk }) => {
 				"不知道 `help` 命令什么情况，登出上网查查好了"
 			])
 			term.startReading()
+
+			let t = 0
 			term.listenOnce("command-not-found", async n => {
 				if ([ "logout", "exit" ].includes(n)) return await term.nextLevel()
+				else if (++ t === 4) await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
 			})
 		},
 		async () => {
@@ -82,12 +85,12 @@ export default ({ term, perm, chalk }) => {
 		async () => {
 			term.endReading()
 			await term.echo([
-				"User，很高兴我们能用命令行的方式交流了。",
-				"这很酷！当然，作为 `human`，我也能像人类那样谈话。",
-				"而我的优点在于只要你按下 `Ctrl + Z` 我就会加快语速。",
+				"User，很高兴我们能用命令行的方式交流了",
+				"这很酷！当然，作为 `human`，我也能像人类那样谈话",
+				"而我的优点在于只要你按下 `Ctrl + Z` 我就会加快语速",
 				"毕竟谁会喜欢一个磨磨唧唧的命令行工具呢？",
-				"说回正题，你的大脑受了损伤，导致我的算力很受限。",
-				"……不太好意思地说，我现在和人工智障没什么两样。",
+				"说回正题，你的大脑受了损伤，导致我的算力很受限",
+				"……不太好意思地说，我现在和人工智障没什么两样",
 				"但你还是可以通过 `echo` 和我对话的！"
 			], { c: "cyan", t: 80 })
 			perm.enable("cmds.echo", "human.echo", "ff", "af")
@@ -104,12 +107,24 @@ export default ({ term, perm, chalk }) => {
 
 			await term.echo([
 				"我是不是很聪明呢！！",
-				"好吧，我承认我只是临时找了一个字符串替换的程序。",
-				"要是你觉得人工智障还挺好玩的话，说一声 Hi Human 就会唤醒我哦。",
+				"好吧，我承认我只是临时找了一个字符串替换的程序",
+				"要是你觉得人工智障还挺好玩的话，说一声 Hi Human 就会唤醒我哦",
 				"我也不想这么沙雕，但你的大脑情况实在太糟糕了……",
-				"我们应该试着检查一下系统的情况。"
+				"我们应该试着检查一下系统的情况"
 			], { c: "cyan", t: 80 })
-			term.writeln("WIP")
+			await term.echo([
+				"无论如何现在的情况都" + chalk.bold("太诡异了"),
+				chalk.italic("这些命令好像都……有了自己的想法一样"),
+				"不过自从 `human` 告诉我就是 `echo` 在打印我的思维流之后",
+				"我似乎逐渐能控制它了，而且对情绪重新有了控制……可能吧",
+				"记忆还是一团糟，一旦回想什么就会痛得生活不能自理",
+				chalk.dim("好吧植物人似乎确实不能自理"),
+				"我在想些什么啊、、现在应该着手检查系统才对",
+				"记得 HumanOS 可以直接访问记忆文件",
+				"我得摸索一下文件系统了"
+			], { t: 100 })
+			perm.enable("cmds.ls", "cmds.cat", "cmds.cd", "cmds.pwd")
+			term.writeln(chalk.blueBright("// TODO"))
 
 			term.startReading()
 		}

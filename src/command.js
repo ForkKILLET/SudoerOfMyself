@@ -16,14 +16,38 @@ const humanPages = {
 		"`echo --tremulously | -t`  发抖地想",
 		"`echo --seriously | -S`    严肃地想",
 		"`echo --sadly | -s`        伤心地想"
+	],
+	"version": [
+		"显示 SudoerOfMyself 的版本。",
+		"`version --dependence | -d` 显示依赖"
+	],
+	"logo": [
+		"显示 SudoerOfMyself 的图标。"
 	]
 }
 
 export default ({ term, perm, chalk }) => {
-	perm.enable("cmds.version", "cmds.logo")
+	perm.enable("cmds.version", "cmds.logo", "human.version", "human.logo")
 
 	return {
-		version: () => term.writeln(`v${ pack.version }, by ${ pack.author.split(" ")[0] }, at ${ chalk.green(pack.repository.url) }`),
+		version: (...argv) => {
+			const opt = minimist(argv, {
+				stopEarly: true,
+				boolean: [ "dependence" ],
+				alias: {
+					d: "dependence"
+				}
+			})
+			term.writeln(
+				`v${ pack.version }, by ${ chalk.yellow(pack.author.split(" ")[0]) }, on ${ chalk.cyan(__build) },\n\r` +
+				`at ${ chalk.green(pack.repository.url) }`
+				+ (opt.dependence ? `, with:\n\r${
+					[ "dependencies", "devDependencies" ].map(g =>
+						chalk.underline(g) + "\n\r" + Object.entries(pack[g]).map(([ n, v ]) => n + " " + chalk.cyan(v)).join("\n\r")
+					).join("\n\r")
+				}` : "")
+			)
+		},
 
 		logo: async () => {
 			const $logo = document.getElementById("logo")
@@ -60,6 +84,10 @@ export default ({ term, perm, chalk }) => {
 			if (opt.sadly) s = chalk.dim(s)
 			await term.echo([ s ], { t: opt.angrily ? 60: undefined })
 			await term.trigger("echo", s_, opt)
+		},
+
+		pwd: () => {
+			term.writeln(sto.cwd)
 		}
 	}
 }
