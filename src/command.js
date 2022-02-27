@@ -12,10 +12,10 @@ const humanPages = {
 	],
 	"echo": [
 		"显示一行思想。",
-		"`echo --angrily | -a`		生气地想",
-		"`echo --tremulously | -t`	发抖地想",
-		"`echo --seriously | -S`	严肃地想",
-		"`echo --sadly | -s`		伤心地想"
+		"`echo --angrily | -a`      生气地想",
+		"`echo --tremulously | -t`  发抖地想",
+		"`echo --seriously | -S`    严肃地想",
+		"`echo --sadly | -s`        伤心地想"
 	]
 }
 
@@ -45,7 +45,7 @@ export default ({ term, perm, chalk }) => {
 		echo: async (...argv) => {
 			const opt = minimist(argv, {
 				stopEarly: true,
-				boolean: [ "angrily", "tremulously", "seriously", "excitedly" ],
+				boolean: [ "angrily", "tremulously", "seriously", "sadly" ],
 				alias: {
 					a: "angrily",
 					t: "tremulously",
