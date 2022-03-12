@@ -23,11 +23,20 @@ const humanPages = {
 	],
 	"logo": [
 		"显示 SudoerOfMyself 的图标。"
+	],
+	"s/l": [
+		"Save/Load",
+		"`s/l --save | -s`                  手动存档（会在关闭标签页时自动存档）",
+		"`s/l --auto-save | -a [ second ]`  每 second 秒自动存档一次，默认为 10",
+		"`s/l --export | -e`                导出存档为任人摆布的 JSON",
+		"`s/l --export-clip | -E`           导出存档到剪贴板",
+		"`s/l --import | -i < JSON >`       从 JSON 导入存档",
+		"`s/l --import-clip | -I`           从剪贴板导入存档（部分浏览器可能不支持）"
 	]
 }
 
 export default ({ term, perm, chalk }) => {
-	perm.enable("cmds.version", "cmds.logo", "human.version", "human.logo")
+	perm.enable("cmds.version", "cmds.logo", "cmds.s/l", "human.version", "human.logo", "human.s/l")
 
 	return {
 		version: (...argv) => {
@@ -56,6 +65,66 @@ export default ({ term, perm, chalk }) => {
 			$logo.style.display = ""
 		},
 
+		"s/l": async (...argv) => {
+			const opt = minimist(argv, {
+				stopEarly: true,
+				boolean: [ "save", "export", "export-clip", "import-clip" ],
+				string: [ "import" ],
+				alias: {
+					s: "save",
+					a: "auto-save",
+					e: "export",
+					E: "export-clip",
+					i: "import",
+					I: "import-clip",
+				}
+			})
+
+			const op = opt.s + ("a" in opt) + opt.e + opt.E + opt.I + ("i" in opt)
+			if (op === 0) return term.writeln("s/l: no operation specified")
+			if (op > 1) return term.writeln("s/l: only one operation may be used at a time")
+
+			if (opt.s) sto.save()
+			if ("a" in opt) {
+				if (term.autoSaveTimer) {
+					clearInterval(term.autoSaveTimer)
+					term.writeln("s/l: old auto-saver killed")
+				}
+				term.autoSaveTimer = setInterval(() => {
+					sto.save()
+					console.log("Auto saved") // TODO show in terminal
+				}, (opt.a === true ? 10 : opt.a) * 1000)
+			}
+			if (opt.e) term.writeln(chalk.blueBright(JSON.stringify(sto)))
+			if (opt.E) {
+				try {
+					await navigator.clipboard.writeText(JSON.stringify(sto))
+				}
+				catch {
+					return term.writeln("s/l: failed to access clipboard")
+				}
+				term.writeln("s/l: exported to clipboard")
+			}
+			if ("i" in opt || opt.I) {
+				let s = opt.i
+				if (opt.I) {
+					try {
+						s = await navigator.clipboard.readText()
+					}
+					catch {
+						return term.writeln("s/l: failed to access clipboard")
+					}
+				}
+				try {
+					sto = JSON.parse(s)
+					if (opt.I) term.writeln("s/l: imported from clipboard")
+				}
+				catch (err) {
+					term.writeln(`s/l: ${ err.message.slice(12) }`)
+				}
+			}
+		},
+
 		help: () => term.writeln("You are HELPLESS. No one will help you. jaja."),
 
 		human: async (page = "") => {
@@ -78,10 +147,10 @@ export default ({ term, perm, chalk }) => {
 				}
 			})
 			let s_ = opt._.join(" "), s = s_
-			if (opt.angrily) s = chalk.bold(s)
-			if (opt.tremulously) s = chalk.italic(s)
-			if (opt.seriously) s = chalk.underline(s)
-			if (opt.sadly) s = chalk.dim(s)
+			if (opt.a) s = chalk.bold(s)
+			if (opt.t) s = chalk.italic(s)
+			if (opt.S) s = chalk.underline(s)
+			if (opt.s) s = chalk.dim(s)
 			await term.echo([ s ], { t: opt.angrily ? 60: undefined })
 			await term.trigger("echo", s_, opt)
 		},

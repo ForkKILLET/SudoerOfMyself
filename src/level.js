@@ -14,6 +14,7 @@ export default ({ term, perm, chalk }) => {
 					text = "Bye User"
 				}
 				else if (! sto.afOn) return
+				sto.afTime ??= 0
 				await term.echo([
 					(text
 						.replace(/[!?]/g, c => ({ "!": "！", "?": "？" } [c]))
@@ -55,7 +56,7 @@ export default ({ term, perm, chalk }) => {
 			let t = 0
 			term.listenOnce("command-not-found", async n => {
 				if ([ "logout", "exit" ].includes(n)) return await term.nextLevel()
-				else if (++ t === 4) await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
+				else if (++ t >= 4) await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
 			})
 		},
 		async () => {
@@ -97,7 +98,7 @@ export default ({ term, perm, chalk }) => {
 
 			AF.enable()
 			term.listenOnce("af", async time => {
-				if (time === 4) return await term.nextLevel()
+				if (time >= 4) return await term.nextLevel()
 			})
 
 			term.startReading()

@@ -127,7 +127,7 @@ term.onData(key => {
 			}
 			break
 		default:
-			if (key < "\u0020" || (key > "\u007B" && key < "\u00A0")) {
+			if (key < "\u0020" || (key > "\u007E" && key < "\u00A0")) {
 				console.log("Key code: %d", key.charCodeAt())
 				return
 			}
@@ -155,11 +155,13 @@ term.trigger = async (evt, ...arg) => {
 	for (const fn of term.listeners[evt] ?? []) await fn(...arg)
 }
 
-const sto = new Proxy(localStorage, {
-	get: (_, k) => JSON.parse(localStorage.getItem(k)),
-	set: (_, k, v) => localStorage.setItem(k, JSON.stringify(v)),
-	deleteProperty: (_, k) => localStorage.removeItem(k)
-})
+
+const sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
+sto.save = () => {
+	localStorage.SudoerOfMyself = JSON.stringify(sto)
+}
+
+addEventListener("beforeunload", sto.save)
 
 chalk.level = 1
 term.prompt = chalk.green("$ ")
@@ -215,7 +217,7 @@ term.echo = async (s, { t, c } = {}) => {
 		if (ch === "\u001B")
 			while (s[i] !== "m") ch += s[++ i]
 		term.write(chalk[c ?? "yellow"](ch))
-		await sleep(term.fastForward ? 10 : t ?? 120)
+		await sleep(term.fastForward ? 5 : t ?? 120)
 	}
 	term.fastForward = false
 }
