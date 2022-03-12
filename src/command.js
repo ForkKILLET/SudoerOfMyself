@@ -84,14 +84,14 @@ export default ({ term, perm, chalk }) => {
 			if (op === 0) return term.writeln("s/l: no operation specified")
 			if (op > 1) return term.writeln("s/l: only one operation may be used at a time")
 
-			if (opt.s) sto.save()
+			if (opt.s) sto.__save()
 			if ("a" in opt) {
 				if (term.autoSaveTimer) {
 					clearInterval(term.autoSaveTimer)
 					term.writeln("s/l: old auto-saver killed")
 				}
 				term.autoSaveTimer = setInterval(() => {
-					sto.save()
+					sto.__save()
 					console.log("Auto saved") // TODO show in terminal
 				}, (opt.a === true ? 10 : opt.a) * 1000)
 			}
@@ -116,8 +116,15 @@ export default ({ term, perm, chalk }) => {
 					}
 				}
 				try {
-					sto = JSON.parse(s)
+					const new_sto = JSON.parse(s)
+					for (const k in sto) {
+						if (! k.startsWith("__")) delete sto[k]
+					}
+					for (const k in new_sto) {
+						if (! k.startsWith("__")) sto[k] = new_sto[k]
+					}
 					if (opt.I) term.writeln("s/l: imported from clipboard")
+					history.go()
 				}
 				catch (err) {
 					term.writeln(`s/l: ${ err.message.slice(12) }`)

@@ -56,7 +56,11 @@ export default ({ term, perm, chalk }) => {
 			let t = 0
 			term.listenOnce("command-not-found", async n => {
 				if ([ "logout", "exit" ].includes(n)) return await term.nextLevel()
-				else if (++ t >= 4) await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
+				else if (++ t === 4) {
+					term.endReading()
+					await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
+					term.startReading()
+				}
 			})
 		},
 		async () => {

@@ -157,11 +157,11 @@ term.trigger = async (evt, ...arg) => {
 
 
 const sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
-sto.save = () => {
+sto.__save = () => {
 	localStorage.SudoerOfMyself = JSON.stringify(sto)
 }
 
-addEventListener("beforeunload", sto.save)
+addEventListener("beforeunload", sto.__save)
 
 chalk.level = 1
 term.prompt = chalk.green("$ ")
@@ -190,8 +190,14 @@ term.startReading = async() => {
 		if (! ln) continue
 		const [ cmdn, ...arg ] = ln.split(" ")
 		if (! perm.find(`cmds.${cmdn}`)) {
-			term.writeln(`${cmdn}: command not found.`)
-			await term.trigger("command-not-found", cmdn)
+			if (cmdn in cmds) {
+				term.writeln(`${cmdn}: permission denied.`)
+				await term.trigger("command-no-perm")
+			}
+			else {
+				term.writeln(`${cmdn}: command not found.`)
+				await term.trigger("command-not-found", cmdn)
+			}
 		}
 		else {
 			term.enableRead = false
