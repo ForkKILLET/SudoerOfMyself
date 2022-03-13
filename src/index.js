@@ -18,10 +18,12 @@ term.open(document.getElementById("xterm"))
 term.writePrompt = () => term.write(term.prompt)
 
 term.history = []
-term.delete = (c, back = true) =>
-	term.write("\b".repeat(c) + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
+term.delete = (c, go, back) =>
+	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
 term.historyLn = () => {
-	term.delete(stringWidth(term.ln))
+	term.write("\r")
+	term.writePrompt()
+	term.delete(stringWidth(term.ln), false, true)
 	term.write(
 		term.ln = (term.historyIndex ? term.history.at(- term.historyIndex) : "")
 	)
@@ -46,7 +48,6 @@ Object.defineProperties(term, {
 })
 
 term.readln = async () => {
-	if (term.lnComplete) throw `"lnComplete" listener already exists.`
 	term.writePrompt()
 	if (term.history.at(-1) !== term.ln && term.ln) term.history.push(term.ln)
 	term.historyIndex = 0
@@ -62,11 +63,11 @@ term.onData(key => {
 			if (! term.enableRead) return
 			if (term.cursorIndex > 0) {
 				const i = stringWidth(term.lnCur)
-				term.delete(i, false)
+				term.delete(i, true, false)
 				term.cursorIndex --
 				term.ln = term.lnPre + term.lnPostN
 				term.write(term.lnPost + " ".repeat(i))
-				term.delete(stringWidth(term.lnPost) + i, false)
+				term.delete(stringWidth(term.lnPost) + i, true, false)
 			}
 			break
 		case "\r": // Enter
@@ -152,9 +153,9 @@ term.listenOnce = (evt, fn) => {
 	return { dispose }
 }
 term.trigger = async (evt, ...arg) => {
+	console.log("Trigger: %s, arg:\n%o", evt, arg)
 	for (const fn of term.listeners[evt] ?? []) await fn(...arg)
 }
-
 
 const sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
 sto.__save = () => {
@@ -178,13 +179,15 @@ const perm = {
 	find: cmdn => sto.perms[cmdn]
 }
 
-sto.cwd ??= "/"
+const { cmds, fs } = cmdF({ term, perm, sto, chalk })
+const levels = levelF({ term, perm, sto, cmds, chalk })
 
-const cmds = cmdF({ term, perm, chalk })
-const levels = levelF({ term, perm, cmds, chalk })
-
-term.startReading = async() => {
+term.isReading = false
+term.startReading = async () => {
 	term.enableRead = true
+	if (term.isReading) return
+
+	term.isReading = true
 	while (term.enableRead) {
 		const ln = await term.readln()
 		if (! ln) continue
@@ -202,12 +205,15 @@ term.startReading = async() => {
 		else {
 			term.enableRead = false
 			await cmds[cmdn]?.(...arg)
-			await term.trigger("command-run", cmdn, arg)
 			term.enableRead = true
+			await term.trigger("command-run", cmdn, arg)
 		}
 	}
+	term.isReading = false
 }
-term.endReading = () => term.enableRead = false
+term.endReading = () => {
+	term.enableRead = false
+}
 
 sto.level ??= 0
 term.currLevel = () => levels[sto.level]?.(term, cmds)
@@ -217,7 +223,7 @@ term.nextLevel = async () => {
 }
 
 term.echo = async (s, { t, c } = {}) => {
-	s = (Array.isArray(s) ? s : [ s ]).map(ln => `* ${ln}\n\r`).join("")
+	s = (Array.isArray(s) ? s : [ s ]).map(ln => `* ${ln}\r\n`).join("")
 	for (let i = 0; i < s.length; i ++) {
 		let ch = s[i]
 		if (ch === "\u001B")
@@ -229,7 +235,7 @@ term.echo = async (s, { t, c } = {}) => {
 }
 
 Object.assign(window, {
-	term, perm, levels, cmds, sto,
+	term, perm, levels, cmds, fs, sto,
 	ex: { chalk, sleep, stringWidth }
 })
 

@@ -1,44 +1,14 @@
 import pack from "../package.json"
 import sleep from "simple-async-sleep"
+import stringWidth from "string-width"
 import minimist from "minimist"
+import humanPages from "./human_pages.js"
+import fsF from "./file_system.js"
 
-const humanPages = {
-	"": [
-		"您需要什么手册页？",
-		"例如，尝试使用 `human human`。"
-	],
-	"human": [
-		"具有人工智能的、系统参考手册的接口。"
-	],
-	"echo": [
-		"显示一行思想。",
-		"`echo --angrily | -a`      生气地想",
-		"`echo --tremulously | -t`  发抖地想",
-		"`echo --seriously | -S`    严肃地想",
-		"`echo --sadly | -s`        伤心地想"
-	],
-	"version": [
-		"显示 SudoerOfMyself 的版本。",
-		"`version --dependence | -d` 显示依赖"
-	],
-	"logo": [
-		"显示 SudoerOfMyself 的图标。"
-	],
-	"s/l": [
-		"Save/Load",
-		"`s/l --save | -s`                  手动存档（会在关闭标签页时自动存档）",
-		"`s/l --auto-save | -a [ second ]`  每 second 秒自动存档一次，默认为 10",
-		"`s/l --export | -e`                导出存档为任人摆布的 JSON",
-		"`s/l --export-clip | -E`           导出存档到剪贴板",
-		"`s/l --import | -i < JSON >`       从 JSON 导入存档",
-		"`s/l --import-clip | -I`           从剪贴板导入存档（部分浏览器可能不支持）"
-	]
-}
+export default ({ term, perm, sto, chalk }) => {
+	perm.enable("cmds.version", "cmds.logo", "cmds.sl", "human.version", "human.logo", "human.sl")
 
-export default ({ term, perm, chalk }) => {
-	perm.enable("cmds.version", "cmds.logo", "cmds.s/l", "human.version", "human.logo", "human.s/l")
-
-	return {
+	const cmds = {
 		version: (...argv) => {
 			const opt = minimist(argv, {
 				stopEarly: true,
@@ -48,12 +18,12 @@ export default ({ term, perm, chalk }) => {
 				}
 			})
 			term.writeln(
-				`v${ pack.version }, by ${ chalk.yellow(pack.author.split(" ")[0]) }, on ${ chalk.cyan(__build) },\n\r` +
+				`v${ pack.version }, by ${ chalk.yellow(pack.author.split(" ")[0]) }, on ${ chalk.cyan(__build) },\r\n` +
 				`at ${ chalk.green(pack.repository.url) }`
-				+ (opt.dependence ? `, with:\n\r${
+				+ (opt.dependence ? `, with:\r\n${
 					[ "dependencies", "devDependencies" ].map(g =>
-						chalk.underline(g) + "\n\r" + Object.entries(pack[g]).map(([ n, v ]) => n + " " + chalk.cyan(v)).join("\n\r")
-					).join("\n\r")
+						chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([ n, v ]) => n + " " + chalk.cyan(v)).join("\r\n")
+					).join("\r\n")
 				}` : "")
 			)
 		},
@@ -65,10 +35,10 @@ export default ({ term, perm, chalk }) => {
 			$logo.style.display = ""
 		},
 
-		"s/l": async (...argv) => {
+		sl: async (...argv) => {
 			const opt = minimist(argv, {
 				stopEarly: true,
-				boolean: [ "save", "export", "export-clip", "import-clip" ],
+				boolean: [ "save", "export", "export-clip", "import-clip", "locomotive" ],
 				string: [ "import" ],
 				alias: {
 					s: "save",
@@ -77,18 +47,19 @@ export default ({ term, perm, chalk }) => {
 					E: "export-clip",
 					i: "import",
 					I: "import-clip",
+					l: "locomotive"
 				}
 			})
 
-			const op = opt.s + ("a" in opt) + opt.e + opt.E + opt.I + ("i" in opt)
-			if (op === 0) return term.writeln("s/l: no operation specified")
-			if (op > 1) return term.writeln("s/l: only one operation may be used at a time")
+			const op = opt.s + ("a" in opt) + opt.e + opt.E + opt.I + ("i" in opt) + opt.l
+			if (op === 0) return term.writeln("sl: no operation specified")
+			if (op > 1) return term.writeln("sl: only one operation may be used at a time")
 
 			if (opt.s) sto.__save()
 			if ("a" in opt) {
 				if (term.autoSaveTimer) {
 					clearInterval(term.autoSaveTimer)
-					term.writeln("s/l: old auto-saver killed")
+					term.writeln("sl: old auto-saver killed")
 				}
 				term.autoSaveTimer = setInterval(() => {
 					sto.__save()
@@ -101,9 +72,9 @@ export default ({ term, perm, chalk }) => {
 					await navigator.clipboard.writeText(JSON.stringify(sto))
 				}
 				catch {
-					return term.writeln("s/l: failed to access clipboard")
+					return term.writeln("sl: failed to access clipboard")
 				}
-				term.writeln("s/l: exported to clipboard")
+				term.writeln("sl: exported to clipboard")
 			}
 			if ("i" in opt || opt.I) {
 				let s = opt.i
@@ -112,23 +83,43 @@ export default ({ term, perm, chalk }) => {
 						s = await navigator.clipboard.readText()
 					}
 					catch {
-						return term.writeln("s/l: failed to access clipboard")
+						return term.writeln("sl: failed to access clipboard")
 					}
 				}
 				try {
-					const new_sto = JSON.parse(s)
+					const stoN = JSON.parse(s)
 					for (const k in sto) {
 						if (! k.startsWith("__")) delete sto[k]
 					}
-					for (const k in new_sto) {
-						if (! k.startsWith("__")) sto[k] = new_sto[k]
+					for (const k in stoN) {
+						if (! k.startsWith("__")) sto[k] = stoN[k]
 					}
-					if (opt.I) term.writeln("s/l: imported from clipboard")
+					if (opt.I) term.writeln("sl: imported from clipboard")
 					history.go()
 				}
 				catch (err) {
-					term.writeln(`s/l: ${ err.message.slice(12) }`)
+					term.writeln(`sl: ${ err.message.slice(12) }`)
 				}
+			}
+			if (opt.l) {
+				term.clear()
+				term.write(String.raw`
+                    (@@) (  ) (@)  ( )  @@    ()    @     O     @     O      @
+               (   )
+           (@@@@)
+        (    )
+
+      (@@@)
+     ++      +------ ____                 ____________________ ____________________
+     ||      |+-+ |  |   \@@@@@@@@@@@     |  ___ ___ ___ ___ | |  ___ ___ ___ ___ |
+   /---------|| | |  |    \@@@@@@@@@@@@@_ |  |_| |_| |_| |_| | |  |_| |_| |_| |_| |
+  + ========  +-+ |  |                  | |__________________| |__________________|
+ _|--O========O~\-+  |__________________| |__________________| |__________________|
+//// \_/      \_/       (O)       (O)        (O)        (O)       (O)        (O)
+
+// There's no money for animation. Sponsor us XD
+`.replaceAll("\n", "\r\n")
+				)
 			}
 		},
 
@@ -163,7 +154,66 @@ export default ({ term, perm, chalk }) => {
 		},
 
 		pwd: () => {
-			term.writeln(sto.cwd)
-		}
+			term.writeln("/" + sto.cwd.join("/"))
+		},
+
+		ls: (...argv) => {
+			const usrsE = Object.entries(sto.usrs)
+			const unWidths = []
+			const unWidthMax = usrsE.reduce((a, c) => Math.max(a, unWidths[c[1]] = stringWidth(c[0])), 0)
+
+			const opt = minimist(argv, {
+				boolean: [ "color", "classify", "long" ],
+				alias: {
+					c: "color",
+					F: "classify",
+					l: "long"
+				}
+			})
+
+			if (! opt._.length) opt._.push("")
+			for (const path of opt._) {
+				if (opt._.length > 1) term.writeln(path + ":")
+
+				const [, f] = fs.relpath(path, true)
+				if (! f) return
+				if (f.ty === "dir") {
+					const out = fs.children(f).map(({ ty, n, perm, owner }) => {
+						if (opt.c) n = chalk[fs.ls.colors[ty]](n)
+						if (opt.F) n += fs.ls.indicators[ty]
+						if (opt.l) {
+							let p = [ ..."rwx".repeat(3) ], o = parseInt(perm, 8)
+							for (let b = 0; b <= 8; b ++) if (! (o & 1 << (8 - b))) p[b] = "-"
+							let u = usrsE.find(u => u[1] === owner)
+							n = fs.ls.shortTypes[ty] + p.join("") + " " + u[0] + " ".repeat(unWidthMax - unWidths[u[1]] + 1) + n
+						}
+						return n
+					}).join(opt.l ? "\r\n" : "  ")
+					term.write(out + (out ? "\r\n" : ""))
+				}
+				else term.writeln(f.n)
+
+				if (opt._.length > 1) term.writeln("")
+			}
+		},
+
+		cd: path => {
+			const [d] = fs.relpath(path, true, "dir")
+			if (d) sto.cwd = d
+		},
+
+		cat: async path => {
+			const [d, f] = fs.relpath(path, true, "nor", "exe")
+			if (! f) return
+			console.log(f)
+			term.writeln(f.v)
+			await term.trigger("cat", d, f)
+		},
+
+		bag: () => {}
 	}
+
+	const fs = fsF({ term, perm, sto, cmds, chalk })
+
+	return { fs, cmds }
 }

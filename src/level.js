@@ -1,38 +1,10 @@
-export default ({ term, perm, chalk }) => {
-	const AF = {
-		enable: () => sto.afOn = true,
-		disable: () => sto.afOn = false,
-		init: () => {
-			term.listen("echo", async (text, opt) => {
-				if (! perm.find("af")) return
-				if (text.toLowerCase() === "hi human") {
-					AF.enable()
-					text = "Hi User"
-				}
-				else if (text.toLowerCase() === "bye human") {
-					AF.disable()
-					text = "Bye User"
-				}
-				else if (! sto.afOn) return
-				sto.afTime ??= 0
-				await term.echo([
-					(text
-						.replace(/[!?]/g, c => ({ "!": "！", "?": "？" } [c]))
-						.replace(/[你我]/g, c => ({ "你": "我", "我": "你" } [c]))
-						.replace(/吗？/g, "。")
-						.replace(/？$/, "？我也不知道。")
-					+ (opt.angrily ? "……怎么了 User，不要生气呢~" : ""))
-					+ (opt.tremulously ? "……克服恐惧最好的方式就是面对它！" : "")
-					+ (opt.seriously ? "……啊对对对！" : "")
-					+ (opt.sadly ? " ( ´・ω・)ノ(._.`)" : "")
-					|| "User，你怎么不说话啦"
-				], { c: "cyan", t: 80 })
-				await term.trigger("af", ++ sto.afTime)
-			})
-		}
-	}
+import AFF from "./artificial_fool.js"
 
+export default ({ term, perm, sto, chalk }) => {
+	const AF = AFF({ term, perm, sto })
 	AF.init()
+
+	if (! Array.isArray(sto.cwd)) sto.cwd = []
 
 	return [
 		async () => {
@@ -128,9 +100,89 @@ export default ({ term, perm, chalk }) => {
 				"记得 HumanOS 可以直接访问记忆文件",
 				"我得摸索一下文件系统了"
 			], { t: 100 })
-			perm.enable("cmds.ls", "cmds.cat", "cmds.cd", "cmds.pwd")
-			term.writeln(chalk.blueBright("// TODO"))
 
+			perm.enable(
+				"cmds.ls", "cmds.cat", "cmds.cd", "cmds.pwd",
+				"human.ls", "human.cat", "human.cd", "human.pwd"
+			)
+
+			const { usrs } = sto
+			sto.files = {
+				ty: "dir",
+				children: [
+					{
+						n: "bin",
+						ty: "dir",
+						perm: 755,
+						owner: usrs.root,
+						children: "cmds-to-bins"
+					},
+					{
+						n: "home",
+						ty: "dir",
+						perm: 755,
+						owner: usrs.myself,
+						children: [
+							{
+								n: "Memories",
+								ty: "dir",
+								perm: 755,
+								owner: usrs.myself,
+								children: [
+									{
+										n: "before_human.mem",
+										ty: "nor",
+										v: [
+	"[2099/07/?? 星期四 上午 ?] 花 ￥9980 买了 HumanOS 测试版，￥19 优惠券真不错。这玩意能大幅提高我的工作效率。把大脑挂载成 HumanFS 然后通过终端访问，真是不敢相信。", 
+	"[2099/07/?? 星期日 下午 ?] 安装服务居然要另行付费，怎么敢的呀。根据我这几天的考证，戴上头盔跑一下安装脚本就完事，绝无危险。",
+	"[2099/07/?? 星期五 下午 ?] 我的怂真是超出我的想象。再等几个月免费领正式版不香吗。",
+	"[2099/07/?? 星期五 晚上 ?] 我是傻逼，论文给删了，9902 年了怎么还有人不记得备份。",
+	"[2099/07/?? 星期五 晚上 ?] 或许我能从记忆里把它导出来。干了兄弟们。先戴头盔……诶对……文档里怎么没说有一键安装，纯纯**……网速好慢……我草什么东西?????????????????????????",
+	"[2099/07/13 星期五 晚上 23:30:05] 成了……是终端，好"
+										].join("\r\n")
+									}
+								]
+							}
+						]
+					},
+					{
+						n: "dev",
+						ty: "dir",
+						perm: 755,
+						owner: usrs.root,
+						children: [
+							{
+								n: "tty",
+								ty: "chr",
+								perm: 666,
+								owner: usrs.root
+							},
+							{
+								n: "brain",
+								ty: "blk",
+								perm: 660,
+								owner: usrs.root
+							}
+						]
+					},
+					{
+						n: "lost+found",
+						ty: "dir",
+						perm: 700,
+						owner: usrs.root,
+						children: []
+					}
+				]
+			}
+			term.listenOnce("cat", async d => {
+				if (d.join("/") === "home/Memories/before_human.mem") return await term.nextLevel()
+			})
+
+			term.startReading()
+		},
+		async () => {
+			term.endReading()
+			term.writeln(chalk.blueBright("// TODO"))
 			term.startReading()
 		}
 	]
