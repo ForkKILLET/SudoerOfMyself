@@ -17,7 +17,6 @@ term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
 term.writePrompt = () => term.write(term.prompt)
 
-term.history = []
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
 term.historyLn = () => {
@@ -25,7 +24,7 @@ term.historyLn = () => {
 	term.writePrompt()
 	term.delete(stringWidth(term.ln), false, true)
 	term.write(
-		term.ln = (term.historyIndex ? term.history.at(- term.historyIndex) : "")
+		term.ln = (term.historyIndex ? sto.history.at(- term.historyIndex) : "")
 	)
 	term.cursorIndex = term.ln.length
 }
@@ -49,7 +48,7 @@ Object.defineProperties(term, {
 
 term.readln = async () => {
 	term.writePrompt()
-	if (term.history.at(-1) !== term.ln && term.ln) term.history.push(term.ln)
+	if (sto.history.at(-1) !== term.ln && term.ln) sto.history.push(term.ln)
 	term.historyIndex = 0
 	term.cursorIndex = 0
 	term.ln = ""
@@ -94,7 +93,7 @@ term.onData(key => {
 			switch (key.slice(1)) {
 				case "[A":
 					if (! term.enableRead) return
-					if (term.historyIndex < term.history.length) {
+					if (term.historyIndex < sto.history.length) {
 						term.historyIndex ++
 						term.historyLn()
 					}
@@ -158,12 +157,15 @@ term.trigger = async (evt, ...arg) => {
 }
 
 const sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
+
 sto.__save = () => {
 	localStorage.SudoerOfMyself = JSON.stringify(sto)
 }
 
 addEventListener("beforeunload", sto.__save)
 
+
+sto.history ??= []
 chalk.level = 1
 term.prompt = chalk.green("$ ")
 

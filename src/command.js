@@ -87,6 +87,7 @@ export default ({ term, perm, sto, chalk }) => {
 					}
 				}
 				try {
+					console.log(s)
 					const stoN = JSON.parse(s)
 					for (const k in sto) {
 						if (! k.startsWith("__")) delete sto[k]
