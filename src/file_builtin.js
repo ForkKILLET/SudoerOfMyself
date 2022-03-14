@@ -48,7 +48,7 @@ export default ({ sto, cmds }) => {
 						ty: "nor",
 						perm: 750,
 						owner: usrs.myself,
-						children: specials.history
+						cont: specials.history
 					}
 				}
 			},
