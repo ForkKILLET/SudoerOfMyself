@@ -3,8 +3,11 @@ import { WebLinksAddon } from "xterm-addon-web-links"
 import chalk from "chalk"
 import sleep from "simple-async-sleep"
 import stringWidth from "string-width"
+
 import levelF from "./level.js"
 import cmdF from "./command.js"
+import AFF from "./artificial_fool.js"
+import builtinFilesF from "./file_builtin.js"
 
 const term = new Terminal({
 	rows: 30,
@@ -181,8 +184,11 @@ const perm = {
 	find: cmdn => sto.perms[cmdn]
 }
 
+
 const { cmds, fs } = cmdF({ term, perm, sto, chalk })
-const levels = levelF({ term, perm, sto, cmds, chalk })
+const AF = AFF({ term, perm, sto })
+builtinFilesF({ sto, cmds })
+const levels = levelF({ term, perm, sto, cmds, fs, AF, chalk })
 
 term.isReading = false
 term.startReading = async () => {
@@ -206,7 +212,13 @@ term.startReading = async () => {
 		}
 		else {
 			term.enableRead = false
-			await cmds[cmdn]?.(...arg)
+			try {
+				await cmds[cmdn]?.(...arg)
+			}
+			catch (err) {
+				console.log(err)
+				term.writeln("core dumped: " + chalk.red(err.message ?? err))
+			}
 			term.enableRead = true
 			await term.trigger("command-run", cmdn, arg)
 		}

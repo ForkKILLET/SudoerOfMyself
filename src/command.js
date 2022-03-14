@@ -6,7 +6,10 @@ import humanPages from "./human_pages.js"
 import fsF from "./file_system.js"
 
 export default ({ term, perm, sto, chalk }) => {
-	perm.enable("cmds.version", "cmds.logo", "cmds.sl", "human.version", "human.logo", "human.sl")
+	perm.enable(
+		"cmds.version", "cmds.logo", "cmds.sl",
+		"human.version", "human.logo", "human.sl"
+	)
 
 	const cmds = {
 		version: (...argv) => {
@@ -164,8 +167,9 @@ export default ({ term, perm, sto, chalk }) => {
 			const unWidthMax = usrsE.reduce((a, c) => Math.max(a, unWidths[c[1]] = stringWidth(c[0])), 0)
 
 			const opt = minimist(argv, {
-				boolean: [ "color", "classify", "long" ],
+				boolean: [ "color", "classify", "long", "all" ],
 				alias: {
+					a: "all",
 					c: "color",
 					F: "classify",
 					l: "long"
@@ -179,7 +183,9 @@ export default ({ term, perm, sto, chalk }) => {
 				const [, f] = fs.relpath(path, true)
 				if (! f) return
 				if (f.ty === "dir") {
-					const out = fs.children(f).map(({ ty, n, perm, owner }) => {
+					let childrenR = Object.values(f.children)
+					if (! opt.a) childrenR = childrenR.filter(({ n }) => n[0] !== ".")
+					const out = childrenR.map(({ ty, n, perm, owner }) => {
 						if (opt.c) n = chalk[fs.ls.colors[ty]](n)
 						if (opt.F) n += fs.ls.indicators[ty]
 						if (opt.l) {
@@ -206,8 +212,7 @@ export default ({ term, perm, sto, chalk }) => {
 		cat: async path => {
 			const [d, f] = fs.relpath(path, true, "nor", "exe")
 			if (! f) return
-			console.log(f)
-			term.writeln(f.v)
+			term.writeln(f.cont)
 			await term.trigger("cat", d, f)
 		},
 

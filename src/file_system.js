@@ -1,4 +1,6 @@
 export default ({ term, perm, sto, cmds, chalk }) => {
+	if (! Array.isArray(sto.cwd)) sto.cwd = []
+
 	const usrs = sto.usrs ??= {
 		root: 0,
 		myself: 1
@@ -8,15 +10,6 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 		human: [ 1, [ 1 ] ]
 	}
 
-	const specials = {
-		"cmds-to-bins": () => Object.entries(cmds).map(([ n, f ]) => ({
-			n,
-			ty: "exe",
-			v: f.toString(),
-			perm: perm.find(`cmds.${n}`) ? 755 : 750,
-			owner: usrs.root
-		}))
-	}
 	const fs = {
 		ls: {
 			colors: {
@@ -56,14 +49,10 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 		},
 		
 		d: dir => (
-			dir.reduce((a, c) => fs.children(a).find(({ n }) => n === c), sto.files)
+			dir.reduce((a, c) => a.children[c], sto.files)
 		),
 		cwd: () => (
 			fs.d(sto.cwd)
-		),
-		children: dir => (typeof dir.children === "string"
-			? specials[dir.children]()
-			: dir.children
 		),
 		relpath: (path, err, ...tys) => {
 			const base = path?.startsWith("/") ? (path = path.slice(1), []) : [].concat(sto.cwd)
@@ -77,7 +66,7 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 						f = fs.d(base)
 					}
 					else {
-						f = fs.children(f).find(({ n }) => n === c)
+						f = f.children[n]
 						if (! f) {
 							throw "no such file or directory"
 						}
