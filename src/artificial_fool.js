@@ -31,5 +31,6 @@ export default ({ term, perm, sto }) => {
 			})
 		}
 	}
+	AF.init()
 	return AF
 }
