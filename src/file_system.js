@@ -66,7 +66,7 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 						f = fs.d(base)
 					}
 					else {
-						f = f.children[n]
+						f = f.children[c]
 						if (! f) {
 							throw "no such file or directory"
 						}
