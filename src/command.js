@@ -164,6 +164,7 @@ export default ({ term, perm, sto, chalk }) => {
 		ls: (...argv) => {
 			const usrsE = Object.entries(sto.usrs)
 			const unWidths = []
+			unWidths[-1] = 1
 			const unWidthMax = usrsE.reduce((a, c) => Math.max(a, unWidths[c[1]] = stringWidth(c[0])), 0)
 
 			const opt = minimist(argv, {
@@ -186,13 +187,16 @@ export default ({ term, perm, sto, chalk }) => {
 					let childrenR = Object.values(f.children)
 					if (! opt.a) childrenR = childrenR.filter(({ n }) => n[0] !== ".")
 					const out = childrenR.map(({ ty, n, perm, owner }) => {
-						if (opt.c) n = chalk[fs.ls.colors[ty]](n)
-						if (opt.F) n += fs.ls.indicators[ty]
+						if (opt.c) n = chalk[fs.ls.colors[ty]]?.(n) ?? n
+						if (opt.F) n += fs.ls.indicators[ty] ?? "?"
 						if (opt.l) {
-							let p = [ ..."rwx".repeat(3) ], o = parseInt(perm, 8)
-							for (let b = 0; b <= 8; b ++) if (! (o & 1 << (8 - b))) p[b] = "-"
-							let u = usrsE.find(u => u[1] === owner)
-							n = fs.ls.shortTypes[ty] + p.join("") + " " + u[0] + " ".repeat(unWidthMax - unWidths[u[1]] + 1) + n
+							const p = [ ..."rwx".repeat(3) ], o = parseInt(perm, 8)
+							if (typeof perm === "number") {
+								for (let b = 0; b <= 8; b ++) if (! (o & 1 << (8 - b))) p[b] = "-"
+							}
+							else p.forEach((_, i) => p[i] = "?")
+							const [ un, uid ] = usrsE.find(([, un]) => un === owner) ?? [ "?", -1 ]
+							n = (fs.ls.shortTypes[ty] ?? "?") + p.join("") + " " + un + " ".repeat(unWidthMax - unWidths[uid] + 1) + n
 						}
 						return n
 					}).join(opt.l ? "\r\n" : "  ")
@@ -212,7 +216,7 @@ export default ({ term, perm, sto, chalk }) => {
 		cat: async path => {
 			const [d, f] = fs.relpath(path, true, "nor", "exe")
 			if (! f) return
-			term.writeln(f.cont)
+			term.writeln(f.cont ?? "")
 			await term.trigger("cat", d, f)
 		},
 
