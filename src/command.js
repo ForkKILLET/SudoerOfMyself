@@ -12,23 +12,49 @@ export default ({ term, perm, sto, chalk }) => {
 	)
 
 	const cmds = {
-		version: (...argv) => {
+		version: async (...argv) => {
 			const opt = minimist(argv, {
 				stopEarly: true,
-				boolean: [ "dependence" ],
+				boolean: [ "dependence", "log" ],
 				alias: {
-					d: "dependence"
+					d: "dependence",
+					l: "log"
 				}
 			})
 			term.writeln(
 				`v${ pack.version }, by ${ chalk.yellow(pack.author.split(" ")[0]) }, on ${ chalk.cyan(__build) },\r\n` +
 				`at ${ chalk.green(pack.repository.url) }`
-				+ (opt.dependence ? `, with:\r\n${
+				+ (opt.d ? `, with:\r\n${
 					[ "dependencies", "devDependencies" ].map(g =>
 						chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([ n, v ]) => n + " " + chalk.cyan(v)).join("\r\n")
 					).join("\r\n")
 				}` : "")
 			)
+			if (opt.l) {
+				const api = `https://api.github.com/repos/${ pack.repository.url.match(/(\w+\/\w+)(.git)?$/)[1] }/commits`
+				console.log("Fetch: %s", api)
+				try {
+					const commits = await (await fetch(api)).json()
+					term.writeln("git log from GitHub API:\r\n" + commits.map(({
+						sha,
+						commit: { author: { name, email, date }, message }
+					}, i) =>
+						`* ` + chalk.yellow(`commit ${sha}\r\n`) + [
+							`Author: ${name} <${email}>`,
+							`Date:   ${date}`,
+							"",
+							...message.split(/\r\n|\r|\n/).map(ln => "    " + ln),
+							""
+						].map(ln =>
+							(i === commits.length - 1 ? "  " : chalk.red("| ")) + ln
+						).join("\r\n")
+					).join("\r\n"))
+				}
+				catch (err) {
+					console.log(err)
+					term.writeln("version: failed to access GitHub API.")
+				}
+			}
 		},
 
 		logo: async () => {

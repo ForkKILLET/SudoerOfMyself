@@ -5,7 +5,8 @@ export default {
 	],
 	version: [
 		"显示 SudoerOfMyself 的版本。",
-		"`version --dependence | -d` 显示依赖"
+		"`version --dependence | -d` 显示 npm 依赖",
+		"`version --log | -l`        显示 git 日志，来源 GitHub API"
 	],
 	logo: [
 		"显示 SudoerOfMyself 的图标。"
