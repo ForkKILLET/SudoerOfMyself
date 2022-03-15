@@ -55,6 +55,8 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 			fs.d(sto.cwd)
 		),
 		relpath: (path, err, ...tys) => {
+			const slashEnd = path.endsWith("/")
+			if (slashEnd) path = path.slice(0, -1)
 			const base = path?.startsWith("/") ? (path = path.slice(1), []) : [].concat(sto.cwd)
 			const after = path ? path.split("/") : []
 			let k, c, f = fs.d(base)
@@ -70,7 +72,7 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 						if (! f) {
 							throw "no such file or directory"
 						}
-						if (f.ty !== "dir" && k !== after.length - 1) {
+						if (f.ty !== "dir" && (k !== after.length - 1 || slashEnd)) {
 							throw "not a directory"
 						}
 						base.push(c)
@@ -84,7 +86,10 @@ export default ({ term, perm, sto, cmds, chalk }) => {
 				return [ base, f ]
 			}
 			catch (ty) {
-				if (err) term.writeln([ ty + ": ", ...base, chalk.red(c), ...after.slice(k + 1) ].join("/"))
+				if (err) {
+					if (slashEnd) after.push("")
+					term.writeln([ ty + ": ", ...base, chalk.red(c), ...after.slice(k + 1) ].join("/"))
+				}
 				return [ null, null ]
 			}
 		}
