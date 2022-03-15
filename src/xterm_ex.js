@@ -1,12 +1,4 @@
-import { Terminal } from "xterm"
-import { WebLinksAddon } from "xterm-addon-web-links"
-import chalk from "chalk"
-import stringWidth from "string-width"
-
-window.chalk = chalk
 chalk.level = 1
-
-window.stringWidth = stringWidth
 
 window.term = new Terminal({
 	rows: 30,
@@ -51,7 +43,15 @@ Object.defineProperties(term, {
 
 term.readln = async () => {
 	term.writePrompt()
-	if (sto.history.at(-1) !== term.ln && term.ln?.trim()) sto.history.push(term.ln)
+	if (sto.history.at(-1) !== term.ln && term.ln?.trim()) {
+		// TODO move to <~/.config/history.conf>
+		if (term.ln.length < 64) {
+			sto.history.push(term.ln)
+		}
+		if (sto.history.length == 128) {
+			sto.history.shift()
+		}
+	}
 	term.historyIndex = 0
 	term.cursorIndex = 0
 	term.ln = ""

@@ -1,10 +1,3 @@
-import pack from "../package.json"
-import sleep from "simple-async-sleep"
-import minimist from "minimist"
-
-window.sleep = sleep
-window.minimist = minimist
-
 perm.enable(
 	"cmds.version", "cmds.logo", "cmds.sl",
 	"human.version", "human.logo", "human.sl"
@@ -78,8 +71,7 @@ window.cmds = {
 	sl: async (...argv) => {
 		const opt = minimist(argv, {
 			stopEarly: true,
-			boolean: [ "save", "export", "export-clip", "import-clip", "locomotive" ],
-			string: [ "import" ],
+			boolean: [ "save", "export", "export-clip", "import", "import-clip", "locomotive", "base64" ],
 			alias: {
 				s: "save",
 				a: "auto-save",
@@ -87,11 +79,12 @@ window.cmds = {
 				E: "export-clip",
 				i: "import",
 				I: "import-clip",
+				b: "base64",
 				l: "locomotive"
 			}
 		})
 
-		const op = opt.s + ("a" in opt) + opt.e + opt.E + opt.I + ("i" in opt) + opt.l
+		const op = opt.s + ("a" in opt) + opt.e + opt.E + opt.I + opt.i + opt.l
 		if (op === 0) return term.writeln("sl: no operation specified")
 		if (op > 1) return term.writeln("sl: only one operation may be used at a time")
 
@@ -106,18 +99,22 @@ window.cmds = {
 				console.log("Auto saved") // TODO show in terminal
 			}, (opt.a === true ? 10 : opt.a) * 1000)
 		}
-		if (opt.e) term.writeln(chalk.blueBright(JSON.stringify(sto)))
-		if (opt.E) {
-			try {
-				await navigator.clipboard.writeText(JSON.stringify(sto))
+		if (opt.e || opt.E) {
+			let s = JSON.stringify(sto)
+			if (opt.b) s = Base64.encode(s)
+			if (opt.e) term.writeln(chalk.blueBright(s))
+			else {
+				try {
+					await navigator.clipboard.writeText(s)
+				}
+				catch {
+					return term.writeln("sl: failed to access clipboard")
+				}
+				term.writeln("sl: exported to clipboard")
 			}
-			catch {
-				return term.writeln("sl: failed to access clipboard")
-			}
-			term.writeln("sl: exported to clipboard")
 		}
-		if ("i" in opt || opt.I) {
-			let s = opt.i
+		if (opt.i || opt.I) {
+			let s = opt._.join(" ")
 			if (opt.I) {
 				try {
 					s = await navigator.clipboard.readText()
@@ -126,8 +123,8 @@ window.cmds = {
 					return term.writeln("sl: failed to access clipboard")
 				}
 			}
+			if (opt.b) s = Base64.decode(s)
 			try {
-				console.log(s)
 				const stoN = JSON.parse(s)
 				for (const k in sto) {
 					if (! k.startsWith("__")) delete sto[k]

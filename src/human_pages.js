@@ -41,12 +41,13 @@ window.humanPages = {
 	],
 	sl: [
 		"Save/Load",
-		"`sl --save | -s`                  手动存档（会在关闭标签页时自动存档）",
-		"`sl --auto-save | -a [ second ]`  每 second 秒自动存档一次，默认为 10",
-		"`sl --export | -e`                导出存档为任人摆布的 JSON",
-		"`sl --export-clip | -E`           导出存档到剪贴板",
-		"`sl --import | -i < JSON >`       从 JSON 导入存档",
-		"`sl --import-clip | -I`           从剪贴板导入存档（部分浏览器可能不支持）",
-		"`sl --locomotive | -l`            懂的都懂"
+		"`sl --save | -s`                     手动存档。（不是必要的，关闭标签页时会自动存档）",
+		"`sl --auto-save | -a [ second=10 ]`  每 second 秒自动存档一次。",
+		"`sl --export | -e`                   导出存档为任人摆布的 JSON。",
+		"`sl --export-clip | -E`              导出存档到剪贴板。",
+		"`sl --import | -i < JSON >`          从 JSON 导入存档。",
+		"`sl --import-clip | -I`              从剪贴板导入存档。（火狐等浏览器可能不支持）",
+		"`sl --locomotive | -l`               （懂的都懂）",
+		"`sl --base64 | -b`                   与导入/导出操作连用，使用 base64 编码。"
 	]
 }

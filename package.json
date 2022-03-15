@@ -1,6 +1,6 @@
 {
   "name": "sudoer-of-myself-workspace",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -15,6 +15,7 @@
   "dependencies": {
     "chalk": "^5.0.0",
     "esbuild": "^0.14.20",
+    "js-base64": "^3.7.2",
     "minimist": "^1.2.5",
     "simple-async-sleep": "^1.0.3",
     "string-width": "^5.1.0",

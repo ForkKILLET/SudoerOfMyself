@@ -1,3 +1,4 @@
+import "./external.js"
 import "./storage.js"
 import "./xterm_ex.js"
 import "./perm.js"

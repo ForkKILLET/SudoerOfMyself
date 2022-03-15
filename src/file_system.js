@@ -54,7 +54,7 @@ window.fs = {
 		fs.d(sto.cwd)
 	),
 	relpath: (path, err, ...tys) => {
-		const slashEnd = path.endsWith("/")
+		const slashEnd = path?.endsWith("/")
 		if (slashEnd) path = path.slice(0, -1)
 		const base = path?.startsWith("/") ? (path = path.slice(1), []) : [].concat(sto.cwd)
 		const after = path ? path.split("/") : []
