@@ -1,4 +1,4 @@
-export default ({ term, perm, sto, AF, chalk }) => [
+window.levels = [
 	async () => {
 		term.writeln("Welcome to HumanOS. Type `help` for help.")
 		perm.enable("cmds.help")
@@ -111,3 +111,10 @@ export default ({ term, perm, sto, AF, chalk }) => [
 		term.startReading()
 	}
 ]
+
+sto.level ??= 0
+term.nextLevel = async () => {
+	await levels[++ sto.level]?.(term, cmds)
+	return true
+}
+levels[sto.level]?.(term, cmds)
