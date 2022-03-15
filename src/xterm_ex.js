@@ -51,13 +51,13 @@ Object.defineProperties(term, {
 
 term.readln = async () => {
 	term.writePrompt()
-	if (sto.history.at(-1) !== term.ln && term.ln) sto.history.push(term.ln)
+	if (sto.history.at(-1) !== term.ln && term.ln?.trim()) sto.history.push(term.ln)
 	term.historyIndex = 0
 	term.cursorIndex = 0
 	term.ln = ""
 	await new Promise(res => term.lnComplete = res)
 	delete term.lnComplete
-	return term.ln = term.ln.trim()
+	return term.ln
 }
 term.onData(key => {
 	switch (key[0]) {
