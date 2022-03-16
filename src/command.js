@@ -215,7 +215,7 @@ window.cmds = {
 		for (const path of opt._) {
 			if (opt._.length > 1) term.writeln(path + ":")
 
-			const [, f] = fs.relpath(path, true)
+			const [, f] = fs.relpath(path, { err: true, perm: "r" })
 			if (! f) return
 			if (f.ty === "dir") {
 				let childrenR = Object.values(f.children)
@@ -243,14 +243,25 @@ window.cmds = {
 	},
 
 	cd: path => {
-		const [d] = fs.relpath(path, true, "dir")
+		const [d] = fs.relpath(path, { err: true, ty: "dir", perm: "x" })
 		if (d) sto.cwd = d
 	},
 
-	cat: async path => {
-		const [d, f] = fs.relpath(path, true, "nor", "exe")
+	cat: async (...argv) => {
+		const opt = minimist(argv, {
+			boolean: [ "show-all" ],
+			alias: {
+				A: "show-all"
+			}
+		})
+
+		const path = opt._.join(" ")
+		const [d, f] = fs.relpath(path, { err: true, ty: [ "nor", "exe" ], perm: "r" })
 		if (! f) return
-		term.writeln(f.cont ?? "")
+
+		let s = f.cont ?? ""
+		if (opt.A) s = s.replace(/[\x00-\x1F]/g, ch => chalk.blueBright(`<${ ("0" + ch.charCodeAt().toString(16).toUpperCase()).slice(-2) }>`))
+		term.writeln(s)
 		await term.trigger("cat", d, f)
 	},
 

@@ -56,7 +56,11 @@ const preproc = ln => {
 		if (ch === "\\") f.esc = true
 		else if (ch === "'" && ! f.dq) f.sq = !! f.sq
 		else if (ch === `"` && ! f.sq) f.dq = !! f.dq
-		else if (ch === "~" && ! f.dq && ! f.sq) now += "/home"
+		else if (! f.dq && ! f.sq) {
+			if (ch === "~") now += "/home"
+			else now += ch
+			// else if (ch === ">") ;
+		}
 		else now += ch
 	}
 	if (now) tokens.push(now.slice(0, -1))
@@ -74,29 +78,48 @@ term.startReading = async () => {
 		const ln = await term.readln()
 		if (! ln.trim()) continue
 
-		const [ cmdn, ...arg ] = preproc(ln)
+		const [ path, ...arg ] = preproc(ln)
 
-		if (! perm.find(`cmds.${cmdn}`)) {
-			if (cmdn in cmds) {
-				term.writeln(`${cmdn}: permission denied.`)
+		const bins = [ fs.relpath(path, { err: false, ty: "exe" }) ]
+		if (! path.includes("/")) bins.unshift(fs.relpath("/bin/" + path, { err: false, ty: "exe" })) // TODO $PATH
+
+		let noPerm = false, binOK
+		for (const [, bin] of bins) {
+			if (! bin) continue
+			if (fs.hasPerm("x", bin)) {
+				binOK = bin
+				break
+			}
+			else {
+				noPerm = true
+				continue
+			}
+		}
+
+		if (! binOK) {
+			if (noPerm) {
+				term.writeln(`${path}: permission denied.`)
 				await term.trigger("command-no-perm")
 			}
 			else {
-				term.writeln(`${cmdn}: command not found.`)
-				await term.trigger("command-not-found", cmdn)
+				term.writeln(`${path}: command not found.`)
+				await term.trigger("command-not-found", path)
 			}
+		}
+		else if (! binOK.func) {
+			term.writeln(`${path}: broken executable.`)
 		}
 		else {
 			term.enableRead = false
 			try {
-				await cmds[cmdn]?.(...arg)
+				await binOK.func(...arg)
 			}
 			catch (err) {
 				console.log(err)
 				term.writeln("core dumped: " + chalk.red(err.message ?? err))
 			}
 			term.enableRead = true
-			await term.trigger("command-run", cmdn, arg)
+			await term.trigger("command-run", path, arg)
 		}
 	}
 	term.isReading = false

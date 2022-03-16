@@ -53,7 +53,7 @@ window.fs = {
 	cwd: () => (
 		fs.d(sto.cwd)
 	),
-	relpath: (path, err, ...tys) => {
+	relpath: (path, { err, ty, perm }) => {
 		const slashEnd = path?.endsWith("/")
 		if (slashEnd) path = path.slice(0, -1)
 		const base = path?.startsWith("/") ? (path = path.slice(1), []) : [].concat(sto.cwd)
@@ -74,22 +74,40 @@ window.fs = {
 					if (f.ty !== "dir" && (k !== after.length - 1 || slashEnd)) {
 						throw "not a directory"
 					}
+					if (
+						k !== after.length - 1 && ! fs.hasPerm("x", f) ||
+						k === after.length - 1 && perm && ! fs.hasPerm(perm, f)
+					) throw "permission denied"
 					base.push(c)
 				}
 			}
 
-			if (tys.length && ! tys.includes(f.ty)) {
+			if (typeof ty === "string") ty = [ ty ]
+			if (Array.isArray(ty) && ! ty.includes(f.ty)) {
 				c = base.pop() ?? ""
-				throw "not a " + tys.map(ty => fs.ls.longTypes[ty]).join(" or ")
+				throw "not a " + ty.map(t => fs.ls.longTypes[t]).join(" or ")
 			}
 			return [ base, f ]
 		}
-		catch (ty) {
+		catch (errTy) {
 			if (err) {
 				if (slashEnd) after.push("")
-				term.writeln([ ty + ": ", ...base, chalk.red(c), ...after.slice(k + 1) ].join("/"))
+				term.writeln([ errTy + ": ", ...base, chalk.red(c), ...after.slice(k + 1) ].join("/"))
 			}
 			return [ null, null ]
 		}
+	},
+
+	hasPerm(ty, { owner, perm }) {
+		ty = "rwx".indexOf(ty)
+		let p = parseInt(perm, 8)
+		if (owner === usrs.myself) {
+			p = (p & 0b111 << 6) >> 6
+		}
+		// TODO group perm
+		else {
+			p = p & 0b111
+		}
+		return p & 1 << (2 - ty)
 	}
 }

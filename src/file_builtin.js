@@ -1,13 +1,14 @@
 const { usrs } = sto
 
 const specials = {
-	bins: () => Object.entries(cmds).map(([ n, f ]) => ({
+	bins: () => Object.entries(cmds).reduce((a, [ n, func ]) => (a[n] = {
 		n,
 		ty: "exe",
-		v: f.toString(),
+		cont: func.toString(),
+		func,
 		perm: perm.find(`cmds.${n}`) ? 755 : 750,
 		owner: usrs.root
-	})),
+	}, a), {}),
 	history: () => sto.history.join("\r\n")
 }
 
