@@ -9,7 +9,10 @@ window.term = new Terminal({
 term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
 
-term.writePrompt = () => term.write(term.prompt)
+sto.prompt ??= chalk.green("$ ")
+term.writePrompt = () => term.write(
+	sto.prompt.replace("$PWD", fs.cwdPretty())
+)
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
 
@@ -158,5 +161,3 @@ term.trigger = async (evt, ...arg) => {
 	console.log("Trigger: %s, arg:\n%o", evt, arg)
 	for (const fn of term.listeners[evt] ?? []) await fn(...arg)
 }
-
-term.prompt = chalk.green("$ ")

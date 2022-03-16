@@ -97,8 +97,13 @@ window.fs = {
 			return [ null, null ]
 		}
 	},
-
-	hasPerm(ty, { owner, perm }) {
+	cwdPretty: () => (
+		(sto.cwd[0] === "home"
+			? [ "~", ...sto.cwd.slice(1) ]
+			: [ "", ...sto.cwd ]
+		).join("/")
+	),
+	hasPerm: (ty, { owner, perm }) => {
 		ty = "rwx".indexOf(ty)
 		let p = parseInt(perm, 8)
 		if (owner === usrs.myself) {
