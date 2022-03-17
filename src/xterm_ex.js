@@ -9,10 +9,8 @@ window.term = new Terminal({
 term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
 
-sto.prompt ??= chalk.green("$ ")
-term.writePrompt = () => term.write(
-	sto.prompt.replace("$PWD", fs.cwdPretty())
-)
+sto.env.PROMPT ??= chalk.green("\\$ ")
+term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0])
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
 

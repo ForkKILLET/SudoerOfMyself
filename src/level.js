@@ -107,7 +107,7 @@ window.levels = [
 	async () => {
 		term.endReading()
 		term.writeln(chalk.blueBright("// TODO"))
-		sto.prompt = chalk.blueBright("$PWD") + chalk.green(" $ ") // TODO real $PWD env
+		sto.env.PROMPT = `"` + chalk.blueBright("$PWD") + chalk.green(" \\$ ") + `"`
 
 		term.startReading()
 	}

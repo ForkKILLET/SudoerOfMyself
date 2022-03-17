@@ -4,12 +4,12 @@ perm.enable(
 )
 
 term.echo = async (s, { t, c } = {}) => {
-	s = (Array.isArray(s) ? s : [ s ]).map(ln => `* ${ln}\r\n`).join("")
+	s = (Array.isArray(s) ? s : [ s ]).map(ln => chalk[c ?? "yellow"](`* ${ln}\r\n`)).join("")
 	for (let i = 0; i < s.length; i ++) {
 		let ch = s[i]
 		if (ch === "\u001B")
 			while (s[i] !== "m") ch += s[++ i]
-		term.write(chalk[c ?? "yellow"](ch))
+		term.write(ch)
 		await sleep(term.fastForward ? 5 : t ?? 120)
 	}
 	term.fastForward = false
@@ -244,7 +244,9 @@ window.cmds = {
 
 	cd: path => {
 		const [d] = fs.relpath(path, { err: true, ty: "dir", perm: "x" })
-		if (d) sto.cwd = d
+		if (! d) return
+		sto.cwd = d
+		fs.updatePWD()
 	},
 
 	cat: async (...argv) => {

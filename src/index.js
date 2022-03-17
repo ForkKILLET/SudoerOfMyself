@@ -1,5 +1,6 @@
 import "./external.js"
 import "./storage.js"
+import "./shell.js"
 import "./xterm_ex.js"
 import "./perm.js"
 import "./file_system.js"

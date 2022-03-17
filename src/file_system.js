@@ -103,6 +103,9 @@ window.fs = {
 			: [ "", ...sto.cwd ]
 		).join("/")
 	),
+	updatePWD: () => {
+		sto.env.PWD = "/" + sto.cwd.join("/")
+	},
 	hasPerm: (ty, { owner, perm }) => {
 		ty = "rwx".indexOf(ty)
 		let p = parseInt(perm, 8)
@@ -116,3 +119,5 @@ window.fs = {
 		return p & 1 << (2 - ty)
 	}
 }
+
+fs.updatePWD()
