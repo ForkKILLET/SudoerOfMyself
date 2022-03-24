@@ -147,6 +147,9 @@ export class FileHandle {
 /**
 */
   ptr_now: number;
+/**
+*/
+  ptr_offset: number;
 }
 /**
 */
@@ -214,6 +217,8 @@ export interface InitOutput {
   readonly __wbg_set_filehandle_inode_id: (a: number, b: number) => void;
   readonly __wbg_get_filehandle_ptr_now: (a: number) => number;
   readonly __wbg_set_filehandle_ptr_now: (a: number, b: number) => void;
+  readonly __wbg_get_filehandle_ptr_offset: (a: number) => number;
+  readonly __wbg_set_filehandle_ptr_offset: (a: number, b: number) => void;
   readonly __wbg_get_filehandle_ptr_addr: (a: number) => number;
   readonly __wbg_set_filehandle_ptr_addr: (a: number, b: number) => void;
   readonly __wbg_get_filehandle_ptr_id: (a: number) => number;

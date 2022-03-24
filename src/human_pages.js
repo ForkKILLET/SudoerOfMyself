@@ -38,7 +38,7 @@ window.humanPages = {
 	],
 	cat: [
 		"连接文件并在标准输出上输出。",
-		"`cat --show-all | -A`	以 16 进制码的形式显示控制字符。"
+		"`cat --show-all | -A` 以 16 进制码的形式显示控制字符。"
 	],
 	sl: [
 		"Save/Load",
@@ -50,5 +50,12 @@ window.humanPages = {
 		"`sl --import-clip | -I`              从剪贴板导入存档。（火狐等浏览器可能不支持）",
 		"`sl --locomotive | -l`               （懂的都懂）",
 		"`sl --base64 | -b`                   与导入/导出操作连用，使用 base64 编码。"
+	],
+	"fsts.ext0": [
+		"测试 ext0 文件系统",
+		"`fsts.ext0 [@preset | str ]`        测试预设 preset 或字符串 str",
+		"`fsts.ext0 --only-result | -r`      只显示测试结果",
+		"`fsts.ext0 --show-buff | -b`        以 Uint8Array 形式显示读出的缓冲区",
+		"`fsts.ext0 --expose | -e`           将临时文件系统对象暴露到 javascript 全局",
 	]
 }

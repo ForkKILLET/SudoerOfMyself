@@ -21,7 +21,7 @@ import pack from "../package.json"
 import wasmbin from "./ext0/pkg/ext0_bg.wasm"
 import wasminit, {
 	init_panic_hook,
-	FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode
+	FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode,
 } from "./ext0/pkg"
 
 const __debug = location.hostname === "localhost"

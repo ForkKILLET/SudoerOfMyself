@@ -487,6 +487,18 @@ export class FileHandle {
     }
     /**
     */
+    get ptr_offset() {
+        var ret = wasm.__wbg_get_filehandle_ptr_offset(this.ptr);
+        return ret >>> 0;
+    }
+    /**
+    * @param {number} arg0
+    */
+    set ptr_offset(arg0) {
+        wasm.__wbg_set_filehandle_ptr_offset(this.ptr, arg0);
+    }
+    /**
+    */
     get ptr_addr() {
         var ret = wasm.__wbg_get_filehandle_ptr_addr(this.ptr);
         return ret >>> 0;
@@ -759,6 +771,7 @@ async function init(input) {
     }
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbg_now_b5215ffee26d321b = typeof Date.now == 'function' ? Date.now : notDefined('Date.now');
     imports.wbg.__wbg_log_2646dbabba67dca2 = function(arg0, arg1) {
         try {
             console.log(getStringFromWasm0(arg0, arg1));
@@ -766,7 +779,6 @@ async function init(input) {
             wasm.__wbindgen_free(arg0, arg1);
         }
     };
-    imports.wbg.__wbg_now_b5215ffee26d321b = typeof Date.now == 'function' ? Date.now : notDefined('Date.now');
     imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
         var ret = getStringFromWasm0(arg0, arg1);
         return addHeapObject(ret);

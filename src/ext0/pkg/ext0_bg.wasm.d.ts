@@ -16,6 +16,8 @@ export function __wbg_get_filehandle_inode_id(a: number): number;
 export function __wbg_set_filehandle_inode_id(a: number, b: number): void;
 export function __wbg_get_filehandle_ptr_now(a: number): number;
 export function __wbg_set_filehandle_ptr_now(a: number, b: number): void;
+export function __wbg_get_filehandle_ptr_offset(a: number): number;
+export function __wbg_set_filehandle_ptr_offset(a: number, b: number): void;
 export function __wbg_get_filehandle_ptr_addr(a: number): number;
 export function __wbg_set_filehandle_ptr_addr(a: number, b: number): void;
 export function __wbg_get_filehandle_ptr_id(a: number): number;

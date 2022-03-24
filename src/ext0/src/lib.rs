@@ -105,6 +105,7 @@ pub struct FileHandle {
     pub mode: FileHandleMode,
     pub inode_id: u16,
     pub ptr_now: u16,
+    pub ptr_offset: usize,
     pub ptr_addr: usize,
     pub ptr_id: u16,
     pub i_block: u16
@@ -124,13 +125,13 @@ macro_rules! file_walk {
     ) => {
         if $fh.ptr_id == 0 {
             $fh.i_block = 0;
-            ($fh.ptr_now, $fh.ptr_addr) = $fs.inode_get_next_ptr_with_addr(FS::inode_get_offset($fh.inode_id), 0);
+            ($fh.ptr_now, $fh.ptr_offset, $fh.ptr_addr) = $fs.inode_get_next_ptr_offset_addr(FS::inode_get_offset($fh.inode_id), 0);
             $fh.ptr_id = 1;
         }
 
         while $i_buff < $buff_size {
             if $fh.i_block == BLOCK_BYTE {
-                ($fh.ptr_now, $fh.ptr_addr) = $fs.inode_get_next_ptr_with_addr($fh.ptr_addr, $fh.ptr_id);
+                ($fh.ptr_now, $fh.ptr_offset, $fh.ptr_addr) = $fs.inode_get_next_ptr_offset_addr($fh.ptr_offset, $fh.ptr_id);
                 if $fh.ptr_now == 0 {
                     $null_ptr
                 }
@@ -180,29 +181,36 @@ impl FS {
     pub fn inode_get(&self, inode_id: u16) -> INode {
         INode::from_raw(FS::inode_get_offset(inode_id) as usize, &self.raw)
     }
-    fn inode_get_logic_ptr_with_addr(&self, offset: usize, ptr: u16) -> (u16, usize) {
-        if ptr < BLOCK_OFFSET {
-            (ptr, offset)
-        }
-        else {
-            let offset = FS::inode_get_offset(ptr) + 2;
-            (splice_u16(&self.raw, offset), offset)
-        }
-    }
-    fn inode_get_next_ptr_with_addr(&self, offset: usize, ptr_id: u16) -> (u16, usize) {
+    fn inode_get_next_ptr_offset_addr(&self, offset: usize, ptr_id: u16) -> (u16, usize, usize) {
         if ptr_id < 4 {
             let addr = offset + (ptr_id + 3) as usize * 2;
-            (splice_u16(&self.raw, addr), addr)
+            (splice_u16(&self.raw, addr), offset, addr)
         }
         else if ptr_id == 4 { // 5: tail ptr of an inode
-            self.inode_get_logic_ptr_with_addr(offset, splice_u16(&self.raw, offset + 14))
+            let addr = offset + 14;
+            let ptr = splice_u16(&self.raw, addr);
+            if ptr < BLOCK_OFFSET {
+                let offset = FS::inode_get_offset(ptr);
+                (splice_u16(&self.raw, offset + 2), offset, offset + 2)
+            }
+            else {
+                (ptr, offset, addr)
+            }
         }
         else if ptr_id % 126 == 4 { // 130, 256, ...: tail ptr of a ptr node
-            self.inode_get_logic_ptr_with_addr(offset, splice_u16(&self.raw, offset + 254))
+            let addr = offset + 126;
+            let ptr = splice_u16(&self.raw, addr);
+            if ptr < BLOCK_OFFSET {
+                let offset = FS::inode_get_offset(ptr);
+                (splice_u16(&self.raw, offset + 2), offset, offset + 2)
+            }
+            else {
+                (ptr, offset, addr)
+            }
         }
         else {
-            let addr = offset + (ptr_id + 1) as usize * 2; // the 1st byte is type, the 2nd is reserved.
-            (splice_u16(&self.raw, addr), addr)
+            let addr = offset + (ptr_id % 126 - 5 + 2) as usize * 2; // the 1st byte is type, the 2nd is reserved.
+            (splice_u16(&self.raw, addr), offset, addr)
         }
     }
 
@@ -252,23 +260,14 @@ impl FS {
             }
         }
 
-        log("???".to_string());
-        log(FileHandle {
-            mode,
-            inode_id,
-            i_block: 0,
-            ptr_now: 0,
-            ptr_id: 0,
-            ptr_addr: 0,
-        }.to_string(true));
-
         Ok(FileHandle {
             mode,
             inode_id,
             i_block: 0,
             ptr_now: 0,
             ptr_id: 0,
-            ptr_addr: 0,
+            ptr_offset: 0,
+            ptr_addr: 0
         })
     }
 
@@ -278,8 +277,8 @@ impl FS {
             R => {
                 Err("fs: file handle is read-only")?;
             },
-            Wn | RWn | RW => {  },
-            An | RAn => {  }
+            Wn | RWn | RW => {},
+            An | RAn => {}
         }
 
         let mut i_buff = 0;
@@ -302,6 +301,7 @@ impl FS {
             }
         }
 
+        log(format!("{}", buff.len()));
         INodeHelper::from_id(fh.inode_id).set_size(self, buff.len() as u32);
 
         Ok(())

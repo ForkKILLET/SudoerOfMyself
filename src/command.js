@@ -1,6 +1,6 @@
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.test.ext0",
-	"human.version", "human.logo", "human.sl"
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.fsts.ext0",
+	"human.version", "human.logo", "human.sl", "human.fsts.ext0"
 )
 
 term.echo = async (s, { t, c } = {}) => {
@@ -18,7 +18,7 @@ term.echo = async (s, { t, c } = {}) => {
 window.cmds = {
 	version: async (...argv) => {
 		const opt = minimist(argv, {
-			stopEarly: true,
+			stopearly: true,
 			boolean: [ "dependence", "log" ],
 			alias: {
 				d: "dependence",
@@ -269,31 +269,72 @@ window.cmds = {
 
 	bag: () => {},
 
-	"test.ext0": str => {
-		const efs = new ext0.FS()
-		term.writeln("new FS ok")
+	"fsts.ext0": (...argv) => {
+		const opt = minimist(argv, {
+			stopearly: true,
+			boolean: [ "result-only", "show-buff", "expose" ],
+			alias: {
+				r: "result-only",
+				b: "show-buff",
+				e: "expose"
+			}
+		})
+		const test = opt._.join(" ")
 
-		const { inode_id, block_id } = efs.file_create()
-		term.writeln(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}`)
+		const preset = {
+			"1b1b": Array.from({ length: 257 }, (_, i) => ("000000" + i).slice(-7)).join("|") + "$",
+			"cjk": "你好！こんにちは！😀 ",
+			"ansi": `This is a ${ chalk.green("green") } word.`
+		}
 
-		const fh = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
-		term.writeln(`file_open 1 ok, fh: ${fh.to_string(true)}`)
+		const l = {
+			succ: s => term.writeln("=> " + chalk.greenBright("test succeeded. " + s)),
+			fail: s => term.writeln("=> " + chalk.red("test failed. " + s)),
+			info: s => opt.r || term.writeln("=> " + s),
+			mark: s => term.writeln("=> " + chalk.cyanBright(s))
+		}
+		
+		let str
+		if (test[0] === "@") {
+			if (str = preset[test.slice(1)]) l.mark(`test with preset ${ chalk.underline(test) }: "${ chalk.cyan(str) }"`)
+			else return l.fail("no such preset")
+		}
+		else str = test || "hello, ext0!"
 
-		efs.file_write(fh, new TextEncoder("utf-8").encode(str || "hello, ext0!"))
-		term.writeln("file_write ok")
+		try {
+			const efs = new ext0.FS()
+			l.info("new fs ok")
 
-		const inode = efs.inode_get(inode_id)
-		term.writeln(`inode_get: ${ inode.to_string().replaceAll("\n", "\r\n") }`)
+			if (opt.e) {
+				window.efs_test = efs
+				l.mark("test fs exported to `window.efs_test`")
+			}
 
-		const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
-		term.writeln(`file_open 2 ok, fh: ${fh2.to_string(true)}`)
+			const { inode_id, block_id } = efs.file_create()
+			l.info(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}`)
 
-		const buff = efs.file_read(fh2)
-		const str2 = new TextDecoder("utf-8").decode(buff)
-		term.writeln(`file_read ok, str: "${str2}", buff: [${buff}]`)
+			const fh = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
+			l.info(`file_open 1 ok, fh: ${ chalk.cyan(fh.to_string(true)) }`)
 
-		efs.file_close(fh);
-		efs.file_close(fh2);
-		term.writeln("file_close 1,2 ok")
+			efs.file_write(fh, new TextEncoder("utf-8").encode(str))
+			l.info("file_write ok")
+
+			const inode = efs.inode_get(inode_id)
+			l.info(`inode_get: ${ chalk.cyan(inode.to_string(true)) }`)
+
+			const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
+			l.info(`file_open 2 ok, fh: ${ chalk.cyan(fh.to_string(true)) }`)
+
+			const buff = efs.file_read(fh2)
+			const str2 = new TextDecoder("utf-8").decode(buff)
+			l.succ(`file_read ok, str: "${ chalk.cyan(str2) }"` + (opt.b ? `, buff: [${ chalk.cyan(buff) }]` : ""))
+
+			efs.file_close(fh);
+			efs.file_close(fh2);
+			l.info("file_close 1,2 ok")
+		}
+		catch (err) {
+			l.fail(`err: ${ chalk.yellow(err.stack?.replaceAll("\n", "\r\n") ?? err) }`)
+		}
 	}
 }
