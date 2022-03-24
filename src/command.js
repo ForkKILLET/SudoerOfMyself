@@ -1,5 +1,5 @@
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl",
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.test.ext0",
 	"human.version", "human.logo", "human.sl"
 )
 
@@ -267,5 +267,33 @@ window.cmds = {
 		await term.trigger("cat", d, f)
 	},
 
-	bag: () => {}
+	bag: () => {},
+
+	"test.ext0": str => {
+		const efs = new ext0.FS()
+		term.writeln("new FS ok")
+
+		const { inode_id, block_id } = efs.file_create()
+		term.writeln(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}`)
+
+		const fh = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
+		term.writeln(`file_open 1 ok, fh: ${fh.to_string(true)}`)
+
+		efs.file_write(fh, new TextEncoder("utf-8").encode(str || "hello, ext0!"))
+		term.writeln("file_write ok")
+
+		const inode = efs.inode_get(inode_id)
+		term.writeln(`inode_get: ${ inode.to_string().replaceAll("\n", "\r\n") }`)
+
+		const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
+		term.writeln(`file_open 2 ok, fh: ${fh2.to_string(true)}`)
+
+		const buff = efs.file_read(fh2)
+		const str2 = new TextDecoder("utf-8").decode(buff)
+		term.writeln(`file_read ok, str: "${str2}", buff: [${buff}]`)
+
+		efs.file_close(fh);
+		efs.file_close(fh2);
+		term.writeln("file_close 1,2 ok")
+	}
 }

@@ -50,6 +50,9 @@ window.fs = {
 	d: dir => (
 		dir.reduce((a, c) => a.children[c], sto.files)
 	),
+	same: (d1, d2) => (
+		d1.every((n, i) => n === d2[i])
+	),
 	cwd: () => (
 		fs.d(sto.cwd)
 	),

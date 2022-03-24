@@ -1,0 +1,15 @@
+{
+  "name": "ext0",
+  "collaborators": [
+    "ForkΨKILLET <fork_killet@qq.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "ext0_bg.wasm",
+    "ext0.js",
+    "ext0.d.ts"
+  ],
+  "module": "ext0.js",
+  "types": "ext0.d.ts",
+  "sideEffects": false
+}

@@ -68,6 +68,11 @@ const files = {
 					ty: "blk",
 					perm: 660,
 					owner: usrs.root
+				},
+				bd0: {
+					ty: "blk",
+					perm: 660,
+					owner: usrs.root
 				}
 			}
 		},
