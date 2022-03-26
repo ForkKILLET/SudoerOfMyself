@@ -26,15 +26,27 @@ import wasminit, {
 } from "./ext0/pkg"
 
 const __debug = location.hostname === "localhost"
-const initJobs = []
-initJobs.push(
+const initQ = []
+initQ.push(
 	wasminit(wasmbin).then(() => {
 		if (__debug) init_panic_hook()
 	})
 )
 
+const abortQ = []
+
+const _fetch = fetch
+fetch = async (url, opt = {}) => {
+	const ac = new AbortController()
+	abortQ.push(() => ac.abort())
+	const res = await _fetch(url, { ...opt, signal: ac.signal })
+	abortQ.pop()
+	return res
+}
+
 Object.assign(window, {
-	initJobs,
+	initQ,
+	abortQ,
 	Terminal,
 	WebLinksAddon,
 	chalk,

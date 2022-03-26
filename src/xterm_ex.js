@@ -1,7 +1,10 @@
 sto.env.PROMPT ??= chalk.green("'\\$ '")
 term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0])
+
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
+
+term.formatErr = err => chalk.yellow(err.message ?? err)
 
 sto.history ??= []
 term.historyLn = () => {
@@ -74,6 +77,13 @@ term.onData(key => {
 		case "\u0001": // Ctrl-A
 			term.write("\u001B[D".repeat(stringWidth(term.lnPre)))
 			term.cursorIndex = 0
+			break
+		case "\u0003": // Ctrl-C
+			const abort = abortQ.pop()
+			if (abort) {
+				abort()
+				term.write(chalk.whiteBright("^C"))
+			}
 			break
 		case "\u0005": // Ctrl-E
 			term.write("\u001B[C".repeat(stringWidth(term.lnPost)))

@@ -164,6 +164,6 @@ term.nextLevel = async () => {
 	return true
 }
 
-Promise.all(initJobs).then(() =>
+Promise.all(initQ).then(() =>
 	levels[sto.level]?.(term, cmds)
 )

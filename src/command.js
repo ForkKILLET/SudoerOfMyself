@@ -55,8 +55,7 @@ window.cmds = {
 				).join("\r\n"))
 			}
 			catch (err) {
-				console.log(err)
-				term.writeln("version: failed to access GitHub API.")
+				term.writeln(`version: failed to access GitHub API: ${ term.formatErr(err) }`)
 			}
 		}
 	},
@@ -372,7 +371,7 @@ window.cmds = {
 			}
 		}
 		catch (err) {
-			l.fail(`err: ${ chalk.yellow(err + "\r\n" + err?.stack?.replaceAll("\n", "\r\n") ?? "") }`)
+			l.fail(`err: ${ term.formatErr(err) }`)
 		}
 	}
 }
