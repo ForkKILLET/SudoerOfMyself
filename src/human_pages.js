@@ -53,9 +53,19 @@ window.humanPages = {
 	],
 	"fsts.ext0": [
 		"测试 ext0 文件系统",
-		"`fsts.ext0 [@preset | str ]`        测试预设 preset 或字符串 str",
-		"`fsts.ext0 --only-result | -r`      只显示测试结果",
-		"`fsts.ext0 --show-buff | -b`        以 Uint8Array 形式显示读出的缓冲区",
-		"`fsts.ext0 --expose | -e`           将临时文件系统对象暴露到 javascript 全局",
+		"`fsts.ext0 [@preset | str='Hello, ext0!' ]`  测试预设 preset 或字符串 str",
+		"`fsts.ext0 --result-only | -r`               只显示测试结果",
+		"`fsts.ext0 --result-size-only | -R`          只显示测试结果中字符串大小",
+		"`fsts.ext0 --buff | -b`                      以 Uint8Array 形式显示读出的缓冲区",
+		"`fsts.ext0 --expose | -e`                    将临时文件系统对象暴露到 javascript 全局",
+		"`fsts.ext0 --diff | -d`                      以 diff 显示测试结果",
+		"",
+		"预设：",
+		"`1b1b`: 1 block + 1 byte 用于测试 inode 中 block ptr 能否工作",
+		"`4b1b`: 4 block + 1 byte 用于测试 inode 中 block ptr 正好用完时能否正常工作",
+		"`5b1b`: 5 block + 1 byte 用于测试 inode 中 block ptr 用完后能否开辟 ptr node",
+		"`6b1b`: 6 block + 1 byte 用于测试 ptr node 中能否继续加入 block ptr",
+		"`cjk`:  测试中日韩字符和 emoji",
+		"`ansi`: 测试 ANSI 转义"
 	]
 }

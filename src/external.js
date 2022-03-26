@@ -16,6 +16,7 @@ import stringWidth from "string-width"
 import sleep from "simple-async-sleep"
 import minimist from "minimist"
 import { Base64 } from "js-base64"
+import * as Diff from "diff"
 import pack from "../package.json"
 
 import wasmbin from "./ext0/pkg/ext0_bg.wasm"
@@ -42,6 +43,7 @@ Object.assign(window, {
 	sleep,
 	minimist,
 	Base64,
+	Diff,
 	ext0: {
 		wasmbin, wasminit,
 		FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode

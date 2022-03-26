@@ -39,6 +39,7 @@ const BLOCK_OFFSET: u16             = 2 + INODE_BLOCK_NUM;
 const BMAP_OFFSET_BYTE: usize       = BLOCK_BYTE as usize * BMAP_OFFSET     as usize;
 const IMAP_OFFSET_BYTE: usize       = BLOCK_BYTE as usize * IMAP_OFFSET     as usize;
 const INODE_OFFSET_BYTE: usize      = BLOCK_BYTE as usize * INODE_OFFSET    as usize;
+#[allow(dead_code)]
 const BLOCK_OFFSET_BYTE: usize      = BLOCK_BYTE as usize * BLOCK_OFFSET    as usize;
 
 macro_rules! bitmap {
@@ -105,10 +106,45 @@ pub struct FileHandle {
     pub mode: FileHandleMode,
     pub inode_id: u16,
     pub ptr_now: u16,
-    pub ptr_offset: usize,
     pub ptr_addr: usize,
     pub ptr_id: u16,
-    pub i_block: u16
+    pub i_block: u16,
+    used_pnode: bool
+}
+
+impl FileHandle {
+    fn init_ptr(&mut self, fs: &FS) {
+        self.ptr_id = 1;
+        self.ptr_addr = FS::inode_get_offset(self.inode_id) + 6;
+        self.ptr_now = splice_u16(&fs.raw, self.ptr_addr);
+    }
+
+    fn next_ptr(&mut self, fs: &FS) -> bool { // returns true when tail
+        self.i_block = 0;
+        if self.ptr_id % 30 == 4 {
+            self.ptr_addr += 2;
+            self.ptr_now = splice_u16(&fs.raw, self.ptr_addr);
+            if self.ptr_now != 0 && self.ptr_now < INODE_NUM {
+                let offset = FS::inode_get_offset(self.ptr_now);
+                self.ptr_now = splice_u16(&fs.raw, offset + 2);
+                self.ptr_addr = offset + 2;
+                self.used_pnode = true;
+            }
+        }
+        else {
+            if self.ptr_id % 30 == 5 {
+                if ! self.used_pnode {
+                    return true
+                }
+                else {
+                    self.used_pnode = false
+                }
+            }
+            self.ptr_addr += 2;
+            self.ptr_now = splice_u16(&fs.raw, self.ptr_addr);
+        }
+        return false
+    }
 }
 
 #[wasm_bindgen]
@@ -120,25 +156,28 @@ pub struct FS {
 macro_rules! file_walk {
     (
         { $fs:expr, $fh:expr, $buff:expr, $i_buff:expr, $buff_size:expr },
+        when tail ptr => $tail_ptr:block,
         when null ptr => $null_ptr:block,
         when ok => $ok:block
     ) => {
         if $fh.ptr_id == 0 {
-            $fh.i_block = 0;
-            ($fh.ptr_now, $fh.ptr_offset, $fh.ptr_addr) = $fs.inode_get_next_ptr_offset_addr(FS::inode_get_offset($fh.inode_id), 0);
-            $fh.ptr_id = 1;
+            $fh.init_ptr($fs);
         }
 
         while $i_buff < $buff_size {
+            $ok
+            $i_buff += 1;
+            $fh.i_block += 1;
             if $fh.i_block == BLOCK_BYTE {
-                ($fh.ptr_now, $fh.ptr_offset, $fh.ptr_addr) = $fs.inode_get_next_ptr_offset_addr($fh.ptr_offset, $fh.ptr_id);
+                $fh.i_block = 0;
+                if $fh.next_ptr($fs) {
+                    $tail_ptr
+                }
                 if $fh.ptr_now == 0 {
                     $null_ptr
                 }
+                $fh.ptr_id += 1;
             }
-            $ok
-            $fh.i_block += 1;
-            $i_buff += 1;
         }
     }
 }
@@ -168,8 +207,8 @@ impl FS {
         self.raw.clone()
     }
 
-    fn inode_get_offset(inode_id: u16) -> usize {
-        INODE_OFFSET_BYTE + BLOCK_BYTE as usize * (inode_id / INODE_NUM_PER_BLOCK) as usize
+    pub fn inode_get_offset(inode_id: u16) -> usize {
+        INODE_OFFSET_BYTE + (inode_id * INODE_BYTE) as usize
     }
     fn inode_get_raw(&self, inode_id: u16) -> &[u8] {
         let start = FS::inode_get_offset(inode_id);
@@ -181,38 +220,6 @@ impl FS {
     pub fn inode_get(&self, inode_id: u16) -> INode {
         INode::from_raw(FS::inode_get_offset(inode_id) as usize, &self.raw)
     }
-    fn inode_get_next_ptr_offset_addr(&self, offset: usize, ptr_id: u16) -> (u16, usize, usize) {
-        if ptr_id < 4 {
-            let addr = offset + (ptr_id + 3) as usize * 2;
-            (splice_u16(&self.raw, addr), offset, addr)
-        }
-        else if ptr_id == 4 { // 5: tail ptr of an inode
-            let addr = offset + 14;
-            let ptr = splice_u16(&self.raw, addr);
-            if ptr < BLOCK_OFFSET {
-                let offset = FS::inode_get_offset(ptr);
-                (splice_u16(&self.raw, offset + 2), offset, offset + 2)
-            }
-            else {
-                (ptr, offset, addr)
-            }
-        }
-        else if ptr_id % 126 == 4 { // 130, 256, ...: tail ptr of a ptr node
-            let addr = offset + 126;
-            let ptr = splice_u16(&self.raw, addr);
-            if ptr < BLOCK_OFFSET {
-                let offset = FS::inode_get_offset(ptr);
-                (splice_u16(&self.raw, offset + 2), offset, offset + 2)
-            }
-            else {
-                (ptr, offset, addr)
-            }
-        }
-        else {
-            let addr = offset + (ptr_id % 126 - 5 + 2) as usize * 2; // the 1st byte is type, the 2nd is reserved.
-            (splice_u16(&self.raw, addr), offset, addr)
-        }
-    }
 
     pub fn file_create(&mut self, uid: u16, gid: u16) -> Result<FileCreateOk, String> {
         let inode_id = self.imap_find_unused().ok_or("fs: no space for new inode".to_string())?;
@@ -222,7 +229,7 @@ impl FS {
         let inode = INode {
             mode:   (FileType::Reg as u16) << 12 | 0o0644,
             size:   0,
-            ptr1:   block_id as u16,
+            ptr1:   INODE_NUM + block_id as u16,
             ptr2:   0,
             ptr3:   0,
             ptr4:   0,
@@ -266,8 +273,8 @@ impl FS {
             i_block: 0,
             ptr_now: 0,
             ptr_id: 0,
-            ptr_offset: 0,
-            ptr_addr: 0
+            ptr_addr: 0,
+            used_pnode: false
         })
     }
 
@@ -286,10 +293,23 @@ impl FS {
 
         file_walk! {
             { &self, fh, buff, i_buff, buff_size },
+            when tail ptr => {
+                if let Some(pnode_id) = self.imap_find_unused() {
+                    self.imap_set_used(pnode_id);
+                    let offset = FS::inode_get_offset(pnode_id);
+                    split_u16(&mut self.raw, fh.ptr_addr, pnode_id);
+                    split_u16(&mut self.raw, offset + 2, fh.ptr_now);
+                    fh.ptr_now = 0;
+                    fh.ptr_addr = offset + 4;
+                }
+                else {
+                    Err("fs: no space for new pnode")?
+                }
+            },
             when null ptr => {
                 if let Some(block_id) = self.bmap_find_unused() {
-                    fh.ptr_now = block_id;
                     self.bmap_set_used(block_id);
+                    fh.ptr_now = INODE_NUM + block_id;
                     split_u16(&mut self.raw, fh.ptr_addr, fh.ptr_now);
                 }
                 else {
@@ -297,11 +317,10 @@ impl FS {
                 }
             },
             when ok => {
-                self.raw[BLOCK_OFFSET_BYTE + (fh.ptr_now + fh.i_block) as usize] = buff[i_buff as usize];
+                self.raw[((fh.ptr_now - INODE_NUM + BLOCK_OFFSET) * BLOCK_BYTE + fh.i_block) as usize] = buff[i_buff as usize];
             }
         }
 
-        log(format!("{}", buff.len()));
         INodeHelper::from_id(fh.inode_id).set_size(self, buff.len() as u32);
 
         Ok(())
@@ -321,11 +340,12 @@ impl FS {
 
         file_walk! {
             { &self, fh, buff, i_buff, buff_size },
+            when tail ptr => {},
             when null ptr => {
-                Err("fs: got null ptr when reading file")?;
+                Err("fs: got null ptr when reading the file")?;
             },
             when ok => {
-                buff.push(self.raw[BLOCK_OFFSET_BYTE + (fh.ptr_now + fh.i_block) as usize]);
+                buff.push(self.raw[((fh.ptr_now - INODE_NUM + BLOCK_OFFSET)* BLOCK_BYTE + fh.i_block) as usize]);
             }
         }
 

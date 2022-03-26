@@ -272,69 +272,107 @@ window.cmds = {
 	"fsts.ext0": (...argv) => {
 		const opt = minimist(argv, {
 			stopearly: true,
-			boolean: [ "result-only", "show-buff", "expose" ],
+			boolean: [ "result-only", "result-size-only", "buff", "expose", "diff" ],
 			alias: {
 				r: "result-only",
-				b: "show-buff",
-				e: "expose"
+				R: "result-size-only",
+				b: "buff",
+				e: "expose",
+				d: "diff",
 			}
 		})
 		const test = opt._.join(" ")
 
+		const xb1b = b => Array.from({ length: b }, (_, k) =>
+			Array.from({ length: 31 },
+				(_, i) => ("000000" + i).slice(-7)
+			).join("|") + "|" + ("000" + k + "blk").slice(-7)
+		).join("#") + "#$"
+
 		const preset = {
-			"1b1b": Array.from({ length: 257 }, (_, i) => ("000000" + i).slice(-7)).join("|") + "$",
-			"cjk": "你好！こんにちは！😀 ",
+			"1b1b": xb1b(1),
+			"4b1b": xb1b(4),
+			"5b1b": xb1b(5),
+			"6b1b": xb1b(6),
+			"cjk": "你好！こんにちは！녕하세요！😀 ",
 			"ansi": `This is a ${ chalk.green("green") } word.`
 		}
 
 		const l = {
 			succ: s => term.writeln("=> " + chalk.greenBright("test succeeded. " + s)),
 			fail: s => term.writeln("=> " + chalk.red("test failed. " + s)),
-			info: s => opt.r || term.writeln("=> " + s),
+			info: s => opt.r || opt.R || term.writeln("=> " + s),
 			mark: s => term.writeln("=> " + chalk.cyanBright(s))
 		}
 		
-		let str
+		let str1
 		if (test[0] === "@") {
-			if (str = preset[test.slice(1)]) l.mark(`test with preset ${ chalk.underline(test) }: "${ chalk.cyan(str) }"`)
+			if (str1 = preset[test.slice(1)]) l.mark(
+				`test with preset ${ chalk.underline(test) }: <<<\r\n${ chalk.cyan(str1) }\r\n>>>`
+			)
 			else return l.fail("no such preset")
 		}
-		else str = test || "hello, ext0!"
+		else str1 = test || "hello, ext0!"
 
 		try {
 			const efs = new ext0.FS()
 			l.info("new fs ok")
 
 			if (opt.e) {
+				l.mark("test fs & fh will be exported to `window.efs_test`, `window.efs_fh{1,2}`")
 				window.efs_test = efs
-				l.mark("test fs exported to `window.efs_test`")
 			}
 
 			const { inode_id, block_id } = efs.file_create()
 			l.info(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}`)
 
-			const fh = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
-			l.info(`file_open 1 ok, fh: ${ chalk.cyan(fh.to_string(true)) }`)
+			const fh1 = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
+			if (opt.e) window.efs_fh1 = fh1
+			l.info(`file_open 1 ok, fh: ${ chalk.cyan(fh1.to_string(true)) }`)
 
-			efs.file_write(fh, new TextEncoder("utf-8").encode(str))
+			efs.file_write(fh1, new TextEncoder("utf-8").encode(str1))
 			l.info("file_write ok")
 
 			const inode = efs.inode_get(inode_id)
 			l.info(`inode_get: ${ chalk.cyan(inode.to_string(true)) }`)
 
 			const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
-			l.info(`file_open 2 ok, fh: ${ chalk.cyan(fh.to_string(true)) }`)
+			if (opt.e) window.efs_fh2 = fh2
+			l.info(`file_open 2 ok, fh: ${ chalk.cyan(fh1.to_string(true)) }`)
 
 			const buff = efs.file_read(fh2)
 			const str2 = new TextDecoder("utf-8").decode(buff)
-			l.succ(`file_read ok, str: "${ chalk.cyan(str2) }"` + (opt.b ? `, buff: [${ chalk.cyan(buff) }]` : ""))
+			const cmp = str1 === str2
 
-			efs.file_close(fh);
-			efs.file_close(fh2);
+			let cmp_res = opt.d
+				? "diff:\r\n" + Diff.diffChars(str1, str2).reduce((a, { added, removed, value }) => a + (
+					chalk[ added ? "green" : removed ? "red" : "white" ](value)
+				), "")
+				: str2
+			if (! opt.d) {
+				if (test.match(/^@\d+b1b$/))
+					cmp_res = cmp_res.replace(/[|#$]/g, ch => chalk.white(ch))
+				cmp_res = chalk.cyan(cmp_res)
+			}
+
+			l[cmp ? "succ" : "fail"](
+				`file_read ok, read ${cmp ? "==" : "!="} write, ` + 
+				(opt.R ? `size: ${buff.length}byte(s)` : `str: <<<\r\n${ cmp_res }\r\n>>>`) +
+				(opt.b ? `, buff: [${ chalk.cyan(buff) }]` : "")
+			)
+
+			if (! opt.e) {
+				efs.file_close(fh1);
+				efs.file_close(fh2);
+			}
 			l.info("file_close 1,2 ok")
+
+			if (! opt.e) {
+				efs.free()
+			}
 		}
 		catch (err) {
-			l.fail(`err: ${ chalk.yellow(err.stack?.replaceAll("\n", "\r\n") ?? err) }`)
+			l.fail(`err: ${ chalk.yellow(err + "\r\n" + err?.stack?.replaceAll("\n", "\r\n") ?? "") }`)
 		}
 	}
 }
