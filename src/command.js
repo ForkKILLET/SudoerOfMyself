@@ -278,6 +278,7 @@ window.cmds = {
 				b: "buff",
 				e: "expose",
 				d: "diff",
+				i: "with-inode"
 			}
 		})
 		const test = opt._.join(" ")
@@ -315,26 +316,37 @@ window.cmds = {
 		else str1 = test || "hello, ext0!"
 
 		try {
-			const efs = new ext0.FS()
-			l.info("new fs ok")
+			const efs = ext0.fs
 
 			if (opt.e) {
 				l.mark("test fs & fh will be exported to `window.efs_test`, `window.efs_fh{1,2}`")
 				window.efs_test = efs
 			}
 
-			const { inode_id, block_id } = efs.file_create()
-			l.info(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}`)
+			let inode_id, block_id, inode
+			console.log(opt)
+			if ("i" in opt) {
+				inode_id = opt.i
+				if (! efs.imap_get(inode_id)) return l.fail("no such inode")
+				inode = efs.inode_get()
+				block_id = inode.ptr1 - 1024;
+			}
+			else {
+				({ inode_id, block_id, inode } = efs.file_create())
+				l.info(`file_create ok, inode_id: ${inode_id}, block_id: ${block_id}, inode: ${ chalk.cyan(inode.to_string(true)) }`)
+			}
 
 			const fh1 = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
 			if (opt.e) window.efs_fh1 = fh1
 			l.info(`file_open 1 ok, fh: ${ chalk.cyan(fh1.to_string(true)) }`)
 
-			efs.file_write(fh1, new TextEncoder("utf-8").encode(str1))
-			l.info("file_write ok")
-
-			const inode = efs.inode_get(inode_id)
-			l.info(`inode_get: ${ chalk.cyan(inode.to_string(true)) }`)
+			if (inode?.size) {
+				l.info(`file_write jumpped, file with size: ${ inode.size }`)
+			}
+			else {
+				efs.file_write(fh1, new TextEncoder("utf-8").encode(str1))
+				l.info("file_write ok")
+			}
 
 			const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
 			if (opt.e) window.efs_fh2 = fh2
@@ -366,12 +378,9 @@ window.cmds = {
 				efs.file_close(fh2);
 			}
 			l.info("file_close 1,2 ok")
-
-			if (! opt.e) {
-				efs.free()
-			}
 		}
 		catch (err) {
+			console.log(err)
 			l.fail(`err: ${ term.formatErr(err) }`)
 		}
 	}

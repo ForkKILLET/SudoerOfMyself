@@ -203,7 +203,14 @@ impl FS {
         }
     }
 
-    pub fn get_raw(&self) -> Vec<u8> {
+    pub fn from_raw(raw: Vec<u8>) -> FS {
+        FS {
+            raw,
+            locks: vec! []
+        }
+    }
+
+    pub fn to_raw(&self) -> Vec<u8> {
         self.raw.clone()
     }
 
@@ -214,7 +221,7 @@ impl FS {
         let start = FS::inode_get_offset(inode_id);
         &self.raw[start..start + INODE_BYTE as usize]
     }
-    pub fn inode_get_raw_vec(&self, inode_id: u16) -> Vec<u8> {
+    pub fn inode_to_raw(&self, inode_id: u16) -> Vec<u8> {
         self.inode_get_raw(inode_id).into()
     }
     pub fn inode_get(&self, inode_id: u16) -> INode {

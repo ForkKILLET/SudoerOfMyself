@@ -32,9 +32,14 @@ export class FS {
 */
   constructor();
 /**
+* @param {Uint8Array} raw
+* @returns {FS}
+*/
+  static from_raw(raw: Uint8Array): FS;
+/**
 * @returns {Uint8Array}
 */
-  get_raw(): Uint8Array;
+  to_raw(): Uint8Array;
 /**
 * @param {number} inode_id
 * @returns {number}
@@ -44,7 +49,7 @@ export class FS {
 * @param {number} inode_id
 * @returns {Uint8Array}
 */
-  inode_get_raw_vec(inode_id: number): Uint8Array;
+  inode_to_raw(inode_id: number): Uint8Array;
 /**
 * @param {number} inode_id
 * @returns {INode}
@@ -227,9 +232,10 @@ export interface InitOutput {
   readonly __wbg_set_filehandle_i_block: (a: number, b: number) => void;
   readonly __wbg_fs_free: (a: number) => void;
   readonly fs_new: () => number;
-  readonly fs_get_raw: (a: number, b: number) => void;
+  readonly fs_from_raw: (a: number, b: number) => number;
+  readonly fs_to_raw: (a: number, b: number) => void;
   readonly fs_inode_get_offset: (a: number) => number;
-  readonly fs_inode_get_raw_vec: (a: number, b: number, c: number) => void;
+  readonly fs_inode_to_raw: (a: number, b: number, c: number) => void;
   readonly fs_inode_get: (a: number, b: number) => number;
   readonly fs_file_create: (a: number, b: number, c: number, d: number) => void;
   readonly fs_file_open: (a: number, b: number, c: number, d: number) => void;
@@ -271,9 +277,9 @@ export interface InitOutput {
   readonly __wbg_set_inode_ctime: (a: number, b: number) => void;
   readonly inode_to_string: (a: number, b: number, c: number) => void;
   readonly filehandle_to_string: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_malloc: (a: number) => number;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_free: (a: number, b: number) => void;
-  readonly __wbindgen_malloc: (a: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
 }
 

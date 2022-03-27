@@ -60,6 +60,15 @@ function _assertClass(instance, klass) {
     return instance.ptr;
 }
 
+let WASM_VECTOR_LEN = 0;
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1);
+    getUint8Memory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
 let cachegetInt32Memory0 = null;
 function getInt32Memory0() {
     if (cachegetInt32Memory0 === null || cachegetInt32Memory0.buffer !== wasm.memory.buffer) {
@@ -70,15 +79,6 @@ function getInt32Memory0() {
 
 function getArrayU8FromWasm0(ptr, len) {
     return getUint8Memory0().subarray(ptr / 1, ptr / 1 + len);
-}
-
-let WASM_VECTOR_LEN = 0;
-
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1);
-    getUint8Memory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
 }
 
 let cachedTextEncoder = new TextEncoder('utf-8');
@@ -168,12 +168,22 @@ export class FS {
         return FS.__wrap(ret);
     }
     /**
+    * @param {Uint8Array} raw
+    * @returns {FS}
+    */
+    static from_raw(raw) {
+        var ptr0 = passArray8ToWasm0(raw, wasm.__wbindgen_malloc);
+        var len0 = WASM_VECTOR_LEN;
+        var ret = wasm.fs_from_raw(ptr0, len0);
+        return FS.__wrap(ret);
+    }
+    /**
     * @returns {Uint8Array}
     */
-    get_raw() {
+    to_raw() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.fs_get_raw(retptr, this.ptr);
+            wasm.fs_to_raw(retptr, this.ptr);
             var r0 = getInt32Memory0()[retptr / 4 + 0];
             var r1 = getInt32Memory0()[retptr / 4 + 1];
             var v0 = getArrayU8FromWasm0(r0, r1).slice();
@@ -195,10 +205,10 @@ export class FS {
     * @param {number} inode_id
     * @returns {Uint8Array}
     */
-    inode_get_raw_vec(inode_id) {
+    inode_to_raw(inode_id) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.fs_inode_get_raw_vec(retptr, this.ptr, inode_id);
+            wasm.fs_inode_to_raw(retptr, this.ptr, inode_id);
             var r0 = getInt32Memory0()[retptr / 4 + 0];
             var r1 = getInt32Memory0()[retptr / 4 + 1];
             var v0 = getArrayU8FromWasm0(r0, r1).slice();

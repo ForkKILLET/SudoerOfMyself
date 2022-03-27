@@ -164,6 +164,7 @@ term.nextLevel = async () => {
 	return true
 }
 
-Promise.all(initQ).then(() =>
+(async () => {
+	for (const job of initQ) await job
 	levels[sto.level]?.(term, cmds)
-)
+})()
