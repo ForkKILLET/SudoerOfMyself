@@ -51,6 +51,13 @@ window.humanPages = {
 		"`sl --locomotive | -l`               （懂的都懂）",
 		"`sl --base64 | -b`                   与导入/导出操作连用，使用 base64 编码。"
 	],
+	blog: [
+		"Blog Viewer of OIer Space",
+		"`blog --posts | -p <blog>`           列出所有博客文章",
+		"`blog --category=<category> <blog>`  列出标签下的博文",
+		"`blog --categories | -c <blog>`      列出所有博客标签",
+		"`blog <blog> <post>`                 查看博客文章"
+	],
 	"fsts.ext0": [
 		"测试 ext0 文件系统（保存于 indexedDB）",
 		"`fsts.ext0 [@preset | str='Hello, ext0!' ]`  测试预设 preset 或字符串 str",
