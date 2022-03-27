@@ -1,6 +1,8 @@
+import chalk from "chalk"
+
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.fsts.ext0",
-	"human.version", "human.logo", "human.sl", "human.fsts.ext0"
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0",
+	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0"
 )
 
 term.echo = async (s, { t, c } = {}) => {
@@ -383,5 +385,47 @@ window.cmds = {
 			console.log(err)
 			l.fail(`err: ${ term.formatErr(err) }`)
 		}
+	},
+
+	blog: async (...argv) => {
+		const opt = minimist(argv, {
+			// stopEarly: true,
+			boolean: [ "categories", "posts" ],
+			string: [ "category" ],
+			alias: {
+				c: "categories",
+				p: "posts"
+			}
+		})
+		console.log(opt);
+		await axios.get(
+			`https://${opt._[0]}.oier.space/api/${
+				opt._.length > 1
+				? "post.json?slug=" + opt._[1]
+				: (
+					opt.c
+					? "categories.json"
+					: (opt.category ? "category.json?slug=" + opt.category : "posts.json")
+				)
+			}`
+		).then(res => {
+			if (opt._.length > 1) {
+				term.writeln(chalk.yellowBright(res.data.post.title) + chalk.greenBright(` [${res.data.post.create_time}]`))
+				term.writeln(chalk.white(res.data.post.content.replace("\n", "\r\n")))
+			}
+			else {
+				term.writeln(`${opt._[0]}'s ${opt.c ? "categories" : "posts" + (opt.category ? " in category " + chalk.blueBright(res.data.category.title) : "")}`)
+				for (const i of (
+					opt.c
+					? res.data.categories
+					: (opt.category ? res.data.category.posts : res.data.posts)
+				)) {
+					term.writeln("* " + chalk.yellowBright(i.title) + chalk.greenBright(` [${i.slug}]`))
+					term.writeln(`\t${chalk.cyanBright(i.intro)}`)
+				}
+			}
+		}).catch(error => {
+			term.writeln(error.message);
+		})
 	}
 }

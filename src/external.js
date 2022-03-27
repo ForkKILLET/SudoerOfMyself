@@ -17,6 +17,7 @@ import sleep from "simple-async-sleep"
 import minimist from "minimist"
 import { Base64 } from "js-base64"
 import * as Diff from "diff"
+import axios from "axios"
 import pack from "../package.json"
 
 import wasmbin from "./ext0/pkg/ext0_bg.wasm"
@@ -56,6 +57,7 @@ Object.assign(window, {
 	minimist,
 	Base64,
 	Diff,
+	axios,
 	ext0: {
 		wasmbin, wasminit,
 		FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode

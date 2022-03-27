@@ -21,6 +21,7 @@ module.exports = {
 		minimist: true,
 		Base64: true,
 		Diff: true,
+		axios: true,
 		ext0: true,
 		term: true,
 		perm: true,
