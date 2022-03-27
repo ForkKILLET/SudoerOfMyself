@@ -306,7 +306,8 @@ window.cmds = {
 		
 		let str1
 		if (test[0] === "@") {
-			if (str1 = preset[test.slice(1)]) l.mark(
+			str1 = preset[test.slice(1)]
+			if (str1) l.mark(
 				`test with preset ${ chalk.underline(test) }: <<<\r\n${ chalk.cyan(str1) }\r\n>>>`
 			)
 			else return l.fail("no such preset")

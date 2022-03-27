@@ -1,4 +1,5 @@
 module.exports = {
+	"root": true,
     "env": {
         "browser": true,
         "es2021": true
@@ -8,6 +9,30 @@ module.exports = {
         "ecmaVersion": 12,
         "sourceType": "module"
     },
+	"globals": {
+		initQ: true,
+		abortQ: true,
+		Terminal: true,
+		WebLinksAddon: true,
+		chalk: true,
+		stringWidth: true,
+		pack: true,
+		sleep: true,
+		minimist: true,
+		Base64: true,
+		Diff: true,
+		ext0: true,
+		term: true,
+		perm: true,
+		sto: true,
+		levels: true,
+		cmds: true,
+		fs: true,
+		af: true,
+		shell: true,
+		humanPages: true,
+		__build: true
+	},
     "rules": {
         "accessor-pairs": "error",
         "array-bracket-newline": "off",
@@ -130,6 +155,7 @@ module.exports = {
         "no-console": "off",
         "no-constructor-return": "off",
         "no-continue": "off",
+		"no-control-regex": "off",
         "no-div-regex": "error",
         "no-duplicate-imports": "error",
         "no-else-return": "off",
@@ -213,6 +239,7 @@ module.exports = {
         "no-unreachable-loop": "error",
         "no-unsafe-optional-chaining": "error",
         "no-unused-expressions": "off",
+		"no-unused-vars": "off",
         "no-use-before-define": "off",
         "no-useless-backreference": "error",
         "no-useless-call": "error",

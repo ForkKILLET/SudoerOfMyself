@@ -78,13 +78,14 @@ term.onData(key => {
 			term.write("\u001B[D".repeat(stringWidth(term.lnPre)))
 			term.cursorIndex = 0
 			break
-		case "\u0003": // Ctrl-C
+		case "\u0003": { // Ctrl-C
 			const abort = abortQ.pop()
 			if (abort) {
 				abort()
 				term.write(chalk.whiteBright("^C"))
 			}
 			break
+		}
 		case "\u0005": // Ctrl-E
 			term.write("\u001B[C".repeat(stringWidth(term.lnPost)))
 			term.cursorIndex = term.ln.length

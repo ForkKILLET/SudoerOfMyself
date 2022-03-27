@@ -1,4 +1,4 @@
-window.AF = {
+window.af = {
 	enable: () => sto.afOn = true,
 	disable: () => sto.afOn = false
 }
@@ -6,11 +6,11 @@ window.AF = {
 term.listen("echo", async (text, opt) => {
 	if (! perm.find("af")) return
 	if (text.toLowerCase() === "hi human") {
-		AF.enable()
+		af.enable()
 		text = "Hi User"
 	}
 	else if (text.toLowerCase() === "bye human") {
-		AF.disable()
+		af.disable()
 		text = "Bye User"
 	}
 	else if (! sto.afOn) return

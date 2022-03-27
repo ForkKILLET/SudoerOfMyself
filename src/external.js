@@ -36,7 +36,7 @@ initQ.push(
 const abortQ = []
 
 const _fetch = fetch
-fetch = async (url, opt = {}) => {
+window.fetch = async (url, opt = {}) => {
 	const ac = new AbortController()
 	abortQ.push(() => ac.abort())
 	const res = await _fetch(url, { ...opt, signal: ac.signal })

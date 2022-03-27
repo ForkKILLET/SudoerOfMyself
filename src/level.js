@@ -74,7 +74,7 @@ window.levels = [
 		], tone.human)
 		perm.enable("cmds.echo", "human.echo", "ff", "af")
 
-		AF.enable()
+		af.enable()
 		term.listenOnce("af", async time => {
 			if (time >= 4) return await term.nextLevel()
 		})
