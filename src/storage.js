@@ -6,4 +6,16 @@ sto.__save = () => {
 
 sto.env ??= {}
 
+initJobs.push(async () => new Promise((res, rej) => {
+	const openReq = indexedDB.open("SudoerOfMyself", 1)
+	openReq.onerror = rej
+	openReq.onsuccess = db => {
+		window.idb = db
+		res()
+	}
+	openReq.onupgradeneeded = evt => {
+		evt.target.result
+	}
+}))
+
 addEventListener("beforeunload", sto.__save)
