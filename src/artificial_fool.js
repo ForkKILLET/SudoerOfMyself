@@ -1,4 +1,4 @@
-window.af = {
+globalThis.af = {
 	enable: () => sto.afOn = true,
 	disable: () => sto.afOn = false
 }

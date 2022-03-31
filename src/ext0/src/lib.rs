@@ -352,7 +352,7 @@ impl FS {
                 Err("fs: got null ptr when reading the file")?;
             },
             when ok => {
-                buff.push(self.raw[((fh.ptr_now - INODE_NUM + BLOCK_OFFSET)* BLOCK_BYTE + fh.i_block) as usize]);
+                buff.push(self.raw[((fh.ptr_now - INODE_NUM + BLOCK_OFFSET) * BLOCK_BYTE + fh.i_block) as usize]);
             }
         }
 

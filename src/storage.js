@@ -1,4 +1,4 @@
-window.sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
+globalThis.sto = JSON.parse(localStorage.SudoerOfMyself ?? "{}")
 
 sto.__save = () => new Promise((res, rej) => {
 	localStorage.SudoerOfMyself = JSON.stringify(sto)
@@ -18,7 +18,7 @@ sto.__save = () => new Promise((res, rej) => {
 
 sto.env ??= {}
 
-initQ.push(new Promise((res, rej) => {
+initQ.push(() => new Promise((res, rej) => {
 	const openReq = indexedDB.open("SudoerOfMyself", 1)
 	openReq.onerror = rej
 	openReq.onupgradeneeded = evt => {

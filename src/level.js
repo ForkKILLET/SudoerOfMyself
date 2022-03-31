@@ -8,7 +8,7 @@ const tone = {
 	}
 }
 
-window.levels = [
+globalThis.levels = [
 	async () => {
 		term.writeln("Welcome to HumanOS. Type `help` for help.")
 		perm.enable("cmds.help")
@@ -165,6 +165,6 @@ term.nextLevel = async () => {
 }
 
 (async () => {
-	for (const job of initQ) await job
+	for (const job of initQ) await job()
 	levels[sto.level]?.(term, cmds)
 })()

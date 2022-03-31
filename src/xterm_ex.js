@@ -82,7 +82,7 @@ term.onData(key => {
 			const abort = abortQ.pop()
 			if (abort) {
 				abort()
-				term.write(chalk.whiteBright("^C"))
+				term.write(chalk.magenta("^C"))
 			}
 			break
 		}

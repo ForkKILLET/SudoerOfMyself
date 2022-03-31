@@ -4,7 +4,7 @@ const able = flag => (...names) => {
 	names.forEach(n => perms[n] = flag)
 	sto.perms = perms
 }
-window.perm = {
+globalThis.perm = {
 	enable: able(true),
 	disable: able(false),
 	find: cmdn => sto.perms[cmdn]

@@ -9,7 +9,7 @@ const grps = sto.grps ??= {
 	human: [ 1, [ 1 ] ]
 }
 
-window.fs = {
+globalThis.fs = {
 	ls: {
 		colors: {
 			dir: "cyan",

@@ -13,7 +13,7 @@ const alpha = /[a-zA-Z]/
 const ident = /[a-zA-Z_]/
 const identd = /[a-zA-Z_\d]/
 
-window.shell = ln => {
+globalThis.shell = ln => {
 	const f = {
 		esc: false,
 		cesc: false,

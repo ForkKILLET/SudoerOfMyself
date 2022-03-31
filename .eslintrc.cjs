@@ -1,15 +1,15 @@
 module.exports = {
-	"root": true,
-    "env": {
-        "browser": true,
-        "es2021": true
+	root: true,
+    env: {
+        browser: true,
+        es2021: true
     },
-    "extends": "eslint:recommended",
-    "parserOptions": {
-        "ecmaVersion": 12,
-        "sourceType": "module"
+    extends: "eslint:recommended",
+    parserOptions: {
+        ecmaVersion: 12,
+        sourceType: "module"
     },
-	"globals": {
+	globals: {
 		initQ: true,
 		abortQ: true,
 		Terminal: true,
@@ -32,9 +32,10 @@ module.exports = {
 		af: true,
 		shell: true,
 		humanPages: true,
+		Sandbox: true,
 		__build: true
 	},
-    "rules": {
+    rules: {
         "accessor-pairs": "error",
         "array-bracket-newline": "off",
         "array-bracket-spacing": "off",
@@ -163,7 +164,7 @@ module.exports = {
         "no-empty-function": "off",
         "no-eq-null": "error",
         "no-eval": "error",
-        "no-extend-native": "error",
+        "no-extend-native": "off",
         "no-extra-bind": "error",
         "no-extra-label": "error",
         "no-extra-parens": "off",
@@ -195,7 +196,7 @@ module.exports = {
         "no-negated-in-lhs": "error",
         "no-nested-ternary": "off",
         "no-new": "error",
-        "no-new-func": "error",
+        "no-new-func": "off",
         "no-new-object": "error",
         "no-new-require": "error",
         "no-new-wrappers": "error",

@@ -1,6 +1,6 @@
 {
   "name": "sudoer-of-myself-workspace",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -31,6 +31,7 @@
   "scripts": {
     "lint": "eslint --fix src",
     "lint:nofix": "eslint src",
-    "build": "node esbuild.cjs"
+    "build": "node esbuild.cjs",
+	"start": "http-server --cors -p 1637 -o docs/"
   }
 }

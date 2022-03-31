@@ -1,8 +1,6 @@
-import chalk from "chalk"
-
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0",
-	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0"
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox",
+	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0",
 )
 
 term.echo = async (s, { t, c } = {}) => {
@@ -17,7 +15,7 @@ term.echo = async (s, { t, c } = {}) => {
 	term.fastForward = false
 }
 
-window.cmds = {
+globalThis.cmds = {
 	version: async (...argv) => {
 		const opt = minimist(argv, {
 			stopearly: true,
@@ -38,9 +36,7 @@ window.cmds = {
 		)
 		if (opt.l) {
 			const api = `https://api.github.com/repos/${ pack.repository.url.match(/(\w+\/\w+)(.git)?$/)[1] }/commits`
-			console.log("Fetch: %s", api)
-			try {
-				const commits = await (await fetch(api)).json()
+			await axios.get(api).then(({ data: commits }) => {
 				term.writeln("git log from GitHub API:\r\n" + commits.map(({
 					sha,
 					commit: { author: { name, email, date }, message }
@@ -55,10 +51,9 @@ window.cmds = {
 						(i === commits.length - 1 ? "  " : chalk.red("| ")) + ln
 					).join("\r\n")
 				).join("\r\n"))
-			}
-			catch (err) {
+			}).catch(err => {
 				term.writeln(`version: failed to access GitHub API: ${ term.formatErr(err) }`)
-			}
+			})
 		}
 	},
 
@@ -263,7 +258,7 @@ window.cmds = {
 		if (! f) return
 
 		let s = f.cont ?? ""
-		if (opt.A) s = s.replace(/[\x00-\x1F]/g, ch => chalk.blueBright(`<${ ("0" + ch.charCodeAt().toString(16).toUpperCase()).slice(-2) }>`))
+		if (opt.A) s = s.replace(/[\x00-\x1F]/g, ch => chalk.magenta(`<${ ("0" + ch.charCodeAt().toString(16).toUpperCase()).slice(-2) }>`))
 		term.writeln(s)
 		await term.trigger("cat", d, f)
 	},
@@ -321,8 +316,8 @@ window.cmds = {
 			const efs = ext0.fs
 
 			if (opt.e) {
-				l.mark("test fs & fh will be exported to `window.efs_test`, `window.efs_fh{1,2}`")
-				window.efs_test = efs
+				l.mark("test fs & fh will be exported to `globalThis.efs_test`, `globalThis.efs_fh{1,2}`")
+				globalThis.efs_test = efs
 			}
 
 			let inode_id, block_id, inode
@@ -339,7 +334,7 @@ window.cmds = {
 			}
 
 			const fh1 = efs.file_open(inode_id, ext0.FileHandleMode.Wn)
-			if (opt.e) window.efs_fh1 = fh1
+			if (opt.e) globalThis.efs_fh1 = fh1
 			l.info(`file_open 1 ok, fh: ${ chalk.cyan(fh1.to_string(true)) }`)
 
 			if (inode?.size) {
@@ -351,7 +346,7 @@ window.cmds = {
 			}
 
 			const fh2 = efs.file_open(inode_id, ext0.FileHandleMode.R)
-			if (opt.e) window.efs_fh2 = fh2
+			if (opt.e) globalThis.efs_fh2 = fh2
 			l.info(`file_open 2 ok, fh: ${ chalk.cyan(fh1.to_string(true)) }`)
 
 			const buff = efs.file_read(fh2)
@@ -389,7 +384,6 @@ window.cmds = {
 
 	blog: async (...argv) => {
 		const opt = minimist(argv, {
-			// stopEarly: true,
 			boolean: [ "categories", "posts" ],
 			string: [ "category" ],
 			alias: {
@@ -397,13 +391,11 @@ window.cmds = {
 				p: "posts"
 			}
 		})
-		console.log(opt);
 		await axios.get(
 			`https://${opt._[0]}.oier.space/api/${
 				opt._.length > 1
 				? "post.json?slug=" + opt._[1]
-				: (
-					opt.c
+				: (opt.c
 					? "categories.json"
 					: (opt.category ? "category.json?slug=" + opt.category : "posts.json")
 				)
@@ -424,8 +416,14 @@ window.cmds = {
 					term.writeln(`\t${chalk.cyanBright(i.intro)}`)
 				}
 			}
-		}).catch(error => {
-			term.writeln(error.message);
+		}).catch(err => {
+			term.writeln(term.formatErr(err))
+		})
+	},
+
+	sandbox: async url => {
+		await axios.get(url).then(({ data: code }) => {
+			new Sandbox({ term }).run(code)
 		})
 	}
 }

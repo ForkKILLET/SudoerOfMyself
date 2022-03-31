@@ -1,4 +1,4 @@
-window.humanPages = {
+globalThis.humanPages = {
 	"": [
 		"您需要什么手册页？",
 		"例如，尝试使用 `human human`。"
