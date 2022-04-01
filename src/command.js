@@ -426,7 +426,7 @@ globalThis.cmds = {
 	},
 
 	bag: async (cmd, ...argv) => {
-		const source = "https://cdn.jsdelivr.net/gh/ForkKILLET/SOMOS/baglist.json"
+		const source = "https://cdn.jsdelivr.net/gh/ForkKILLET/SOMOS@main/baglist.json"
 		const purge_source = source.replace("cdn", "purge")
 
 		const version = 1
@@ -488,7 +488,7 @@ globalThis.cmds = {
 						)
 						term.write("Use which site? ")
 						url = [
-							`https://cdn.jsdelivr.net/gh/${src.repo}/${src.entry}`,
+							`https://cdn.jsdelivr.net/gh/${src.repo}@${src.branch ?? "main"}/${src.entry}`,
 							`https://raw.github.com/${src.repo}/${src.branch ?? "main"}/${src.entry}`,
 							`https://raw.連接.台灣/${src.repo}/${src.branch ?? "main"}/${src.entry}`
 						][+ await term.readln(true)]
