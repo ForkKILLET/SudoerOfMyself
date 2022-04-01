@@ -48,10 +48,8 @@ initQ.push(async () =>
 )
 
 Object.assign(globalThis, {
-	initQ,
-	abortQ,
-	Terminal,
-	WebLinksAddon,
+	initQ, abortQ,
+	Terminal, WebLinksAddon,
 	chalk,
 	stringWidth,
 	pack,

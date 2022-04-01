@@ -34,24 +34,26 @@ Object.defineProperties(term, {
 	}
 })
 
-term.readln = async () => {
-	term.writePrompt()
-	if (sto.history.at(-1) !== term.ln && term.ln?.trim()) {
-		// TODO move to <~/.config/history.conf>
-		if (term.ln.length < 64) {
-			sto.history.push(term.ln)
-		}
-		if (sto.history.length == 128) {
-			sto.history.shift()
-		}
-	}
+term.readln = async once => {
 	term.historyIndex = 0
 	term.cursorIndex = 0
 	term.ln = ""
+	if (once) term.enableRead = true
 	await new Promise(res => term.lnComplete = res)
+	if (once) term.enableRead = false
 	delete term.lnComplete
 	return term.ln
 }
+
+term.yesno = async dft => {
+	term.write(chalk.magentaBright(dft ? "(Y/n) " : "(y/N) "))
+	const ln = (await term.readln(true)).toLowerCase()
+	if (ln === "y" || ln === "yes") return true
+	if (ln === "n" || ln === "no") return false
+	if (ln === "") return dft
+	return null
+}
+
 term.onData(key => {
 	switch (key[0]) {
 		case "\u007F": // Backspace
@@ -79,10 +81,11 @@ term.onData(key => {
 			term.cursorIndex = 0
 			break
 		case "\u0003": { // Ctrl-C
+			if (! term.enableRead || ! term.isTTY) return
 			const abort = abortQ.pop()
 			if (abort) {
 				abort()
-				term.write(chalk.magenta("^C"))
+				term.write(chalk.magentaBright("^C"))
 			}
 			break
 		}
@@ -90,20 +93,20 @@ term.onData(key => {
 			term.write("\u001B[C".repeat(stringWidth(term.lnPost)))
 			term.cursorIndex = term.ln.length
 			break
-		case "\u001A":
+		case "\u001A": // Ctrl-Z
 			if (perm.find("ff")) term.fastForward = true
 			break
 		case "\u001B": // CSI
 			switch (key.slice(1)) {
 				case "[A":
-					if (! term.enableRead) return
+					if (! term.enableRead || ! term.isTTY) return
 					if (term.historyIndex < sto.history.length) {
 						term.historyIndex ++
 						term.historyLn()
 					}
 					break
 				case "[B":
-					if (! term.enableRead) return
+					if (! term.enableRead || ! term.isTTY) return
 					if (term.historyIndex > 0) {
 						term.historyIndex --
 						term.historyLn()

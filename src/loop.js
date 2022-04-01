@@ -1,11 +1,21 @@
-term.isReading = false
-term.startReading = async () => {
+term.isTTY = false
+term.startTTY = async () => {
 	term.enableRead = true
-	if (term.isReading) return
+	if (term.isTTY) return
 
-	term.isReading = true
+	term.isTTY = true
 	while (term.enableRead) {
+		term.writePrompt()
 		const ln = await term.readln()
+		if (sto.history.at(-1) !== term.ln && term.ln?.trim()) {
+			// TODO move to <~/.config/history.conf>
+			if (term.ln.length < 64) {
+				sto.history.push(term.ln)
+			}
+			if (sto.history.length == 128) {
+				sto.history.shift()
+			}
+		}
 		if (! ln.trim()) continue
 
 		const [ path, ...arg ] = shell(ln)
@@ -40,7 +50,7 @@ term.startReading = async () => {
 			term.writeln(`${path}: broken executable.`)
 		}
 		else {
-			term.enableRead = false
+			term.isTTY = term.enableRead = false
 			try {
 				await binOK.func(...arg)
 			}
@@ -48,12 +58,12 @@ term.startReading = async () => {
 				console.log(err)
 				term.writeln("core dumped: " + chalk.red(err.message ?? err))
 			}
-			term.enableRead = true
+			term.isTTY = term.enableRead = true
 			await term.trigger("command-run", path, arg)
 		}
 	}
-	term.isReading = false
+	term.isTTY = false
 }
-term.endReading = () => {
+term.endTTY = () => {
 	term.enableRead = false
 }

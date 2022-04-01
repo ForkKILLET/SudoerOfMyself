@@ -17,6 +17,7 @@ sto.__save = () => new Promise((res, rej) => {
 })
 
 sto.env ??= {}
+sto.bag ??= {}
 
 initQ.push(() => new Promise((res, rej) => {
 	const openReq = indexedDB.open("SudoerOfMyself", 1)

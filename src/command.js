@@ -1,6 +1,6 @@
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox",
-	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0",
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag",
+	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0", "human.bag"
 )
 
 term.echo = async (s, { t, c } = {}) => {
@@ -258,12 +258,10 @@ globalThis.cmds = {
 		if (! f) return
 
 		let s = f.cont ?? ""
-		if (opt.A) s = s.replace(/[\x00-\x1F]/g, ch => chalk.magenta(`<${ ("0" + ch.charCodeAt().toString(16).toUpperCase()).slice(-2) }>`))
+		if (opt.A) s = s.replace(/[\x00-\x1F]/g, ch => chalk.magentaBright(`<${ ("0" + ch.charCodeAt().toString(16).toUpperCase()).slice(-2) }>`))
 		term.writeln(s)
 		await term.trigger("cat", d, f)
 	},
-
-	bag: () => {},
 
 	"fsts.ext0": (...argv) => {
 		const opt = minimist(argv, {
@@ -425,5 +423,102 @@ globalThis.cmds = {
 		await axios.get(url).then(({ data: code }) => {
 			new Sandbox({ term }).run(code)
 		})
+	},
+
+	bag: async (cmd, ...argv) => {
+		const source = "https://cdn.jsdelivr.net/gh/ForkKILLET/SOMOS/baglist.json"
+		const purge_source = source.replace("cdn", "purge")
+
+		const version = 1
+		const cmds = {
+			sync: async (...argv) => {
+				const opt = minimist(argv, {
+					boolean: [ "purge" ],
+					alias: { p: "purge" }
+				})
+
+				if (opt.purge) {
+					term.writeln(`Purging...`)
+					await axios.get(purge_source).then(({ data: { id, status } }) => {
+						term.writeln(status + chalk.cyan("#" + id))
+					})
+				}
+
+				await axios.get(source)
+					.then(({ data }) => {
+						if (data.v !== version)
+							return term.writeln(`bag: version "${data.v}" is not supported.`)
+						sto.bag.list = data
+						term.writeln(`bag: sync'ed ${ Object.keys(data.list).length } bag(s).`)
+					}).catch(err => {
+						term.writeln(`bag: failed to sync with source: ${ term.formatErr(err) }`)
+					})
+			},
+			run: async (...argv) => {
+				const opt = minimist(argv, {})
+				const [ name ] = opt._
+
+				const info = sto.bag?.list?.list[name]
+				if (! info) return term.writeln(`Unknown bag "${ chalk.green(name) }".`)
+				const perms = info.perm
+				term.writeln(`Bag "${ chalk.green(name) }" requires following perms: ${
+					perms ? perms.map(p => chalk.yellow(p)).join(", ") : "none"
+				}.`)
+				term.write("Run? ")
+				if (! await term.yesno(false)) return
+
+				const srcs = info.src
+				term.writeln(
+					`Bag "${ chalk.green(name) }" has following sources:\r\n` +
+					srcs.map((s, id) => chalk.magentaBright(id) + ". " + (
+						s.ty === "gh" ? `GitHub: ${ chalk.green(s.repo) }` :
+						"Unknown"
+					)).join("\r\n")
+				)
+				term.write("Try which source? ")
+				const src = srcs[+ await term.readln(true)]
+				if (! src) return term.writeln("Nothing to do today UwU")
+
+				let url
+				switch (src.ty) {
+					case "gh": {
+						term.writeln([ "jsdelivr", "github.com raw", "連接.台灣 raw" ]
+							.map((g, id) => chalk.magentaBright(id) + ". " + g)
+							.join("\r\n")
+						)
+						term.write("Use which site? ")
+						url = [
+							`https://cdn.jsdelivr.net/gh/${src.repo}/${src.entry}`,
+							`https://raw.github.com/${src.repo}/${src.branch ?? "main"}/${src.entry}`,
+							`https://raw.連接.台灣/${src.repo}/${src.branch ?? "main"}/${src.entry}`
+						][+ await term.readln(true)]
+						if (! url) return term.writeln("Nothing to do today UwU")
+						break
+					}
+					default:
+						return `Unknown source type ${src.ty}.`
+				}
+
+				term.writeln(`Getting source code from "${ chalk.green(url) }"...`)
+				await axios.get(url).then(async ({ data }) => {
+					const env = {}
+					perms.forEach(p => env[p] = globalThis[p])
+					try {
+						const sb = new Sandbox(env)
+						sb.run(data)
+						const f = src.main === "default" ? env.exports : env.exports[src.main]
+						await f()
+						term.writeln("")
+					}
+					catch (err) {
+						term.writeln(`Bag throws: ${ term.formatErr(err) }`)
+					}
+				}).catch(err => term.writeln(`Failed to get source code: ${ term.formatErr(err) }`))
+			}
+		}
+		if (! cmds[cmd]) {
+			return term.writeln(`Unknown command "${cmd}".`)
+		}
+		await cmds[cmd](...argv)
 	}
 }
