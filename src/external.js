@@ -11,6 +11,7 @@ globalThis.term = new Terminal({
 })
 term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
+term.focus()
 
 import chalk from "chalk"
 chalk.level = 3 // true colors
