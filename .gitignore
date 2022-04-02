@@ -3,5 +3,5 @@ yarn-error.log
 
 **/tests/
 .idea/
-src/ext0/target/
+src/ext0_file_system/target/
 SOMOS/

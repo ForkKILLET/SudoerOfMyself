@@ -7,7 +7,7 @@ globalThis.term = new Terminal({
 	rows: 30,
 	cols: 97,
 	cursorBlink: true,
-	fontFamily: "'Fira Code', consolas, monospace"
+	fontFamily: `"Fira Code", consolas, monospace`
 })
 term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
@@ -34,11 +34,11 @@ const axios = new Proxy(_axios, {
 
 import pack from "../package.json"
 
-import wasmbin from "./ext0/pkg/ext0_bg.wasm"
+import wasmbin from "./ext0_file_system/pkg/ext0_bg.wasm"
 import wasminit, {
 	init_panic_hook,
 	FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode,
-} from "./ext0/pkg"
+} from "./ext0_file_system/pkg"
 
 const __debug = location.hostname === "localhost"
 initQ.push(async () =>
