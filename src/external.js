@@ -33,6 +33,8 @@ const axios = new Proxy(_axios, {
 	}
 })
 
+import cmpSemVer from "semver-compare"
+
 import pack from "../package.json"
 
 import wasmbin from "./ext0_file_system/pkg/ext0_bg.wasm"
@@ -59,6 +61,7 @@ Object.assign(globalThis, {
 	Base64,
 	Diff,
 	axios,
+	cmpSemVer,
 	ext0: {
 		wasmbin, wasminit,
 		FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode

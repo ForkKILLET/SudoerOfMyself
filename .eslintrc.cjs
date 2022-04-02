@@ -22,6 +22,7 @@ module.exports = {
 		Base64: true,
 		Diff: true,
 		axios: true,
+		cmpSemVer: true,
 		ext0: true,
 		term: true,
 		perm: true,

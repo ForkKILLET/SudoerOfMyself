@@ -52,3 +52,11 @@ initQ.push(() => new Promise((res, rej) => {
 }))
 
 addEventListener("beforeunload", sto.__save)
+
+initQ.push(async () => {
+	if (! sto.version || cmpSemVer(pack.version, sto.version) > 0) {
+		sto.version = pack.version
+		term.writeln(`SudoerOfMyself updated:`)
+		await cmds.version()
+	}
+})

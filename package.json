@@ -1,6 +1,6 @@
 {
   "name": "sudoer-of-myself-workspace",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "type": "module",
   "repository": {
     "type": "git",
@@ -19,6 +19,7 @@
     "esbuild": "^0.14.20",
     "js-base64": "^3.7.2",
     "minimist": "^1.2.5",
+    "semver-compare": "^1.0.0",
     "simple-async-sleep": "^1.0.3",
     "string-width": "^5.1.0",
     "xterm": "^4.17.0",
@@ -32,6 +33,6 @@
     "lint": "eslint --fix src",
     "lint:nofix": "eslint src",
     "build": "node esbuild.cjs",
-	"start": "http-server --cors -p 1637 -o docs/"
+    "start": "http-server --cors -p 1637 -o docs/"
   }
 }
