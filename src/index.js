@@ -11,3 +11,7 @@ import "./artificial_fool.js"
 import "./file_builtin.js"
 import "./loop.js"
 import "./level.js"
+
+(async () => {
+	while (initQ.length) await initQ.shift()()
+})()
