@@ -1,9 +1,9 @@
-term.isTTY = false
-term.startTTY = async () => {
+term.isLoop = false
+term.startLoop = async () => {
 	term.enableRead = true
-	if (term.isTTY) return
+	if (term.isLoop) return
 
-	term.isTTY = true
+	term.isLoop = true
 	while (term.enableRead) {
 		term.writePrompt()
 		const ln = await term.readln()
@@ -50,7 +50,8 @@ term.startTTY = async () => {
 			term.writeln(`${path}: broken executable.`)
 		}
 		else {
-			term.isTTY = term.enableRead = false
+			term.enableRead = false
+			term.isCommand = true
 			try {
 				await binOK.func(...arg)
 			}
@@ -58,12 +59,13 @@ term.startTTY = async () => {
 				console.log(err)
 				term.writeln("core dumped: " + chalk.red(err.message ?? err))
 			}
-			term.isTTY = term.enableRead = true
+			term.isCommand = false
+			term.enableRead = true
 			await term.trigger("command-run", path, arg)
 		}
 	}
-	term.isTTY = false
+	term.isLoop = false
 }
-term.endTTY = () => {
+term.endLoop = () => {
 	term.enableRead = false
 }

@@ -15,30 +15,30 @@ globalThis.levels = [
 		term.listenOnce("command-run", async n => {
 			if (n === "help") return await term.nextLevel()
 		})
-		term.startTTY()
+		term.startLoop()
 	},
 	async () => {
-		term.endTTY()
+		term.endLoop()
 		await term.echo(chalk.bold("HELPLESS？怎么回事？？") + "今天也不是……为什么终端上有我的想法？！", tone.me.vfast)
 		await term.echo([
 			"虽然好像实时记录思维流也是 HumanOS 提供的服务，但应该是额外付费的才对……",
 			"啊啊，看着自己的想法委实很奇怪呢",
 			"不知道 `help` 命令什么情况，登出上网查查好了"
 		])
-		term.startTTY()
+		term.startLoop()
 
 		let t = 0
 		term.listenOnce("command-not-found", async n => {
 			if ([ "logout", "exit" ].includes(n)) return await term.nextLevel()
 			else if (++ t === 4) {
-				term.endTTY()
+				term.endLoop()
 				await term.echo("……登出命令，好像有一个是 `logout` 吧，怎么连这也忘了")
-				term.startTTY()
+				term.startLoop()
 			}
 		})
 	},
 	async () => {
-		term.endTTY()
+		term.endLoop()
 		await term.echo(chalk.bold("不能登出？！"), tone.me.vfast)
 		await term.echo([
 			"User，你好像遇到了麻烦？",
@@ -59,10 +59,10 @@ globalThis.levels = [
 		term.listenOnce("command-run", async (n, [ page ]) => {
 			if (n === "human" && page === "human") return await term.nextLevel()
 		})
-		term.startTTY()
+		term.startLoop()
 	},
 	async () => {
-		term.endTTY()
+		term.endLoop()
 		await term.echo([
 			"User，很高兴我们能用命令行的方式交流了",
 			"这很酷！当然，作为 `human`，我也能像人类那样谈话",
@@ -79,10 +79,10 @@ globalThis.levels = [
 			if (time >= 4) return await term.nextLevel()
 		})
 
-		term.startTTY()
+		term.startLoop()
 	},
 	async () => {
-		term.endTTY()
+		term.endLoop()
 
 		await term.echo([
 			"我是不是很聪明呢！！",
@@ -112,10 +112,10 @@ globalThis.levels = [
 			if (fs.same(d, [ "home", "Memories", "before_human.mem" ])) return await term.nextLevel()
 		})
 
-		term.startTTY()
+		term.startLoop()
 	},
 	async () => {
-		term.endTTY()
+		term.endLoop()
 		await term.echo([
 			"看来这是我进入 HumanOS 前一段时间的记忆，被系统扫描出来了。",
 			"最后一条的时候已经成功安装 HumanOS，所以有系统时间，其他是我印象中的，只记得大概。似乎很合理。",
@@ -154,7 +154,7 @@ globalThis.levels = [
 		await term.nextLevel()
 	},
 	async () => {
-		term.startTTY()
+		term.startLoop()
 	}
 ]
 

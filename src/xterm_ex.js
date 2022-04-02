@@ -81,7 +81,7 @@ term.onData(key => {
 			term.cursorIndex = 0
 			break
 		case "\u0003": { // Ctrl-C
-			if (! term.enableRead || ! term.isTTY) return
+			if (! term.isCommand) return
 			const abort = abortQ.pop()
 			if (abort) {
 				abort()
@@ -99,14 +99,14 @@ term.onData(key => {
 		case "\u001B": // CSI
 			switch (key.slice(1)) {
 				case "[A":
-					if (! term.enableRead || ! term.isTTY) return
+					if (! term.enableRead || ! term.isLoop) return
 					if (term.historyIndex < sto.history.length) {
 						term.historyIndex ++
 						term.historyLn()
 					}
 					break
 				case "[B":
-					if (! term.enableRead || ! term.isTTY) return
+					if (! term.enableRead || ! term.isLoop) return
 					if (term.historyIndex > 0) {
 						term.historyIndex --
 						term.historyLn()
