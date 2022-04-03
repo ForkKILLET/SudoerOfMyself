@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh">
+<head>
+	<title>Sandbox test | Sudoer Of Myself</title>
+	<link rel="shortcut icon" type="image/x-icon" href="./favicon.ico" />
+</head>
+<body>
+	<p>// javascript here</p>
+	<textarea id="code"></textarea>
+	<br />
+	<p>// allowed globals here, separated with ","</p>
+	<textarea id="env" value="console, Date"></textarea>
+	<br />
+	<p>// console.log tees here</p>
+	<pre id="console"></pre>
+	<script src="https://cdn.jsdelivr.net/gh/ForkKILLET/SudoerOfMyself@main/src/sandbox.js"></script>
+	<button>Run in sandbox</button>
+	<script type="text/javascript">
+		const $ = x => document.querySelector(x)
+		const $code = $("#code")
+		const $env = $("#env")
+		const $console = $("#console")
+		const _console_log = console.log
+		console.log = (...p) => {
+			_console_log(...p)
+			$console.innerHTML += p.join("") + "\n"
+		}
+		$("button").addEventListener("click", () => {
+			const sb = new Sandbox(Object.fromEntries(
+				$env.value.split(/ *, */).map(k => [ k, window[k] ])
+			))
+			$console.innerHTML = ""
+			try {
+				sb.run($code.value)
+			}
+			catch (err) {
+				console.log(err)
+				$console.innerHTML = `<span style="color: red;">${err}</span>`
+			}
+		})
+	</script>
+</body>
+</html>
