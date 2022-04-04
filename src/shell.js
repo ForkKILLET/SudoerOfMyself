@@ -19,7 +19,8 @@ globalThis.shell = ln => {
 		cesc: false,
 		sq: false,
 		dq: false,
-		var: false
+		var: false,
+		wh: true,
 	}
 	const e = () => {
 		now += String.fromCharCode(parseInt(enow, f.cesc === "o" ? 8 : 16))
@@ -29,7 +30,7 @@ globalThis.shell = ln => {
 
 	const tokens = []
 	let now = "", enow = "", vnow = ""
-	for (const ch of ln + "\0") {
+	for (const ch of ln.trimStart() + "\0") {
 		if (f.esc) {
 			if (ch === "x" || ch === "u" || ch === "0") f.cesc = ch === "0" ? "o" : ch
 			else now += escs[ch] ?? ch
@@ -37,10 +38,13 @@ globalThis.shell = ln => {
 			continue
 		}
 		if (white.test(ch) && ! f.sq && ! f.dq) {
+			if (f.wh) continue
 			tokens.push(now)
 			now = ""
+			f.wh = true
 			continue
 		}
+		else f.wh = false
 		if (f.cesc) {
 			if (enow.length < (f.cesc === "u" ? 4 : 2)) {
 				if ((f.cesc === "o" ? d8 : d16).test(ch)) {
@@ -76,5 +80,5 @@ globalThis.shell = ln => {
 	}
 	if (now) tokens.push(now.slice(0, -1))
 
-	return tokens
+	return [ tokens, f ]
 }

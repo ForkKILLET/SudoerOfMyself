@@ -18,7 +18,7 @@ term.startLoop = async () => {
 		}
 		if (! ln.trim()) continue
 
-		const [ path, ...arg ] = shell(ln)
+		const [[ path, ...arg ]] = shell(ln)
 
 		const bins = [ fs.relpath(path, { err: false, ty: "exe" }) ]
 		if (! path.includes("/")) bins.unshift(fs.relpath("/bin/" + path, { err: false, ty: "exe" })) // TODO $PATH

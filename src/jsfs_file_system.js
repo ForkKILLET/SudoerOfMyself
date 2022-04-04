@@ -44,6 +44,11 @@ globalThis.fs = {
 			nor: "file",
 			pip: "FIFO",
 			soc: "socket"
+		},
+		raw: ({ n, ty }, c, F) => {
+			if (c) n = chalk[fs.ls.colors[ty]]?.(n) ?? n
+			if (F) n += fs.ls.indicators[ty] ?? "?"
+			return n
 		}
 	},
 	

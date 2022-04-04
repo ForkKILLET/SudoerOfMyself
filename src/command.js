@@ -213,26 +213,24 @@ globalThis.cmds = {
 
 			const [, f] = fs.relpath(path, { err: true, perm: "r" })
 			if (! f) return
-			if (f.ty === "dir") {
-				let childrenR = Object.values(f.children)
-				if (! opt.a) childrenR = childrenR.filter(({ n }) => n[0] !== ".")
-				const out = childrenR.map(({ ty, n, perm, owner }) => {
-					if (opt.c) n = chalk[fs.ls.colors[ty]]?.(n) ?? n
-					if (opt.F) n += fs.ls.indicators[ty] ?? "?"
-					if (opt.l) {
-						const p = [ ..."rwx".repeat(3) ], o = parseInt(perm, 8)
-						if (typeof perm === "number") {
-							for (let b = 0; b <= 8; b ++) if (! (o & 1 << (8 - b))) p[b] = "-"
-						}
-						else p.forEach((_, i) => p[i] = "?")
-						const [ un, uid ] = usrsE.find(([, un]) => un === owner) ?? [ "?", -1 ]
-						n = (fs.ls.shortTypes[ty] ?? "?") + p.join("") + " " + un + " ".repeat(unWidthMax - unWidths[uid] + 1) + n
+			
+			let files = f.ty === "dir" ? Object.values(f.children) : [ f ]
+			if (! opt.a) files = files.filter(({ n }) => n[0] !== ".")
+
+			const out = files.map(({ n, ty, perm, owner }) => {
+				n = fs.ls.raw({ n, ty }, opt.c, opt.F)
+				if (opt.l) {
+					const p = [ ..."rwx".repeat(3) ], o = parseInt(perm, 8)
+					if (typeof perm === "number") {
+						for (let b = 0; b <= 8; b ++) if (! (o & 1 << (8 - b))) p[b] = "-"
 					}
-					return n
-				}).join(opt.l ? "\r\n" : "  ")
-				term.write(out + (out ? "\r\n" : ""))
-			}
-			else term.writeln(f.n)
+					else p.forEach((_, i) => p[i] = "?")
+					const [ un, uid ] = usrsE.find(([, un]) => un === owner) ?? [ "?", -1 ]
+					n = (fs.ls.shortTypes[ty] ?? "?") + p.join("") + " " + un + " ".repeat(unWidthMax - unWidths[uid] + 1) + n
+				}
+				return n
+			}).join(opt.l ? "\r\n" : "  ")
+			term.write(out + (out ? "\r\n" : ""))
 
 			if (opt._.length > 1) term.writeln("")
 		}

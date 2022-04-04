@@ -278,7 +278,7 @@ module.exports = {
         "prefer-exponentiation-operator": "error",
         "prefer-named-capture-group": "off",
         "prefer-numeric-literals": "error",
-        "prefer-object-spread": "error",
+        "prefer-object-spread": "off",
         "prefer-promise-reject-errors": "error",
         "prefer-reflect": "off",
         "prefer-regex-literals": "error",

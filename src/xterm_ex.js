@@ -1,5 +1,8 @@
+term.writeA = s => new Promise(res => term.write(s ?? "", res))
+term.writlnA = s => new Promise(res => term.writeln(s ?? "", res))
+
 sto.env.PROMPT ??= chalk.green("'\\$ '")
-term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0])
+term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0][0])
 
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
@@ -34,6 +37,18 @@ Object.defineProperties(term, {
 	}
 })
 
+// TODO It's too dirty but I can't understand xterm's `moveCursor`
+term.getCursor = () => [ term._core.buffer.x, term._core.buffer.y ]
+term.setCursor = async ([ x, y ]) => {
+	const [ x_, y_ ] = term.getCursor()
+	const dx = x_ - x
+	const dy = y_ - y
+	await term.writeA(
+		("\u001B[" + (dx > 0 ? "D" : "C")).repeat(Math.abs(dx)) +
+		("\u001B[" + (dy > 0 ? "A" : "B")).repeat(Math.abs(dy))
+	)
+}
+
 term.readln = async once => {
 	term.historyIndex = 0
 	term.cursorIndex = 0
@@ -54,10 +69,20 @@ term.yesno = async dft => {
 	return null
 }
 
-term.onData(key => {
+term.onData(async key => {
 	switch (key[0]) {
 		case "\u007F": // Backspace
 			if (! term.enableRead) return
+			if (term.completion) {
+				if (term.completion.i >= 0) {
+					await term.clearCompletions()
+					return
+				}
+				else {
+					term.oldCompletion = term.completion
+					delete term.completion
+				}
+			}
 			if (term.cursorIndex > 0) {
 				const i = stringWidth(term.lnCur)
 				term.delete(i, true, false)
@@ -69,30 +94,51 @@ term.onData(key => {
 			break
 		case "\r": // Enter
 			if (! term.enableRead) return
+			if (term.completion) await term.clearCompletions()
+
 			term.writeln("")
 			term.lnComplete()
+			break
+		case "\t": // Tab
+			if (! term.enableRead || term.isCommand) return
+			await term.tabComplete()
 			break
 		case "\u000C": // Ctrl-L
 			if (! term.enableRead) return
 			term.clear()
+			if (term.completion) {
+				term.completion.cursor = term.getCursor()
+			}
 			break
 		case "\u0001": // Ctrl-A
+			if (term.completion?.i >= 0) {
+				return
+			}
 			term.write("\u001B[D".repeat(stringWidth(term.lnPre)))
 			term.cursorIndex = 0
+			term.clearCompletions()
+			break
+		case "\u0005": // Ctrl-E
+			if (term.completion?.i >= 0) {
+				return
+			}
+			term.write("\u001B[C".repeat(stringWidth(term.lnPost)))
+			term.cursorIndex = term.ln.length
 			break
 		case "\u0003": { // Ctrl-C
+			if (term.completion?.i >= 0) {
+				await term.clearCompletions()
+				return
+			}
 			if (! term.isCommand) return
 			const abort = abortQ.pop()
 			if (abort) {
 				abort()
 				term.write(chalk.magentaBright("^C"))
 			}
+			term.clearCompletions()
 			break
 		}
-		case "\u0005": // Ctrl-E
-			term.write("\u001B[C".repeat(stringWidth(term.lnPost)))
-			term.cursorIndex = term.ln.length
-			break
 		case "\u001A": // Ctrl-Z
 			if (perm.find("ff")) term.fastForward = true
 			break
@@ -114,6 +160,9 @@ term.onData(key => {
 					break
 				case "[D":
 					if (! term.enableRead) return
+					if (term.completion?.i >= 0) {
+						return
+					}
 					if (term.cursorIndex > 0) {
 						term.write(key.repeat(stringWidth(term.lnCur)))
 						term.cursorIndex --
@@ -121,6 +170,9 @@ term.onData(key => {
 					break
 				case "[C":
 					if (! term.enableRead) return
+					if (term.completion?.i >= 0) {
+						return
+					}
 					if (term.cursorIndex < term.ln.length) {
 						term.write(key.repeat(stringWidth(term.lnCurN)))
 						term.cursorIndex ++
@@ -131,7 +183,9 @@ term.onData(key => {
 					break
 				default:
 					console.log("Key ESC: %s", key.slice(1))
+					return
 			}
+			term.clearCompletions()
 			break
 		default:
 			if (key < "\u0020" || (key > "\u007E" && key < "\u00A0")) {
@@ -139,8 +193,13 @@ term.onData(key => {
 				return
 			}
 			if (! term.enableRead) return
-			term.write(key + term.lnPost)
-			term.write("\b".repeat(stringWidth(term.lnPost)))
+
+			if (term.completion) {
+				term.oldCompletion = term.completion
+				delete term.completion
+			}
+			await term.writeA(key + term.lnPost)
+			await term.writeA("\b".repeat(stringWidth(term.lnPost)))
 			term.ln = term.lnPre + key + term.lnPost
 			term.cursorIndex += key.length
 	}
