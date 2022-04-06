@@ -75,5 +75,13 @@ globalThis.humanPages = {
 		"`6b1b`: 6 block + 1 byte 用于测试 ptr node 中能否继续加入 block ptr",
 		"`cjk`:  测试中日韩字符和 emoji",
 		"`ansi`: 测试 ANSI 转义"
+	],
+	bag: [
+		"专用于 HumanOS 的软件`包`管理器",
+		"`bag sync`                      同步软件包列表",
+		"          `--purge | -p`        更新 jsDelivr 远端缓存",
+		"`bag add`                       添加软件包",
+		"`bag remove`                    删除软件包",
+		"`bag list`                      显示软件包列表"
 	]
 }

@@ -445,14 +445,15 @@ globalThis.cmds = {
 				await axios.get(source)
 					.then(({ data }) => {
 						if (data.v !== version)
-							return term.writeln(`bag: version "${data.v}" is not supported.`)
+							return term.writeln(`Not supported bag list version "${data.v}".`)
 						sto.bag.list = data
-						term.writeln(`bag: sync'ed ${ Object.keys(data.list).length } bag(s).`)
+						term.writeln(`Sync'ed ${ Object.keys(data.list).length } bag(s).`)
 					}).catch(err => {
-						term.writeln(`bag: failed to sync with source: ${ term.formatErr(err) }`)
+						term.writeln(`Failed to sync with source: ${ term.formatErr(err) }`)
 					})
 			},
-			run: async (...argv) => {
+
+			add: async (...argv) => {
 				const opt = minimist(argv, {})
 				const [ name ] = opt._
 
@@ -499,19 +500,49 @@ globalThis.cmds = {
 
 				term.writeln(`Getting source code from "${ chalk.green(url) }"...`)
 				await axios.get(url).then(async ({ data }) => {
-					const env = {}
-					perms.forEach(p => env[p] = globalThis[p])
-					try {
-						const sb = new Sandbox(env)
-						sb.run(data)
-						const f = src.main === "default" ? env.exports : env.exports[src.main]
-						await f()
-						term.writeln("")
+					const d_apps = fs.d([ "home", "Apps" ])
+					let f_app = d_apps.children[name]
+					if (f_app) {
+						term.writeln("Reinstalling...")
 					}
-					catch (err) {
-						term.writeln(`Bag throws: ${ term.formatErr(err) }`)
+					else {
+						const fileName = name.bin ?? name
+						f_app = d_apps.children[fileName] = {
+							n: fileName,
+							ty: "exe",
+							perm: 755,
+							owner: sto.usrs.myself,
+							bag: name,
+							cont: data
+						}
 					}
+					info.date = new Date().toJSON()
+					term.writeln(`Added "${ chalk.green(name) }".`)
 				}).catch(err => term.writeln(`Failed to get source code: ${ term.formatErr(err) }`))
+			},
+
+			remove: (...argv) => {
+				if (! sto.bag.list) return term.writeln("Missing bag list.")
+
+				const opt = minimist(argv, {})
+				const [ name ] = opt._
+
+				const info = sto.bag.list.list[name]
+				if (! info) return term.writeln(`Unknown bag "${ chalk.green(name) }".`)
+				delete fs.d([ "home", "Apps" ]).children[info.bin ?? name]
+				term.writeln(`Removed "${ chalk.green(name) }".`)
+			},
+
+			list: () => {
+				if (! sto.bag.list) return term.writeln("Missing bag list.")
+
+				term.writeln(`Listing ${ Object.keys(sto.bag.list.list).length } bag(s):`)
+				term.writeln(
+					Object.entries(sto.bag.list.list).map(([ name, { date } ]) => (
+						chalk.green(name) + " " +
+						(date ? `(installed on ${ chalk.cyan(date) })` : "")
+					)).join("\r\n")
+				)
 			}
 		}
 		if (! cmds[cmd]) {

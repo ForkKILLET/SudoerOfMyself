@@ -29,7 +29,7 @@ let wasmPlugin = {
 require("esbuild").build({
 	entryPoints: [ "src/index.js" ],
 	bundle: true,
-	minify: true,
+	// minify: true,
 	format: "iife",
 	sourcemap: true,
 	plugins: [

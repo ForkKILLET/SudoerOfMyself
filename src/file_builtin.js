@@ -46,6 +46,12 @@ const files = {
 						}
 					}
 				},
+				Apps: {
+					ty: "dir",
+					perm: 750,
+					owner: usrs.myself,
+					children: {},
+				},
 				".history": {
 					ty: "nor",
 					perm: 750,
@@ -94,8 +100,11 @@ const merge = (ds, db) => {
 		return
 	}
 	for (const [ n, fb ] of Object.entries(db.children)) {
-		let fs = ds[n]
-		if (fs === undefined) { // Note: `null` for deleted builtin files.
+		let fs = ds.children[n]
+		if (
+			fs === undefined ||
+			fs && Object.values(fb).some(attr => typeof attr === "function")
+		) { // Note: `null` for deleted builtin files.
 			ds.children[n] = fs = {}
 			for (const attr in fb) {
 				if (typeof fb[attr] === "function") Object.defineProperty(fs, attr, {
@@ -115,4 +124,5 @@ const merge = (ds, db) => {
 if (typeof sto.files?.children !== "object" || Array.isArray(sto.files.children)) {
 	sto.files = { ty: "dir", children: {} }
 }
+
 merge(sto.files, files)

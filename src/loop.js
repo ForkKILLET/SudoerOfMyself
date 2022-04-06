@@ -20,8 +20,14 @@ term.startLoop = async () => {
 
 		const [[ path, ...arg ]] = shell(ln)
 
-		const bins = [ fs.relpath(path, { err: false, ty: "exe" }) ]
-		if (! path.includes("/")) bins.unshift(fs.relpath("/bin/" + path, { err: false, ty: "exe" })) // TODO $PATH
+		const bins = [
+			fs.relpath(path, { err: false, ty: "exe" })
+		]
+		// TODO $PATH
+		if (! path.includes("/")) {
+			bins.unshift(fs.relpath("/bin/" + path, { err: false, ty: "exe" }))
+			bins.unshift(fs.relpath("/home/Apps/" + path, { err: false, ty: "exe" }))
+		}
 
 		let noPerm = false, binOK
 		for (const [, bin] of bins) {
@@ -45,24 +51,47 @@ term.startLoop = async () => {
 				term.writeln(`${path}: command not found.`)
 				await term.trigger("command-not-found", path)
 			}
+			continue
 		}
 		else if (! binOK.func) {
-			term.writeln(`${path}: broken executable.`)
-		}
-		else {
-			term.enableRead = false
-			term.isCommand = true
-			try {
-				await binOK.func(...arg)
+			if (binOK.bag) {
+				term.writeln(`Building sandbox...`)
+				const env = {}
+				const info = sto.bag.list.list[binOK.bag]
+				if (! info) {
+					term.writeln(`Missing metadata of bag "${ chalk.green(binOK.bag) }".`)
+					continue
+				}
+				try {
+					info.perm.forEach(p => env[p] = globalThis[p])
+					const sb = new Sandbox(env)
+					sb.run(binOK.cont)
+					const f = info.main === "default" ? env.exports : env.exports[info.main]
+					binOK.func = f
+				}
+				catch (err) {
+					term.writeln(`Failed to build bag: ${ term.formatErr(err) }`)
+					continue
+				}
 			}
-			catch (err) {
-				console.log(err)
-				term.writeln("core dumped: " + chalk.red(err.message ?? err))
+			if (! binOK.func) {
+				term.writeln(`${path}: broken executable.`)
+				continue
 			}
-			term.isCommand = false
-			term.enableRead = true
-			await term.trigger("command-run", path, arg)
 		}
+
+		term.enableRead = false
+		term.isCommand = true
+		try {
+			await binOK.func(...arg)
+		}
+		catch (err) {
+			console.log(err)
+			term.writeln("core dumped: " + chalk.red(err.message ?? err))
+		}
+		term.isCommand = false
+		term.enableRead = true
+		await term.trigger("command-run", path, arg)
 	}
 	term.isLoop = false
 }
