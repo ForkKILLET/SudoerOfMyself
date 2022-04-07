@@ -63,6 +63,7 @@ globalThis.levels = [
 	},
 	async () => {
 		term.endLoop()
+		perm.enable("cmds.echo", "human.echo", "ff", "af")
 		await term.echo([
 			"User，很高兴我们能用命令行的方式交流了",
 			"这很酷！当然，作为 `human`，我也能像人类那样谈话",
@@ -72,7 +73,6 @@ globalThis.levels = [
 			"……不太好意思地说，我现在和人工智障没什么两样",
 			"但你还是可以通过 `echo` 和我对话的！"
 		], tone.human)
-		perm.enable("cmds.echo", "human.echo", "ff", "af")
 
 		af.enable()
 		term.listenOnce("af", async time => {

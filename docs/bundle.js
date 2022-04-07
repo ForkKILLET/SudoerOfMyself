@@ -10615,7 +10615,7 @@
 
   // package.json
   var name = "sudoer-of-myself-workspace";
-  var version2 = "0.15.0";
+  var version2 = "0.15.1";
   var type = "module";
   var repository = {
     type: "git",
@@ -12094,7 +12094,7 @@
           l: "log"
         }
       });
-      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/6 17:50:53")},\r
+      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/7 09:50:39")},\r
 at ${chalk.green(pack.repository.url)}` + (opt.d ? `, with:\r
 ${["dependencies", "devDependencies"].map((g) => chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([n, v]) => n + " " + chalk.cyan(v)).join("\r\n")).join("\r\n")}` : ""));
       if (opt.l) {
@@ -12415,30 +12415,6 @@ ${cmp_res}\r
         l.fail(`err: ${term.formatErr(err)}`);
       }
     },
-    blog: async (...argv) => {
-      const opt = minimist(argv, {
-        boolean: ["categories", "posts"],
-        string: ["category"],
-        alias: {
-          c: "categories",
-          p: "posts"
-        }
-      });
-      await axios.get(`https://${opt._[0]}.oier.space/api/${opt._.length > 1 ? "post.json?slug=" + opt._[1] : opt.c ? "categories.json" : opt.category ? "category.json?slug=" + opt.category : "posts.json"}`).then((res) => {
-        if (opt._.length > 1) {
-          term.writeln(chalk.yellowBright(res.data.post.title) + chalk.greenBright(` [${res.data.post.create_time}]`));
-          term.writeln(chalk.white(res.data.post.content.replace("\n", "\r\n")));
-        } else {
-          term.writeln(`${opt._[0]}'s ${opt.c ? "categories" : "posts" + (opt.category ? " in category " + chalk.blueBright(res.data.category.title) : "")}`);
-          for (const i of opt.c ? res.data.categories : opt.category ? res.data.category.posts : res.data.posts) {
-            term.writeln("* " + chalk.yellowBright(i.title) + chalk.greenBright(` [${i.slug}]`));
-            term.writeln(`	${chalk.cyanBright(i.intro)}`);
-          }
-        }
-      }).catch((err) => {
-        term.writeln(term.formatErr(err));
-      });
-    },
     sandbox: async (url) => {
       await axios.get(url).then(({ data: code }) => {
         new Sandbox({ term }).run(code);
@@ -12483,7 +12459,7 @@ ${cmp_res}\r
             return;
           const srcs = info.src;
           term.writeln(`Bag "${chalk.green(name2)}" has following sources:\r
-` + srcs.map((s, id) => chalk.magentaBright(id) + ". " + (s.ty === "gh" ? `GitHub: ${chalk.green(s.repo)}` : "Unknown")).join("\r\n"));
+` + srcs.map((s, id) => chalk.magentaBright(id) + ". " + (s.ty === "gh" ? `GitHub: ${chalk.green(s.repo)}` : s.ty === "url" ? `URL: ${chalk.green(s.url)}` : "Unknown")).join("\r\n"));
           term.write("Try which source? ");
           const src = srcs[+await term.readln(true)];
           if (!src)
@@ -12502,6 +12478,9 @@ ${cmp_res}\r
                 return term.writeln("Nothing to do today UwU");
               break;
             }
+            case "url":
+              url = src.url;
+              break;
             default:
               return `Unknown source type ${src.ty}.`;
           }
@@ -12860,6 +12839,7 @@ ${cmp_res}\r
     },
     async () => {
       term.endLoop();
+      perm.enable("cmds.echo", "human.echo", "ff", "af");
       await term.echo([
         "User\uFF0C\u5F88\u9AD8\u5174\u6211\u4EEC\u80FD\u7528\u547D\u4EE4\u884C\u7684\u65B9\u5F0F\u4EA4\u6D41\u4E86",
         "\u8FD9\u5F88\u9177\uFF01\u5F53\u7136\uFF0C\u4F5C\u4E3A `human`\uFF0C\u6211\u4E5F\u80FD\u50CF\u4EBA\u7C7B\u90A3\u6837\u8C08\u8BDD",
@@ -12869,7 +12849,6 @@ ${cmp_res}\r
         "\u2026\u2026\u4E0D\u592A\u597D\u610F\u601D\u5730\u8BF4\uFF0C\u6211\u73B0\u5728\u548C\u4EBA\u5DE5\u667A\u969C\u6CA1\u4EC0\u4E48\u4E24\u6837",
         "\u4F46\u4F60\u8FD8\u662F\u53EF\u4EE5\u901A\u8FC7 `echo` \u548C\u6211\u5BF9\u8BDD\u7684\uFF01"
       ], tone.human);
-      perm.enable("cmds.echo", "human.echo", "ff", "af");
       af.enable();
       term.listenOnce("af", async (time) => {
         if (time >= 4)
