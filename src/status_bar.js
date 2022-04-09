@@ -1,14 +1,18 @@
 term.statusBar = {
 	status: [ [ "device", __mobile ? "📱 " : "💻 " ] ],
-	lastX: 0,
+	lastWidth: 0,
 	draw: async () => {
+		const sb = term.statusBar
 		const cursor = term.getCursor()
-		term.setCursor([ 0, term.options.rows - 1 ])
-		await term.writeA(
-			chalk.whiteBright.bgMagenta(" " + term.statusBar.status.map(s => s[1]).join("") + " ")
-		)
-		const dx = term.statusBar.lastX - (term.statusBar.lastX = term.getCursor()[0])
-		if (dx > 0) await term.writeA(" ".repeat(dx))
+		const s = " " + sb.status.map(s => s[1]).join("") + " "
+
+		const width = stringWidth(s)
+		term.setCursor([ term.getOption("cols") - sb.lastWidth, 0 ])
+		await term.writeA(" ".repeat(sb.lastWidth))
+		term.setCursor([ term.getOption("cols") - width, 0 ])
+		sb.lastWidth = width
+
+		await term.writeA(chalk.whiteBright.bgMagenta(s))
 		term.setCursor(cursor)
 	},
 	add: async (name, display) => {

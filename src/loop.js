@@ -20,7 +20,7 @@ term.startLoop = async () => {
 		}
 		if (! ln.trim()) continue
 
-		const [[ path, ...arg ]] = shell(ln)
+		const [ path, ...arg ] = shell(ln)[0]
 
 		const bins = [
 			fs.relpath(path, { err: false, ty: "exe" })

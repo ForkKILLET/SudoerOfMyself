@@ -17,7 +17,10 @@ term.focus()
 import chalk from "chalk"
 chalk.level = 3 // true colors
 
-import stringWidth from "string-width"
+const stringWidth = s => [...s].reduce((a, c) => (
+	a + term._core._inputHandler._unicodeService.wcwidth(c.charCodeAt())
+), 0)
+
 import sleep from "simple-async-sleep"
 import minimist from "minimist"
 import { Base64 } from "js-base64"
@@ -44,8 +47,8 @@ import wasminit, {
 	FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode,
 } from "./ext0_file_system/pkg"
 
-globalThis.__debug = location.hostname === "localhost"
-globalThis.__mobile = ("ontouchstart" in document.documentElement && /mobi/i.test(navigator.userAgent))
+const __debug = location.hostname === "localhost"
+const __mobile = ("ontouchstart" in document.documentElement && /mobi/i.test(navigator.userAgent))
 
 initQ.push(async () =>
 	await wasminit(wasmbin).then(() => {
@@ -68,5 +71,6 @@ Object.assign(globalThis, {
 	ext0: {
 		wasmbin, wasminit,
 		FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode
-	}
+	},
+	__debug, __mobile
 })
