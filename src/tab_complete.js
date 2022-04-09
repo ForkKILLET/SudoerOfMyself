@@ -99,7 +99,7 @@ term.tabComplete = async () => {
 	const ln = term.ln
 	const coms = term.getCompletions(ln)
 
-	if (! coms?.length) return // TODO bell
+	if (! coms?.length) return term._core.bell()
 
 	let commonPrefix
 	if (coms.length === 1) commonPrefix = coms[0].raw

@@ -10461,7 +10461,7 @@
 
   // package.json
   var name = "sudoer-of-myself-workspace";
-  var version2 = "0.17.0";
+  var version2 = "0.17.1";
   var type = "module";
   var repository = {
     type: "git",
@@ -11432,7 +11432,7 @@
     const ln = term.ln;
     const coms = term.getCompletions(ln);
     if (!coms?.length)
-      return;
+      return term._core.bell();
     let commonPrefix;
     if (coms.length === 1)
       commonPrefix = coms[0].raw;
@@ -11672,7 +11672,7 @@
   });
   term.onBell(async () => {
     await term.statusBar.add("bell", term.getOption("bellStyle") === "sound" ? "\u{1F514} " : "\u{1F515} ");
-    await sleep(700);
+    await sleep(1e3);
     await term.statusBar.remove("bell");
   });
   term.listeners = {};
@@ -11727,7 +11727,7 @@
     add: async (name2, display) => {
       const sb = term.statusBar;
       if (!sb.status.find((s) => s[0] === name2))
-        sb.status.push([name2, display]);
+        sb.status.unshift([name2, display]);
       await sb.draw();
     },
     remove: async (name2) => {
@@ -11990,7 +11990,7 @@
           l: "log"
         }
       });
-      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/9 16:25:58")},\r
+      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/9 17:43:14")},\r
 at ${chalk.green(pack.repository.url)}` + (opt.d ? `, with:\r
 ${["dependencies", "devDependencies"].map((g) => chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([n, v]) => n + " " + chalk.cyan(v)).join("\r\n")).join("\r\n")}` : ""));
       if (opt.l) {

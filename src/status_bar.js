@@ -17,7 +17,7 @@ term.statusBar = {
 	},
 	add: async (name, display) => {
 		const sb = term.statusBar
-		if (! sb.status.find(s => s[0] === name)) sb.status.push([ name, display ])
+		if (! sb.status.find(s => s[0] === name)) sb.status.unshift([ name, display ])
 		await sb.draw()
 	},
 	remove: async name => {

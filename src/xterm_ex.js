@@ -41,7 +41,6 @@ Object.defineProperties(term, {
 	}
 })
 
-// TODO It's too dirty but I can't understand xterm's `moveCursor`
 term.getCursor = () => [ term._core.buffer.x, term._core.buffer.y ]
 term.setCursor = ([ x, y ]) => {
 	term._core._inputHandler._setCursor(x, y)
@@ -213,7 +212,7 @@ term.onData(async key => {
 
 term.onBell(async () => {
 	await term.statusBar.add("bell", term.getOption("bellStyle") === "sound" ? "🔔 " : "🔕 ")
-	await sleep(700)
+	await sleep(1000)
 	await term.statusBar.remove("bell")
 })
 
