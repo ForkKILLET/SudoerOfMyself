@@ -1,5 +1,5 @@
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag", "cmds.opt",
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.bag", "cmds.opt",
 	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0", "human.bag"
 )
 
@@ -385,12 +385,6 @@ globalThis.cmds = {
 			console.log(err)
 			l.fail(`err: ${ term.formatErr(err) }`)
 		}
-	},
-
-	sandbox: async url => {
-		await axios.get(url).then(({ data: code }) => {
-			new Sandbox({ term }).run(code)
-		})
 	},
 
 	bag: async (cmd, ...argv) => {
