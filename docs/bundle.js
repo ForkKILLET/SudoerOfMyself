@@ -10461,7 +10461,7 @@
 
   // package.json
   var name = "sudoer-of-myself-workspace";
-  var version2 = "0.16.1";
+  var version2 = "0.17.0";
   var type = "module";
   var repository = {
     type: "git",
@@ -11520,6 +11520,12 @@
       return dft;
     return null;
   };
+  term.tryFastForward = async () => {
+    if (perm.find("ff")) {
+      term.fastForward = true;
+      await term.statusBar.add("ff", "\u23F0 ");
+    }
+  };
   term.onData(async (key) => {
     switch (key[0]) {
       case "\x7F":
@@ -11596,10 +11602,7 @@
         break;
       }
       case "":
-        if (perm.find("ff")) {
-          term.fastForward = true;
-          await term.statusBar.add("ff", "\u23F0 ");
-        }
+        await term.tryFastForward();
         break;
       case "\x1B":
         switch (key.slice(1)) {
@@ -11690,6 +11693,20 @@
     for (const fn of term.listeners[evt] ?? [])
       await fn(...arg);
   };
+
+  // src/mobile.js
+  if (__mobile) {
+    let tid = null;
+    term.element.addEventListener("touchstart", () => {
+      tid = setTimeout(async () => {
+        tid = null;
+        await term.tryFastForward();
+      }, 700);
+    });
+    const cancel = () => clearTimeout(tid);
+    term.element.addEventListener("touchend", cancel);
+    term.element.addEventListener("touchmove", cancel);
+  }
 
   // src/status_bar.js
   term.statusBar = {
@@ -11973,7 +11990,7 @@
           l: "log"
         }
       });
-      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/9 15:41:08")},\r
+      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/9 16:25:58")},\r
 at ${chalk.green(pack.repository.url)}` + (opt.d ? `, with:\r
 ${["dependencies", "devDependencies"].map((g) => chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([n, v]) => n + " " + chalk.cyan(v)).join("\r\n")).join("\r\n")}` : ""));
       if (opt.l) {

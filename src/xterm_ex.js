@@ -67,6 +67,13 @@ term.yesno = async dft => {
 	return null
 }
 
+term.tryFastForward = async () => {
+	if (perm.find("ff")) {
+		term.fastForward = true
+		await term.statusBar.add("ff", "⏰ ")
+	}
+}
+
 term.onData(async key => {
 	switch (key[0]) {
 		case "\u007F": // Backspace
@@ -139,10 +146,7 @@ term.onData(async key => {
 			break
 		}
 		case "\u001A": // Ctrl-Z
-			if (perm.find("ff")) {
-				term.fastForward = true
-				await term.statusBar.add("ff", "⏰ ")
-			}
+			await term.tryFastForward()
 			break
 		case "\u001B": // CSI
 			switch (key.slice(1)) {

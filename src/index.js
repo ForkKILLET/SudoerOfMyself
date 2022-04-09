@@ -4,6 +4,7 @@ import "./sandbox.js"
 import "./shell.js"
 import "./tab_complete.js"
 import "./xterm_ex.js"
+import "./mobile.js";
 import "./status_bar.js"
 import "./perm.js"
 import "./jsfs_file_system.js"
