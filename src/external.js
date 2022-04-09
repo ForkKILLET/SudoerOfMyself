@@ -7,7 +7,8 @@ globalThis.term = new Terminal({
 	rows: 30,
 	cols: 97,
 	cursorBlink: true,
-	fontFamily: `"Fira Code", consolas, monospace`
+	fontFamily: `"Fira Code", consolas, monospace`,
+	bellStyle: "none"
 })
 term.loadAddon(new WebLinksAddon)
 term.open(document.getElementById("xterm"))
@@ -43,7 +44,9 @@ import wasminit, {
 	FS, FileType, FileHandle, FileHandleMode, FileCreateOk, INode,
 } from "./ext0_file_system/pkg"
 
-const __debug = location.hostname === "localhost"
+globalThis.__debug = location.hostname === "localhost"
+globalThis.__mobile = ("ontouchstart" in document.documentElement && /mobi/i.test(navigator.userAgent))
+
 initQ.push(async () =>
 	await wasminit(wasmbin).then(() => {
 		if (__debug) init_panic_hook()

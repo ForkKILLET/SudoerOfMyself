@@ -1,8 +1,12 @@
+for (const k in sto.env) {
+	if (k.startsWith("XTERM_")) term.setOption(k.slice(6), sto.env[k])
+}
+
 term.writeA = s => new Promise(res => term.write(s ?? "", res))
 term.writlnA = s => new Promise(res => term.writeln(s ?? "", res))
 
 sto.env.PROMPT ??= chalk.green("'\\$ '")
-term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0][0])
+term.writePrompt = async () => await term.writeA(shell(sto.env.PROMPT)[0][0])
 
 term.delete = (c, go, back) =>
 	term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""))
@@ -39,14 +43,8 @@ Object.defineProperties(term, {
 
 // TODO It's too dirty but I can't understand xterm's `moveCursor`
 term.getCursor = () => [ term._core.buffer.x, term._core.buffer.y ]
-term.setCursor = async ([ x, y ]) => {
-	const [ x_, y_ ] = term.getCursor()
-	const dx = x_ - x
-	const dy = y_ - y
-	await term.writeA(
-		("\u001B[" + (dx > 0 ? "D" : "C")).repeat(Math.abs(dx)) +
-		("\u001B[" + (dy > 0 ? "A" : "B")).repeat(Math.abs(dy))
-	)
+term.setCursor = ([ x, y ]) => {
+	term._core._inputHandler._setCursor(x, y)
 }
 
 term.readln = async once => {
@@ -106,6 +104,7 @@ term.onData(async key => {
 		case "\u000C": // Ctrl-L
 			if (! term.enableRead) return
 			term.clear()
+			await term.statusBar.draw();
 			if (term.completion) {
 				term.completion.cursor = term.getCursor()
 			}
@@ -140,7 +139,10 @@ term.onData(async key => {
 			break
 		}
 		case "\u001A": // Ctrl-Z
-			if (perm.find("ff")) term.fastForward = true
+			if (perm.find("ff")) {
+				term.fastForward = true
+				await term.statusBar.add("ff", "⏰ ")
+			}
 			break
 		case "\u001B": // CSI
 			switch (key.slice(1)) {
@@ -203,6 +205,12 @@ term.onData(async key => {
 			term.ln = term.lnPre + key + term.lnPost
 			term.cursorIndex += key.length
 	}
+})
+
+term.onBell(async () => {
+	await term.statusBar.add("bell", term.getOption("bellStyle") === "sound" ? "🔔 " : "🔕 ")
+	await sleep(700)
+	await term.statusBar.remove("bell")
 })
 
 term.listeners = {}

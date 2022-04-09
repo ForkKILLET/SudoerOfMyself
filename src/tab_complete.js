@@ -27,7 +27,7 @@ term.clearCompletions = async (old = false) => {
 	await term.writeA((
 		"\r\n" + " ".repeat(c.colNum * c.maxWidth + (c.colNum - 1) * c.colPadding)
 	).repeat(c.rowNum))
-	await term.setCursor(cursor)
+	term.setCursor(cursor)
 }
 
 term.drawCompletions = async coms => {
@@ -44,7 +44,7 @@ term.drawCompletions = async coms => {
 		) + com.disp
 	}
 	await term.writeA(out)
-	await term.setCursor(cursor)
+	term.setCursor(cursor)
 
 	term.completion = {
 		list: coms,
@@ -74,18 +74,18 @@ term.tabComplete = async () => {
 		}
 
 		if (c.i >= 0) {
-			await term.setCursor(getCompletionPos(c.i))
+			term.setCursor(getCompletionPos(c.i))
 			await term.writeA(c.list[c.i].disp)
-			await term.setCursor(c.cursor)
+			term.setCursor(c.cursor)
 			await term.writeA(" ".repeat(c.maxWidth))
 			term.ln = c.ln
 			term.cursorIndex -= c.list[c.i].raw.length - c.commonPrefix.length
 		}
 
 		if (++ c.i === c.list.length) c.i = 0
-		await term.setCursor(getCompletionPos(c.i))
+		term.setCursor(getCompletionPos(c.i))
 		await term.writeA(chalk.inverse(c.list[c.i].disp))
-		await term.setCursor(c.cursor)
+		term.setCursor(c.cursor)
 		await term.useComplete(c.list[c.i].raw.slice(c.commonPrefix.length))
 
 		return

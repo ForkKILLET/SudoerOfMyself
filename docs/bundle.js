@@ -10615,7 +10615,7 @@
 
   // package.json
   var name = "sudoer-of-myself-workspace";
-  var version2 = "0.15.1";
+  var version2 = "0.16.0";
   var type = "module";
   var repository = {
     type: "git",
@@ -11248,7 +11248,8 @@
     rows: 30,
     cols: 97,
     cursorBlink: true,
-    fontFamily: `"Fira Code", consolas, monospace`
+    fontFamily: `"Fira Code", consolas, monospace`,
+    bellStyle: "none"
   });
   term.loadAddon(new import_xterm_addon_web_links.WebLinksAddon());
   term.open(document.getElementById("xterm"));
@@ -11264,7 +11265,8 @@
       }).finally(() => abortQ2.pop);
     }
   });
-  var __debug = location.hostname === "localhost";
+  globalThis.__debug = location.hostname === "localhost";
+  globalThis.__mobile = "ontouchstart" in document.documentElement && /mobi/i.test(navigator.userAgent);
   initQ2.push(async () => await ext0_default(ext0_bg_default).then(() => {
     if (__debug)
       init_panic_hook();
@@ -11420,7 +11422,8 @@
     "n": "\n",
     "r": "\r",
     "t": "	",
-    "a": "\x07"
+    "a": "\x07",
+    "e": "\x1B"
   };
   var white = /[ \t]/;
   var d8 = /[0-7]/;
@@ -11525,7 +11528,7 @@
     delete term.completion;
     const cursor = term.getCursor();
     await term.writeA(("\r\n" + " ".repeat(c.colNum * c.maxWidth + (c.colNum - 1) * c.colPadding)).repeat(c.rowNum));
-    await term.setCursor(cursor);
+    term.setCursor(cursor);
   };
   term.drawCompletions = async (coms) => {
     const maxWidth = coms.reduce((a, c) => Math.max(a, c[2] = stringWidth(c.disp)), 0);
@@ -11537,7 +11540,7 @@
       out += (i % colNum ? " ".repeat(maxWidth - coms[i - 1][2] + colPadding) : (++rowNum, "\r\n")) + com.disp;
     }
     await term.writeA(out);
-    await term.setCursor(cursor);
+    term.setCursor(cursor);
     term.completion = {
       list: coms,
       cursor,
@@ -11564,18 +11567,18 @@
         return [x, y];
       };
       if (c.i >= 0) {
-        await term.setCursor(getCompletionPos(c.i));
+        term.setCursor(getCompletionPos(c.i));
         await term.writeA(c.list[c.i].disp);
-        await term.setCursor(c.cursor);
+        term.setCursor(c.cursor);
         await term.writeA(" ".repeat(c.maxWidth));
         term.ln = c.ln;
         term.cursorIndex -= c.list[c.i].raw.length - c.commonPrefix.length;
       }
       if (++c.i === c.list.length)
         c.i = 0;
-      await term.setCursor(getCompletionPos(c.i));
+      term.setCursor(getCompletionPos(c.i));
       await term.writeA(chalk.inverse(c.list[c.i].disp));
-      await term.setCursor(c.cursor);
+      term.setCursor(c.cursor);
       await term.useComplete(c.list[c.i].raw.slice(c.commonPrefix.length));
       return;
     }
@@ -11612,11 +11615,15 @@
   };
 
   // src/xterm_ex.js
+  for (const k in sto.env) {
+    if (k.startsWith("XTERM_"))
+      term.setOption(k.slice(6), sto.env[k]);
+  }
   term.writeA = (s) => new Promise((res) => term.write(s != null ? s : "", res));
   term.writlnA = (s) => new Promise((res) => term.writeln(s != null ? s : "", res));
   var _a4, _b;
   (_b = (_a4 = sto.env).PROMPT) != null ? _b : _a4.PROMPT = chalk.green("'\\$ '");
-  term.writePrompt = () => term.write(shell(sto.env.PROMPT)[0][0]);
+  term.writePrompt = async () => await term.writeA(shell(sto.env.PROMPT)[0][0]);
   term.delete = (c, go, back) => term.write((go ? "\b".repeat(c) : "") + (back ? " ".repeat(c) + "\b".repeat(c) : ""));
   term.formatErr = (err) => {
     var _a11;
@@ -11649,11 +11656,8 @@
     }
   });
   term.getCursor = () => [term._core.buffer.x, term._core.buffer.y];
-  term.setCursor = async ([x, y]) => {
-    const [x_, y_] = term.getCursor();
-    const dx = x_ - x;
-    const dy = y_ - y;
-    await term.writeA(("\x1B[" + (dx > 0 ? "D" : "C")).repeat(Math.abs(dx)) + ("\x1B[" + (dy > 0 ? "A" : "B")).repeat(Math.abs(dy)));
+  term.setCursor = ([x, y]) => {
+    term._core._inputHandler._setCursor(x, y);
   };
   term.readln = async (once) => {
     term.historyIndex = 0;
@@ -11719,6 +11723,7 @@
         if (!term.enableRead)
           return;
         term.clear();
+        await term.statusBar.draw();
         if (term.completion) {
           term.completion.cursor = term.getCursor();
         }
@@ -11754,8 +11759,10 @@
         break;
       }
       case "":
-        if (perm.find("ff"))
+        if (perm.find("ff")) {
           term.fastForward = true;
+          await term.statusBar.add("ff", "\u23F0 ");
+        }
         break;
       case "\x1B":
         switch (key.slice(1)) {
@@ -11823,6 +11830,11 @@
         term.cursorIndex += key.length;
     }
   });
+  term.onBell(async () => {
+    await term.statusBar.add("bell", term.getOption("bellStyle") === "sound" ? "\u{1F514} " : "\u{1F515} ");
+    await sleep(700);
+    await term.statusBar.remove("bell");
+  });
   term.listeners = {};
   term.listen = (evt, fn) => {
     var _a11, _b2;
@@ -11842,6 +11854,35 @@
     console.log("Trigger: %s, arg:\n%o", evt, arg);
     for (const fn of (_a11 = term.listeners[evt]) != null ? _a11 : [])
       await fn(...arg);
+  };
+
+  // src/status_bar.js
+  term.statusBar = {
+    status: [["device", __mobile ? "\u{1F4F1} " : "\u{1F4BB} "]],
+    lastX: 0,
+    draw: async () => {
+      const cursor = term.getCursor();
+      term.setCursor([0, term.options.rows - 1]);
+      await term.writeA(chalk.whiteBright.bgMagenta(" " + term.statusBar.status.map((s) => s[1]).join("") + " "));
+      const dx = term.statusBar.lastX - (term.statusBar.lastX = term.getCursor()[0]);
+      if (dx > 0)
+        await term.writeA(" ".repeat(dx));
+      term.setCursor(cursor);
+    },
+    add: async (name2, display) => {
+      const sb = term.statusBar;
+      if (!sb.status.find((s) => s[0] === name2))
+        sb.status.push([name2, display]);
+      await sb.draw();
+    },
+    remove: async (name2) => {
+      const sb = term.statusBar;
+      const index = sb.status.findIndex((s) => s[0] === name2);
+      if (index >= 0) {
+        sb.status.splice(index, 1);
+        await sb.draw();
+      }
+    }
   };
 
   // src/perm.js
@@ -12070,19 +12111,24 @@
   };
 
   // src/command.js
-  perm.enable("cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag", "human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0", "human.bag");
+  perm.enable("cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag", "cmds.opt", "human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0", "human.bag");
   term.echo = async (s, { t, c } = {}) => {
     s = (Array.isArray(s) ? s : [s]).map((ln) => chalk[c != null ? c : "yellow"](`* ${ln}\r
 `)).join("");
+    let lastCSI = "";
     for (let i = 0; i < s.length; i++) {
       let ch = s[i];
-      if (ch === "\x1B")
+      if (ch === "\x1B") {
         while (s[i] !== "m")
           ch += s[++i];
-      term.write(ch);
+        lastCSI = ch;
+        ch = "";
+      }
+      term.write(lastCSI + ch);
       await sleep(term.fastForward ? 5 : t != null ? t : 120);
     }
     term.fastForward = false;
+    await term.statusBar.remove("ff");
   };
   globalThis.cmds = {
     version: async (...argv) => {
@@ -12094,7 +12140,7 @@
           l: "log"
         }
       });
-      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/7 09:50:39")},\r
+      term.writeln(`v${pack.version}, by ${chalk.yellow(pack.author.split(" ")[0])}, on ${chalk.cyan("2022/4/9 14:11:06")},\r
 at ${chalk.green(pack.repository.url)}` + (opt.d ? `, with:\r
 ${["dependencies", "devDependencies"].map((g) => chalk.underline(g) + "\r\n" + Object.entries(pack[g]).map(([n, v]) => n + " " + chalk.cyan(v)).join("\r\n")).join("\r\n")}` : ""));
       if (opt.l) {
@@ -12149,9 +12195,13 @@ ${["dependencies", "devDependencies"].map((g) => chalk.underline(g) + "\r\n" + O
           clearInterval(term.autoSaveTimer);
           term.writeln("sl: old auto-saver killed");
         }
-        term.autoSaveTimer = setInterval(() => {
+        if (typeof opt.a === "number" && opt.a < 2)
+          return term.writeln("sl: auto-save interval is too short");
+        term.autoSaveTimer = setInterval(async () => {
           sto.__save();
-          console.log("Auto saved");
+          term.statusBar.add("auto save", "\u{1F4BE} ");
+          await sleep(700);
+          term.statusBar.remove("auto save");
         }, (opt.a === true ? 10 : opt.a) * 1e3);
       }
       if (opt.e || opt.E) {
@@ -12529,6 +12579,15 @@ ${cmp_res}\r
         return term.writeln(`Unknown command "${cmd}".`);
       }
       await cmds2[cmd](...argv);
+    },
+    opt: (...argl) => {
+      if (argl.length === 0) {
+        term.writeln(Object.entries(term.options).map(([k, v]) => `${k}: ${chalk.cyan(JSON.stringify(v))}`).join("\r\n"));
+      } else if (argl.length === 1) {
+        term.writeln(term.options[argl[0]]);
+      } else {
+        sto.env[`XTERM_${argl[0]}`] = term.options[argl[0]] = argl.slice(1).join(" ");
+      }
     }
   };
 
@@ -12688,7 +12747,8 @@ ${cmp_res}\r
       return;
     term.isLoop = true;
     while (term.enableRead) {
-      term.writePrompt();
+      await term.writePrompt();
+      await term.statusBar.draw();
       const ln = await term.readln();
       if (sto.history.at(-1) !== term.ln && ((_a11 = term.ln) == null ? void 0 : _a11.trim())) {
         if (term.ln.length < 64) {

@@ -1,18 +1,24 @@
 perm.enable(
-	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag",
+	"cmds.version", "cmds.logo", "cmds.sl", "cmds.blog", "cmds.fsts.ext0", "cmds.sandbox", "cmds.bag", "cmds.opt",
 	"human.version", "human.logo", "human.sl", "human.blog", "human.fsts.ext0", "human.bag"
 )
 
 term.echo = async (s, { t, c } = {}) => {
-	s = (Array.isArray(s) ? s : [ s ]).map(ln => chalk[c ?? "yellow"](`* ${ln}\r\n`)).join("")
+	s = (Array.isArray(s) ? s : [ s ])
+		.map(ln => chalk[c ?? "yellow"](`* ${ln}\r\n`)).join("")
+	let lastCSI = ""
 	for (let i = 0; i < s.length; i ++) {
 		let ch = s[i]
-		if (ch === "\u001B")
+		if (ch === "\u001B") {
 			while (s[i] !== "m") ch += s[++ i]
-		term.write(ch)
+			lastCSI = ch
+			ch = ""
+		}
+		term.write(lastCSI + ch)
 		await sleep(term.fastForward ? 5 : t ?? 120)
 	}
 	term.fastForward = false
+	await term.statusBar.remove("ff")
 }
 
 globalThis.cmds = {
@@ -90,9 +96,12 @@ globalThis.cmds = {
 				clearInterval(term.autoSaveTimer)
 				term.writeln("sl: old auto-saver killed")
 			}
-			term.autoSaveTimer = setInterval(() => {
+			if (typeof opt.a === "number" && opt.a < 2) return term.writeln("sl: auto-save interval is too short")
+			term.autoSaveTimer = setInterval(async () => {
 				sto.__save()
-				console.log("Auto saved") // TODO show in terminal
+				term.statusBar.add("auto save", "💾 ")
+				await sleep(700)
+				term.statusBar.remove("auto save")
 			}, (opt.a === true ? 10 : opt.a) * 1000)
 		}
 		if (opt.e || opt.E) {
@@ -514,5 +523,17 @@ globalThis.cmds = {
 			return term.writeln(`Unknown command "${cmd}".`)
 		}
 		await cmds[cmd](...argv)
+	},
+
+	opt: (...argl) => {
+		if (argl.length === 0) {
+			term.writeln(Object.entries(term.options).map(([ k, v ]) => `${k}: ${ chalk.cyan(JSON.stringify(v)) }`).join("\r\n"))
+		}
+		else if (argl.length === 1) {
+			term.writeln(term.options[argl[0]])
+		}
+		else {
+			sto.env[`XTERM_${ argl[0] }`] = term.options[argl[0]] = argl.slice(1).join(" ")
+		}
 	}
 }

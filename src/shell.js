@@ -2,7 +2,8 @@ const escs = {
 	"n": "\n",
 	"r": "\r",
 	"t": "\t",
-	"a": "\u0007"
+	"a": "\u0007",
+	"e": "\u001B"
 }
 
 const white = /[ \t]/

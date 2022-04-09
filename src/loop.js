@@ -5,7 +5,9 @@ term.startLoop = async () => {
 
 	term.isLoop = true
 	while (term.enableRead) {
-		term.writePrompt()
+		await term.writePrompt()
+		await term.statusBar.draw()
+
 		const ln = await term.readln()
 		if (sto.history.at(-1) !== term.ln && term.ln?.trim()) {
 			// TODO move to <~/.config/history.conf>

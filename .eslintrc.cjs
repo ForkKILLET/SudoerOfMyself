@@ -34,7 +34,9 @@ module.exports = {
 		shell: true,
 		humanPages: true,
 		Sandbox: true,
-		__build: true
+		__build: true,
+		__debug: true,
+		__mobile: true
 	},
     rules: {
         "accessor-pairs": "error",
@@ -337,7 +339,7 @@ module.exports = {
         "valid-jsdoc": "off",
         "vars-on-top": "off",
         "wrap-iife": "error",
-        "wrap-regex": "error",
+        "wrap-regex": "off",
         "yield-star-spacing": "error",
         "yoda": [
             "error",
