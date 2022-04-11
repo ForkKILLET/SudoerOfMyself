@@ -99,6 +99,7 @@ term.onData(async key => {
 		case "\r": // Enter
 			if (! term.enableRead) return
 			if (term.completion) await term.clearCompletions()
+			else if (term.oldCompletion) await term.clearCompletions(true)
 
 			term.writeln("")
 			term.lnComplete()

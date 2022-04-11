@@ -58,7 +58,7 @@ term.drawCompletions = async coms => {
 	}
 }
 
-term.useComplete = async s => {
+term.useCompletion = async s => {
 	await term.writeA(s)
 	term.ln += s
 	console.log(`Completion: "%s"`, s)
@@ -87,7 +87,7 @@ term.tabComplete = async () => {
 		term.setCursor(getCompletionPos(c.i))
 		await term.writeA(chalk.inverse(c.list[c.i].disp))
 		term.setCursor(c.cursor)
-		await term.useComplete(c.list[c.i].raw.slice(c.commonPrefix.length))
+		await term.useCompletion(c.list[c.i].raw.slice(c.commonPrefix.length))
 
 		return
 	}
@@ -122,5 +122,5 @@ term.tabComplete = async () => {
 		term.completion.commonPrefix = commonPrefix
 	}
 
-	await term.useComplete(commonPrefix.slice(coms.root?.length))
+	await term.useCompletion(commonPrefix.slice(coms.root?.length))
 }
