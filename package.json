@@ -1,6 +1,6 @@
 {
   "name": "sudoer-of-myself-workspace",
-  "version": "0.17.3",
+  "version": "0.17.4",
   "type": "module",
   "repository": {
     "type": "git",
@@ -21,6 +21,7 @@
     "minimist": "^1.2.5",
     "semver-compare": "^1.0.0",
     "simple-async-sleep": "^1.0.3",
+    "strip-ansi": "^7.0.1",
     "xterm": "^4.17.0",
     "xterm-addon-web-links": "^0.5.1"
   },

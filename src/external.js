@@ -17,7 +17,8 @@ term.focus()
 import chalk from "chalk"
 chalk.level = 3 // true colors
 
-const stringWidth = s => [...s].reduce((a, c) => (
+import stripAnsi from "strip-ansi"
+const stringWidth = s => [ ...stripAnsi(s) ].reduce((a, c) => (
 	a + term._core._inputHandler._unicodeService.wcwidth(c.charCodeAt())
 ), 0)
 
@@ -60,7 +61,7 @@ Object.assign(globalThis, {
 	initQ, abortQ,
 	Terminal, WebLinksAddon,
 	chalk,
-	stringWidth,
+	stripAnsi, stringWidth,
 	pack,
 	sleep,
 	minimist,
