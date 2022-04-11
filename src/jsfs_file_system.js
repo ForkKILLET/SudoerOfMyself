@@ -62,10 +62,9 @@ globalThis.fs = {
 		fs.d(sto.cwd)
 	),
 	relpath: (path, { err, ty, perm }) => {
+		const base = path?.startsWith("/") ? [] : [].concat(sto.cwd)
 		const slashEnd = path?.endsWith("/")
-		if (slashEnd) path = path.slice(0, -1)
-		const base = path?.startsWith("/") ? (path = path.slice(1), []) : [].concat(sto.cwd)
-		const after = path ? path.split("/") : []
+		const after = path ? path.split("/").filter(f => f) : []
 		let k, c, f = fs.d(base)
 		try {
 			for ([ k, c ] of after.entries()) {
