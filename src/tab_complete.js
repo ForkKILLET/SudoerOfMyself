@@ -1,7 +1,8 @@
 term.getCompletions = ln => {
 	const [ tokens, flag ] = shell(ln)
 	if (tokens.length === 1) { // Complete command name.
-		const [ base, now ] = tokens[0].split(/\/(?!.*\/)/)
+		let [ base, now ] = tokens[0].split(/\/(?!.*\/)/)
+		if (tokens[0].startsWith("/")) base ||= "/"
 		const [, f] = fs.relpath(base, { err: false, ty: "dir" })
 		if (! f) return null
 
@@ -60,7 +61,7 @@ term.drawCompletions = async coms => {
 term.useComplete = async s => {
 	await term.writeA(s)
 	term.ln += s
-	console.log(s)
+	console.log(`Completion: "%s"`, s)
 	term.cursorIndex += s.length
 }
 
