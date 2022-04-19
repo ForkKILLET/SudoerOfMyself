@@ -179,8 +179,9 @@ globalThis.cmds = {
 	echo: async (...argv) => {
 		const opt = minimist(argv, {
 			stopEarly: true,
-			boolean: [ "angrily", "tremulously", "seriously", "sadly" ],
+			boolean: [ "quick", "angrily", "tremulously", "seriously", "sadly" ],
 			alias: {
+				q: "quick",
 				a: "angrily",
 				t: "tremulously",
 				S: "seriously",
@@ -192,7 +193,8 @@ globalThis.cmds = {
 		if (opt.t) s = chalk.italic(s)
 		if (opt.S) s = chalk.underline(s)
 		if (opt.s) s = chalk.dim(s)
-		await term.echo([ s ], { t: opt.angrily ? 60: undefined })
+		if (opt.q) term.writeln(s)
+		else await term.echo([ s ], { t: opt.angrily ? 60: undefined })
 		await term.trigger("echo", s_, opt)
 	},
 

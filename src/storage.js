@@ -17,6 +17,8 @@ sto.__save = () => new Promise((res, rej) => {
 })
 
 sto.env ??= {}
+sto.env.PATH ??= "/bin:/home/Apps"
+
 sto.bag ??= {}
 
 initQ.push(() => new Promise((res, rej) => {

@@ -22,10 +22,14 @@ globalThis.Sandbox = class {
 			has: () => true,
 			get: (tar, k) => {
 				if (k === Symbol.unscopables) return undefined
-				return tar[k]
+				const v = tar[k]
+				if (k.startsWith("__")) delete tar[k]
+				return v
 			},
-			set: (_, k, v) => {
+			set: (tar, k, v) => {
 				if (k === "exports") this.exports = v
+				tar[k] = v
+				return true
 			}
 		})
 	}
@@ -33,14 +37,13 @@ globalThis.Sandbox = class {
 	run(code) {
 		if (code.includes("import")) throw new SyntaxError("Sandbox eval mustn't import.")
 		const env = this.safeEnv
+		env.__code = code
+		env.__Function = Function
 		new Function("env", `
 			with (env) {
-				(function () {
-					"use strict";
-					${code};
-				})()
-			}`
-		)(env)
+				env.__Function("env", "\\"use strict\\";\\n" + env.__code)(env)
+			}
+		`)(env)
 		return this.exports
 	}
 }

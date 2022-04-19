@@ -25,11 +25,11 @@ term.startLoop = async () => {
 		const bins = [
 			fs.relpath(path, { err: false, ty: "exe" })
 		]
-		// TODO $PATH
-		if (! path.includes("/")) {
-			bins.unshift(fs.relpath("/bin/" + path, { err: false, ty: "exe" }))
-			bins.unshift(fs.relpath("/home/Apps/" + path, { err: false, ty: "exe" }))
-		}
+
+		const paths = sto.env.PATH.split(":")
+		if (! path.includes("/")) paths.forEach(base =>
+			bins.unshift(fs.relpath(`${base}/${path}`, { err: false, ty: "exe" }))
+		)
 
 		let noPerm = false, binOK
 		for (const [, bin] of bins) {
@@ -73,6 +73,7 @@ term.startLoop = async () => {
 				}
 				catch (err) {
 					term.writeln(`Failed to build bag: ${ term.formatErr(err) }`)
+					console.error(err)
 					continue
 				}
 			}
