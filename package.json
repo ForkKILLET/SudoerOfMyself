@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+	"check": "tsc"
   },
   "devDependencies": {
-    "typescript": "^5.5.3",
-    "vite": "^5.4.1"
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
   },
   "dependencies": {
-    "@xterm/xterm": "^5.5.0"
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "chalk": "^5.4.1"
   }
 }

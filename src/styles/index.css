@@ -1,0 +1,25 @@
+body {
+    margin: 0;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    width: 100vw;
+    background-color: #282c34;
+    color: white;
+}
+
+#xterm-container {
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: #fff 0 0 5px;
+    background-color: #000;
+}
+
+.terminal.xterm {
+    width: fit-content;
+}
