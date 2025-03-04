@@ -18,6 +18,10 @@ export interface Emitter<M extends Events> {
 export class Emitter<M extends Events> {
     private listeners: { [K in keyof M]?: Array<(...data: M[K]) => void> } = {}
 
+    initEmitter() {
+        this.listeners = {}
+    }
+
     on<K extends keyof RemoveIndex<M>>(event: K, listener: (...data: M[K]) => void, option?: {
         once?: boolean
     }): IDisposable {
@@ -38,12 +42,4 @@ export class Emitter<M extends Events> {
     emit<K extends keyof RemoveIndex<M>>(event: K, ...data: M[K]) {
         this.listeners[event]?.forEach(listener => listener(...data))
     }
-}
-
-export const mixEmitter = <M extends Events, T extends Emitter<M>>(target: T) => {
-    const emitter = new Emitter<M>()
-    target.on = emitter.on.bind(emitter)
-    target.off = emitter.off.bind(emitter)
-    target.emit = emitter.emit.bind(emitter)
-    return target
 }

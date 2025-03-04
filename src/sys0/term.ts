@@ -1,7 +1,8 @@
 import { Terminal, ITerminalOptions, ITerminalInitOnlyOptions } from '@xterm/xterm'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { Emitter, Events, mixEmitter } from '@/utils/emitter'
+import { Emitter, Events } from '@/utils/emitter'
+import { mixin } from '@/utils'
 
 export interface TerminalEvents extends Events {
     'data': [ string ]
@@ -11,6 +12,10 @@ export interface TerminalEvents extends Events {
 export interface Term extends Emitter<TerminalEvents> {}
 
 export class Term extends Terminal {
+    static {
+        mixin(this, Emitter)
+    }
+
     constructor(options?: ITerminalOptions & ITerminalInitOnlyOptions) {
         super({
             rows: 30,
@@ -21,6 +26,8 @@ export class Term extends Terminal {
             ...options
         })
 
+        this.initEmitter()
+
         this.loadAddon(new Unicode11Addon())
         this.unicode.activeVersion = '11'
 
@@ -29,8 +36,6 @@ export class Term extends Terminal {
             webglAddon.dispose()
         })
         this.loadAddon(webglAddon)
-
-        mixEmitter(this)
 
         this.onData(data => {
             if (data === '\x03') { // Ctrl+C

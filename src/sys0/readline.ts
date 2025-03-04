@@ -1,7 +1,5 @@
-import { Stdio } from './stdio'
 import { compute, Computed, createSignal, Signal } from '@/utils'
 import { MakeOptional } from '@/utils/types'
-import { Term } from './term'
 import { Process } from './proc'
 
 export type DoPrevent = boolean
@@ -83,8 +81,7 @@ export class ReadlineCurrentLine {
 export class Readline {
     constructor(
         public readonly proc: Process,
-        public readonly term: Term,
-        public readonly stdio: Stdio,
+        public readonly stdio = proc.stdio,
     ) {}
 
     private isReadingLn = false
@@ -100,7 +97,7 @@ export class Readline {
     ): Promise<string | null> {
         const line = new ReadlineCurrentLine(history)
 
-        const w = (str: string) => this.term.getStringWidth(str)
+        const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
     
         const back = (width: number) => '\b'.repeat(width)
         const left = (width: number) => '\x1B[D'.repeat(width)
@@ -148,7 +145,7 @@ export class Readline {
         }
 
         while (true) {
-            const data = await this.stdio.read({ abort: toBeInterrupted })
+            const data = await this.stdio.readKey({ abort: toBeInterrupted })
             if (data === null) {
                 line.content = ''
                 line.cursor = 0
@@ -211,7 +208,7 @@ export class Readline {
                     break
                 }
                 default:
-                    console.log('ESC', data, [...data.slice(1)].map(c => c.charCodeAt(0)))
+                    console.debug('ESC', data, [...data.slice(1)].map(c => c.charCodeAt(0)))
                     break
                 }
             }
@@ -241,7 +238,7 @@ export class Readline {
             }
             else {
                 if (data.charCodeAt(0) < 32) {
-                    console.log([...data].map(c => c.charCodeAt(0)))
+                    console.debug([...data].map(c => c.charCodeAt(0)))
                     continue
                 }
                 line.isDirty = true

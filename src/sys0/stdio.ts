@@ -1,18 +1,18 @@
 import { Term } from './term'
-import { Readline } from './readline'
-import { Signal, sleep } from '@/utils'
+import { sleep } from '@/utils'
 import { Emitter, Events } from '@/utils/emitter'
-import { Process } from './proc'
+import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
+import { Pred } from '@/utils/types'
 
 export interface StdinEvents extends Events {
     'data': [ string ]
-}
+}   
 
-export interface StdinReadOptions {
-    abort?: Signal
-}
+export const kStdin = Symbol('Stdin')
+export const kStdout = Symbol('Stdout')
 
-export class Stdin extends Emitter<StdinEvents> {
+export class Stdin extends Emitter<StdinEvents> implements FRead {
+    readonly [kStdin] = true
     isDisabled = false
 
     constructor(private term: Term) {
@@ -24,9 +24,9 @@ export class Stdin extends Emitter<StdinEvents> {
         })
     }
 
-    async read({
+    async readKey({
         abort
-    }: StdinReadOptions = {}) {
+    }: FReadKeyOptions = {}) {
         return new Promise<string | null>(resolve => {
             let done = false
             const { dispose } = this.on('data', data => {
@@ -41,14 +41,42 @@ export class Stdin extends Emitter<StdinEvents> {
             })
         })
     }
+
+    async *readChar() {
+        while (true) {
+            const key = await this.readKey()
+            if (! key) return '\0'
+            yield *key
+        }
+    }
+
+    async readUntil(pred: Pred<string>) {
+        let data = ''
+        for await (const char of this.readChar()) {
+            if (char === '\0' || pred(char)) break
+            data += char
+        }
+        return data
+    }
+
+    async read(): Promise<string> {
+        return this.readUntil(() => false)
+    }
+
+    async readLn(): Promise<string> {
+        return this.readUntil(char => char === '\n')
+    }
 }
+
+// TODO: Stderr
 
 export interface StdoutEvents extends Events {
     'start-writing': []
     'stop-writing': []
 }
 
-export class Stdout extends Emitter<StdoutEvents> {
+export class Stdout extends Emitter<StdoutEvents> implements FWrite {
+    readonly [kStdout] = true
     isDisabled = false
     isWriting = false
 
@@ -88,39 +116,33 @@ export class Stdout extends Emitter<StdoutEvents> {
     }
 }
 
-export class Stdio {
+export class Stdio implements FReadWrite {
     isTied = true
 
     constructor(
-        public term: Term,
-        public stdin = new Stdin(term),
-        public stdout = new Stdout(term)
-    ) {
-        stdout.on('start-writing', () => {
-            if (this.isTied) stdin.isDisabled = true
+        public input: FRead,
+        public output: FWrite
+    ) {}
+
+    static fromTerm(term: Term) {
+        const input = new Stdin(term)
+        const output = new Stdout(term)
+        const stdio = new Stdio(input, output)
+
+        output.on('start-writing', () => {
+            if (stdio.isTied) input.isDisabled = true
         })
-        stdout.on('stop-writing', () => {
-            if (this.isTied) stdin.isDisabled = false
+
+        output.on('stop-writing', () => {
+            if (stdio.isTied) input.isDisabled = false
         })
+
+        return stdio
     }
 
-    read(options?: StdinReadOptions) {
-        return this.stdin.read(options)
-    }
-
-    write(data: string) {
-        this.stdout.write(data)
-    }
-
-    writeLn(data: string) {
-        this.stdout.writeLn(data)
-    }
-
-    type(data: string, interval: number) {
-        return this.stdout.type(data, interval)
-    }
-
-    createReadline(proc: Process) {
-        return new Readline(proc, this.term, this)
-    }
+    readKey(options?: FReadKeyOptions) { return this.input.readKey(options) }
+    read() { return this.input.read() }
+    readLn() { return this.input.readLn() }
+    write(data: string) { this.output.write(data) }
+    writeLn(data: string) { this.output.writeLn(data) }
 }

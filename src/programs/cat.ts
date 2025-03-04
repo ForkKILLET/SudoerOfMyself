@@ -1,4 +1,5 @@
 import { wrapProgram } from '@/sys0/program'
+import { kStdout } from '@/sys0/stdio'
 import chalk from 'chalk'
 
 export const cat = wrapProgram((proc, _, ...paths) => {
@@ -12,8 +13,9 @@ export const cat = wrapProgram((proc, _, ...paths) => {
     let hasError = false
     paths.forEach(path => {
         try {
-            const { content } = ctx.fs.readU(path)
-            stdio.write(content + (content.endsWith('\n')
+            const fh = ctx.fs.openU(path, 'r').handle
+            const content = fh.read()
+            stdio.write(content + (content.endsWith('\n') || ! (kStdout in stdio.output)
                 ? ''
                 : chalk.blackBright(chalk.bgWhiteBright('%')) + '\n'
             ))

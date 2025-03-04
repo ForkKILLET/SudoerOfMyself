@@ -3,7 +3,9 @@ import { Program } from '@/sys0/program'
 import hsh from '@/programs/hsh'
 
 export const game0: Program = async (proc: Process) => {
-    await proc.spawn(hsh, 'hsh')
+    const { stdio } = proc
+    stdio.writeLn('Welcome to HumanOS.')
+    await proc.spawn(hsh, { name: 'hsh' })
     return 0
 }
 

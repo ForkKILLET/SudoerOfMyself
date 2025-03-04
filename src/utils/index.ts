@@ -33,3 +33,12 @@ export type Computed<T> = T | (() => T)
 export const compute = <T>(value: Computed<T>): T => (
     typeof value === 'function' ? (value as () => T)() : value
 )
+
+export type Constructor<T> = new (...args: any[]) => T
+
+export const mixin = <C, M>(ctor: Constructor<C>, mixin: Constructor<M>) => Object
+    .getOwnPropertyNames(mixin.prototype)
+    .filter(key => key !== 'constructor')
+    .forEach(key => {
+        ctor.prototype[key] = mixin.prototype[key]
+    })

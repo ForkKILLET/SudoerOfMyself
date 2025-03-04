@@ -1,6 +1,7 @@
+import { Awaitable } from '@/utils/types'
 import { Process } from './proc'
 
-export type Program = (proc: Process, ...argv: string[]) => number | Promise<number>
+export type Program = (proc: Process, ...argv: string[]) => Awaitable<number>
 
 export const wrapProgram = (program: Program): Program => {
     const wrapped: Program = async (proc, name, ...args) => {

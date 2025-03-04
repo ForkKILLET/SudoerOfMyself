@@ -13,3 +13,9 @@ export type StrictOmit<T, K extends keyof T> = Omit<T, K>
 
 export type DistributiveOmit<T, K extends keyof T> = T extends any ? Omit<T, K> : never
 export type DistributivePick<T, K extends keyof T> = T extends any ? Pick<T, K> : never
+
+export type Pred<T> = (value: T) => boolean
+
+export type Fn = (...args: any[]) => any
+
+export type Awaitable<T> = T | Promise<T>

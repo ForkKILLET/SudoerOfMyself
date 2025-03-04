@@ -1,7 +1,8 @@
 import { getSysImage } from '@/data/sys_image'
 import { Program } from '@/sys0/program'
-import { DistributiveOmit, MakeOptional, StrictOmit } from '@/utils/types'
+import { Awaitable, DistributiveOmit, MakeOptional, Pred, StrictOmit } from '@/utils/types'
 import { Context } from './context'
+import { mixin, Signal } from '@/utils'
 
 export namespace Path {
     export const hasSlash = (path: string) => path.includes('/')
@@ -10,12 +11,13 @@ export namespace Path {
     export const isAbsOrRel = (path: string) => isAbs(path) || isRel(path)
     export const split = (path: string) => path.split('/').filter(Boolean)
     export const getDirAndName = (path: string) => {
+        if (! isAbsOrRel(path)) path = `./${path}`
         const parts = split(path)
         const filename = parts.pop()!
         const dirname = parts.join('/')
         return { dirname, filename }
     }
-    export const isLegalFilename = (name: string) => name && ! name.includes('/')
+    export const isLegalFilename = (name: string) => !! name && ! name.includes('/')
 }
 
 export const enum FileT {
@@ -67,6 +69,23 @@ export type FileFromT<FT extends FileT> =
     FT extends FileT.NORMAL ? NormalFile :
     FT extends FileT.JSEXE ? JsExeFile :
     never
+
+export interface FReadKeyOptions {
+    abort?: Signal
+}
+
+export interface FRead {
+    readKey(options?: FReadKeyOptions): Awaitable<string | null>
+    read(): Awaitable<string>
+    readLn(): Awaitable<string>
+}
+
+export interface FWrite {
+    write(data: string): void
+    writeLn(data: string): void
+}
+
+export interface FReadWrite extends FRead, FWrite {}
 
 export namespace FileBuilder {
     export type Orphan<F extends File> = MakeOptional<F, 'parent'>
@@ -123,9 +142,10 @@ export const fErr = <E extends DistributiveOmit<FOpError, typeof kFOpError>>(
 export type FOpOk<T> = { type: FOpT.OK } & T
 export type FOpResult<T> = FOpOk<T> | FOpError
 
-export type FindResult<F extends File = File> = FOpResult<{ file: F }>
-export type MkdirResult = FOpResult<{ dir: DirFile }>
-export type ReadResult = FOpResult<{ content: string }>
+export type FFindResult<F extends File = File> = FOpResult<{ file: F }>
+export type FMkdirResult = FOpResult<{ dir: DirFile }>
+export type FReadResult = FOpResult<{ content: string }>
+export type FOpenResult<FM extends FileMode> = FOpResult<{ handle: FileHandleFromMode<FM> }>
 
 export interface FindOptions<FT extends FileT = FileT> {
     allowedTypes?: readonly FT[]
@@ -133,7 +153,7 @@ export interface FindOptions<FT extends FileT = FileT> {
 
 export type FOpMethod = 'find' | 'mkdir' | 'read'
 
-export class FS {
+export class Fs {
     root = getSysImage()
 
     constructor(public ctx: Context) {}
@@ -192,7 +212,7 @@ export class FS {
     find<FT extends FileT = FileT>(
         path: string,
         { allowedTypes }: FindOptions<FT> = {}
-    ): FindResult<FileFromT<FT>> {
+    ): FFindResult<FileFromT<FT>> {
         let path1 = path
         if (! Path.isAbsOrRel(path1)) path1 = `./${path1}`
         const parts = Path.split(path1)
@@ -231,7 +251,7 @@ export class FS {
         path: string,
         envPath: string,
         options?: StrictOmit<FindOptions, 'allowedTypes'>
-    ): FindResult<JsExeFile> {
+    ): FFindResult<JsExeFile> {
         if (Path.hasSlash(path)) return this.find(path, { ...options, allowedTypes: [ FileT.JSEXE ] })
 
         const envPathList = envPath.split(':').filter(Boolean)
@@ -242,7 +262,7 @@ export class FS {
         return fErr({ type: FOpT.NOT_FOUND })
     }
 
-    mkdir(path: string): MkdirResult {
+    mkdir(path: string): FMkdirResult {
         const { dirname, filename } = Path.getDirAndName(path)
         if (! Path.isLegalFilename(filename)) return fErr({ type: FOpT.ILLEGAL_NAME })
 
@@ -264,25 +284,160 @@ export class FS {
         return this.unwrap(this.mkdir(path), `Cannot create directory ${path}`)
     }
 
-    read(path: string): ReadResult {
-        const res = this.find(path, { allowedTypes: [ FileT.NORMAL, FileT.JSEXE ] })
-        if (res.type !== FOpT.OK) return res
-        const { file } = res
-        switch (file.type) {
-        case FileT.NORMAL:
-            return {
-                type: FOpT.OK,
-                content: file.content,
-            }
-        case FileT.JSEXE:
-            return {
-                type: FOpT.OK,
-                content: file.program.toString(),
-            }
+    private createFileHandle<FM extends FileMode>(file: NormalFile, mode: FM): FileHandleFromMode<FM> {
+        type R = FileHandleFromMode<FM>
+
+        switch (mode as FileMode) {
+        case 'r':
+            return new FileHandleR(file) as R
+        case 'w':
+            return new FileHandleW(file) as R
+        case 'a':
+            return new FileHandleA(file) as R
+        case 'rw':
+            return new FileHandleRW(file) as R
+        case 'ra':
+            return new FileHandleRA(file) as R
         }
     }
 
-    readU(path: string) {
-        return this.unwrap(this.read(path), path)
+    open<FM extends FileMode>(path: string, mode: FM): FOpenResult<FM> {
+        const res = this.find(path, { allowedTypes: [ FileT.NORMAL ] })
+
+        let file: NormalFile
+        if (res.type !== FOpT.OK) {
+            if (mode === 'r' || res.type === FOpT.NOT_ALLOWED_TYPE) return res
+            const { dirname, filename } = Path.getDirAndName(path)
+
+            if (! filename) return fErr({ type: FOpT.ILLEGAL_NAME })
+
+            const dirRes = this.find(dirname, { allowedTypes: [ FileT.DIR ] })
+            if (dirRes.type !== FOpT.OK) return dirRes
+
+            const { file: dir } = dirRes
+            file = dir.children[filename] = {
+                ...FileBuilder.normal(''),
+                parent: dir,
+            }
+        }
+        else {
+            file = res.file
+        }
+
+        return {
+            type: FOpT.OK,
+            handle: this.createFileHandle(file, mode),
+        }
     }
+
+    openU<FM extends FileMode>(path: string, mode: FM) {
+        return this.unwrap(this.open(path, mode), path)
+    }
+}
+
+export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'
+export type FileMode = 'r' | FileModeWritable
+
+export abstract class FileHandle {
+    constructor(protected file: NormalFile) {}
+
+    abstract readonly mode: FileMode
+
+    protected cursor = 0
+
+    get isAtEof() {
+        return this.cursor >= this.file.content.length
+    }
+
+    get currentChar() {
+        return this.file.content[this.cursor]
+    }
+}
+
+export type FileHandleFromMode<FM extends FileMode> =
+    FM extends 'r' ? FileHandleR :
+    FM extends 'w' ? FileHandleW :
+    FM extends 'a' ? FileHandleA :
+    FM extends 'rw' ? FileHandleRW :
+    FM extends 'ra' ? FileHandleRA :
+    never
+
+export class FileHandleR extends FileHandle implements FRead {
+    readonly mode: FileMode = 'r'
+
+    readChar() {
+        if (this.isAtEof) return null
+        const char = this.currentChar
+        this.cursor ++
+        return char
+    }
+    readKey({}: FReadKeyOptions) {
+        return this.readChar()
+    }
+    readUntil(pred: Pred<string>) {
+        let start = this.cursor
+        while (! (this.isAtEof || pred(this.currentChar))) this.cursor ++
+        return this.file.content.slice(start, this.cursor)
+    }
+
+    read() {
+        return this.readUntil(() => false)
+    }
+    readLn() {
+        return this.readUntil(char => char === '\n')
+    }
+}
+
+export abstract class FileHandleWritable extends FileHandle implements FWrite {
+    abstract readonly mode: FileModeWritable
+
+    write(data: string) {
+        if (this.mode.endsWith('a')) this.append(data)
+        else this.rewrite(data)
+    }
+    writeLn(data: string) {
+        this.write(data + '\n')
+    }
+
+    rewrite(data: string) {
+        this.file.content = data
+    }
+    rewriteLn(data: string) {
+        this.rewrite(data + '\n')
+    }
+
+    append(data: string) {
+        this.file.content += data
+    }
+    appendLn(data: string) {
+        this.append(data + '\n')
+    }   
+}
+
+export class FileHandleW extends FileHandleWritable implements FWrite {
+    readonly mode: FileModeWritable = 'w'
+}
+
+export class FileHandleA extends FileHandleWritable implements FWrite {
+    readonly mode: FileModeWritable = 'a'
+}
+
+export interface FileHandleRW extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
+export class FileHandleRW extends FileHandle implements FReadWrite {
+    static {
+        mixin(this, FileHandleR)
+        mixin(this, FileHandleW)
+    }
+
+    readonly mode: FileMode = 'rw'
+}
+
+export interface FileHandleRA extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
+export class FileHandleRA extends FileHandle implements FReadWrite {
+    static {
+        mixin(this, FileHandleR)
+        mixin(this, FileHandleA)
+    }
+
+    readonly mode: FileMode = 'ra'
 }

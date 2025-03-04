@@ -12,4 +12,4 @@ const ctx = new Context()
 Object.assign(window, { ctx })
 
 ctx.attach(document.querySelector('#xterm-container')!)
-ctx.init.spawn(game0, 'game0')
+ctx.init.spawn(game0, { name: 'game0' })
