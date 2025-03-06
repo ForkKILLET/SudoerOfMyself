@@ -12,8 +12,11 @@ export interface ReadlineReadLnOptions {
 }
 
 export class ReadlineHistory {
-    public hist = [ '' ]
-    public index = 0
+    index: number
+
+    constructor(public hist: string[] = []) {
+        this.index = hist.length - 1
+    }
 
     get size() {
         return this.hist.length
@@ -278,6 +281,7 @@ export class Readline {
 }
 
 export interface ReadlineLoopOptions {
+    history?: ReadlineHistory
     prompt: Computed<string>
     onLine?: (line: string) => void | Promise<void>
     onEnd?: () => void
@@ -315,7 +319,7 @@ export class ReadlineLoopHandle {
     }
 
     async start() {
-        const history = new ReadlineHistory()
+        const history = this.options.history ?? new ReadlineHistory()
         while (true) {
             this.writePrompt()
             const line = await Promise.race([

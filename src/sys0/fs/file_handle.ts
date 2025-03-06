@@ -89,10 +89,18 @@ export abstract class FileHandleWritable extends FileHandle implements FWrite {
 }
 
 export class FileHandleW extends FileHandleWritable implements FWrite {
+    static {
+        mixin(this, FileHandleWritable)
+    }
+
     readonly mode: FileModeWritable = 'w'
 }
 
 export class FileHandleA extends FileHandleWritable implements FWrite {
+    static {
+        mixin(this, FileHandleWritable)
+    }
+
     readonly mode: FileModeWritable = 'a'
 }
 

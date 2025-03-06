@@ -5,6 +5,7 @@
 - [ ] Sys0 infrastructure
 
   - [ ] Shell
+    - [x] History file
     - [ ] Tab completion
     - [ ] Pipe
     - [ ] Input redirecting

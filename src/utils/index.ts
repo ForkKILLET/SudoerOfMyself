@@ -35,8 +35,9 @@ export const compute = <T>(value: Computed<T>): T => (
 )
 
 export type Constructor<T> = new (...args: any[]) => T
+export type AbstarctConstructor<T> = abstract new (...args: any[]) => T
 
-export const mixin = <C, M>(ctor: Constructor<C>, mixin: Constructor<M>) => Object
+export const mixin = <C, M>(ctor: Constructor<C>, mixin: Constructor<M> | AbstarctConstructor<M>) => Object
     .getOwnPropertyNames(mixin.prototype)
     .filter(key => key !== 'constructor')
     .forEach(key => {

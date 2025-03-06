@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import { Process } from '@/sys0/proc'
 import { Program } from '@/sys0/program'
 import { fOpIsErr, FOpT } from '@/sys0/fs'
-import { Readline } from '@/sys0/readline'
+import { Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
 import { HshAstCommand, HshAstScript, parse, tokenize } from './parse'
@@ -65,16 +65,20 @@ export const executeScript = async (proc: Process, script: HshAstScript): Promis
 }
 
 export const hsh: Program = async (proc: Process) => {
-    const { env, stdio } = proc
+    const { ctx, env, stdio } = proc
     proc.cwd = env.HOME
+
+    const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
 
     const readline = new Readline(proc, stdio)
     const loop = readline.createLoop({
+        history: new ReadlineHistory(historyFile.read().split('\n')),
 		prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
         onLine: async (line) => {
             const tokens = tokenize(line, env)
             const script = parse(tokens)
             await executeScript(proc, script)
+            historyFile.appendLn(line)
         },
         onInterrupt: () => true
     })
