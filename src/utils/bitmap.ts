@@ -74,6 +74,11 @@ export class Bitmap {
         }
     }
 
+    clear() {
+        this._usedCount = 0
+        this.data.fill(0)
+    }
+
     getFree(start = 0, end = this.size - 1) {
         for (let i = start; i <= end; i ++) {
             if (! this.bits[i]) {

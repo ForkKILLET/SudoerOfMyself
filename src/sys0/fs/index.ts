@@ -171,6 +171,17 @@ export class Fs {
     persistence: FsPersistence = new LocalStorageFsPersistence()
 
     constructor(public ctx: Context) {
+        this.load()
+    }
+
+    reset() {
+        this.persistence.isInitialized = false
+        this.inodes.clear()
+        this.inodeBitmap.clear()
+        this.load()
+    }
+
+    load() {
         if (! this.persistence.isInitialized) {
             this.create(getSysImage())
             this.inodes.forEach((inode, iid) => {
