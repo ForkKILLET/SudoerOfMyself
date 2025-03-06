@@ -19,3 +19,11 @@ export type Pred<T> = (value: T) => boolean
 export type Fn = (...args: any[]) => any
 
 export type Awaitable<T> = T | Promise<T>
+
+export interface IStorage<K, V> {
+    get: (key: K) => V
+    getAll: () => [K, V][]
+    set: (key: K, value: V) => void
+}
+
+export type StringKeyOf<T> = `${Exclude<keyof T, symbol>}`

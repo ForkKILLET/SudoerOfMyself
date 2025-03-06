@@ -3,6 +3,8 @@ import { Program } from '@/sys0/program'
 
 export const fs_inodemap: Program = (proc) => {
     const { stdio, ctx } = proc
-    stdio.writeLn(`${ctx.fs.inodeBitmap.usedCount}/${MAX_INODE_COUNT} inode used`)
+    stdio.writeLn(`${ctx.fs.inodeBitmap.usedCount}/${MAX_INODE_COUNT} inodes used`)
     return 0
 }
+
+export default fs_inodemap

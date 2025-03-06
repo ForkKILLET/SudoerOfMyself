@@ -9,6 +9,7 @@ import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 import { HshAstCommand, HshAstScript, parse, tokenize } from './parse'
 import { cd } from '../cd'
 import { echo } from '../echo'
+import { PROGRAMS } from '..'
 
 const builtins: Record<string, Program> = {
     cd,
@@ -46,8 +47,8 @@ export const execute = async (proc: Process, command: HshAstCommand): Promise<nu
                 proc.error(`${name}: Command not found`)
                 return 127
             }
-            const { program } = exeRes.file
-            return await proc.spawn(program, { name, stdio: getStdio() }, ...args)
+            const { programName } = exeRes.file
+            return await proc.spawn(PROGRAMS[programName], { name, stdio: getStdio() }, ...args)
         }
     }
     catch (err) {

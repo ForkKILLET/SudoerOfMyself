@@ -1,4 +1,5 @@
 import { Control } from '@/utils'
+import { StringKeyOf } from '@/utils/types'
 
 declare global {
     interface Array<T> {
@@ -16,7 +17,7 @@ declare global {
 
         findMap<U>(callback: (value: T, index: number, array: T[]) => U | typeof Control['continue']): U | undefined
 
-        includes1<U>(value: U): T & U extends never ? never : boolean
+        includes<U>(value: U): T & U extends never ? never : boolean
     }
 
     interface ReadonlyArray<T> {
@@ -27,6 +28,12 @@ declare global {
         range(start: number, end: number, step?: number): number[]
         replicate<T>(n: number, value: T): T[]
         lift<T>(value: T | T[]): T[]
+    }
+
+    interface ObjectConstructor {
+        keys<T>(obj: T): StringKeyOf<T>[]
+        values<T>(obj: T): T[keyof T][]
+        entries<T>(obj: T): [StringKeyOf<T>, T[keyof T]][]
     }
 }
 

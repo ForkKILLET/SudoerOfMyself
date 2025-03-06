@@ -15,8 +15,6 @@ export const createSignal = (): Signal => {
     return { trigger, signal }
 }
 
-Array.from
-
 export class Stack<T> extends Array<T> {
     get top() {
         return this[this.length - 1]

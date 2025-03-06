@@ -1,9 +1,13 @@
 import { getSysImage } from '@/data/sys_image'
 import { Program } from '@/sys0/program'
-import { Awaitable, DistributiveOmit, MakeOptional, Pred, StrictOmit } from '@/utils/types'
-import { Context } from './context'
-import { mixin, Signal, Stack } from '@/utils'
+import { Awaitable, DistributiveOmit, StrictOmit } from '@/utils/types'
+import { Context } from '@/sys0/context'
+import { Signal, Stack } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
+import { FileMode, FileHandleFromMode, FileHandleR, FileHandleW, FileHandleA, FileHandleRW, FileHandleRA, FILE_HANDLE_FROM_MODE } from './file_handle'
+import { FsPersistence, LocalStorageFsPersistence } from './persistence'
+import { Vfs } from './vfs'
+import { ProgramName } from '@/programs'
 
 export namespace Path {
     export const hasSlash = (path: string) => path.includes('/')
@@ -39,9 +43,9 @@ export const displayFileT = (type: FileT) => {
 }
 
 export type InodeId = number
-export interface Inode<FT extends FileT = FileT> {
+export interface Inode<F extends File = File> {
     iid: InodeId
-    file: FileFromT<FT>
+    file: F
 }
 export type Inodes = Map<InodeId, Inode>
 
@@ -71,7 +75,7 @@ export interface NormalFile {
 
 export interface JsExeFile {
     type: FileT.JSEXE
-    program: Program
+    programName: ProgramName
 }
 
 export type FileFromT<FT extends FileT> =
@@ -104,82 +108,7 @@ export interface InodeMaintainer {
     inodeBitmap: Bitmap 
 }
 
-export namespace FsBuilder {
-    export interface DirVfile {
-        type: FileT.DIR
-        children: Record<string, Vfile>
-    }
-    export interface NormalVfile {
-        type: FileT.NORMAL
-        content: string
-    }
-    export interface JsExeVfile {
-        type: FileT.JSEXE
-        program: Program
-    }
-    export type Vfile =
-        | DirVfile
-        | NormalVfile
-        | JsExeVfile
 
-    export const dir = (children: Record<string, Vfile> = {}): DirVfile => {
-        return {
-            type: FileT.DIR,
-            children,
-        }
-    }
-
-    export const normal = (content: string): NormalVfile => ({
-        type: FileT.NORMAL,
-        content,
-    })
-
-    export const jsExe = (program: Program): JsExeVfile => ({
-        type: FileT.JSEXE,
-        program,
-    })
-
-    interface FsBuildStep {
-        vfile: Vfile
-        entries: DirEntries
-        name: string
-    }
-
-    export const build = <FB extends Vfile>(
-        fs: InodeMaintainer,
-        vroot: FB,
-    ): Inode<FB['type']> => {
-        const queue: FsBuildStep[] = [ { vfile: vroot, entries: {}, name: '' } ]
-        let rootInode: Inode | undefined
-    
-        while (queue.length) {
-            const { vfile: tree, entries, name } = queue.shift()!
-
-            let file: File
-            if (tree.type === FileT.DIR) {
-                file = {
-                    type: FileT.DIR,
-                    entries: {}
-                }
-                for (const [ name, child ] of Object.entries(tree.children)) {
-                    queue.push({ vfile: child, entries: file.entries, name })
-                }
-            }
-            else {
-                file = tree
-            }
-
-            // TODO: optimize
-            const iid = fs.inodeBitmap.getFree(1)
-            const inode: Inode = { iid, file }
-            fs.inodes.set(iid, inode)
-            if (! rootInode) rootInode = inode
-            entries[name] = iid
-        }
-
-        return rootInode as Inode<FB['type']>
-    }
-}
 
 export const enum FOpT {
     OK,
@@ -211,7 +140,7 @@ export type FOpOk<T> = { type: FOpT.OK } & T
 export type FOpResult<T> = FOpOk<T> | FOpError
 
 export type FFindInodeResult<F extends File = File> = FOpResult<{
-    inode: Inode<F['type']>
+    inode: Inode<F>
     path: string
 }>
 export type FFindResult<F extends File = File> = FOpResult<{
@@ -236,8 +165,22 @@ export class Fs {
         return this.inodes.get(this.rootIid)!
     }
 
+    persistence: FsPersistence = new LocalStorageFsPersistence()
+
     constructor(public ctx: Context) {
-        this.build(getSysImage())
+        if (! this.persistence.isInitialized) {
+            this.create(getSysImage())
+            this.inodes.forEach((inode, iid) => {
+                this.persistence.set(iid, inode)
+            })
+            this.persistence.isInitialized = true
+        }
+        else {
+            this.persistence.getAll().forEach(([ iid, inode ]) => {
+                this.inodes.set(iid, inode)
+                this.inodeBitmap.bits[iid] = 1
+            })
+        }
     }
 
     get cwd() {
@@ -247,12 +190,19 @@ export class Fs {
     isFileOfType<FT extends FileT>(file: File, types: readonly FT[]): file is FileFromT<FT> {
         return types.includes(file.type)
     }
-    isInodeOfType<FT extends FileT>(inode: Inode, types: readonly FT[]): inode is Inode<FT> {
+    isInodeOfType<FT extends FileT>(inode: Inode, types: readonly FT[]): inode is Inode<FileFromT<FT>> {
         return this.isFileOfType(inode.file, types)
     }
 
-    build<FB extends FsBuilder.Vfile>(tree: FB) {
-        return FsBuilder.build(this, tree)
+    create<FB extends Vfs.Vfile>(tree: FB) {
+        return Vfs.create(this, tree)
+    }
+
+    createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB) {
+        const inode = this.create(tree)
+        parent.file.entries[name] = inode.iid
+        this.persistence.set(parent.iid, parent)
+        return inode
     }
 
     unwrap<T>(res: FOpResult<T>, errHead: string): FOpOk<T> {
@@ -308,13 +258,13 @@ export class Fs {
         }
 
         const inode = inodeStack.top
-        if (allowedTypes && ! this.isFileOfType(inode.file, allowedTypes)) {
+        if (allowedTypes && ! this.isInodeOfType(inode, allowedTypes)) {
             return fErr({ type: FOpT.NOT_ALLOWED_TYPE, allowedTypes })
         }
 
         return {
             type: FOpT.OK,
-            inode,
+            inode: inode as Inode<FileFromT<FT>>,
             path: Path.joinAbs(partStack),
         }
     }
@@ -355,13 +305,12 @@ export class Fs {
         const { dirname, filename } = Path.getDirAndName(path)
         if (! Path.isLegalFilename(filename)) return fErr({ type: FOpT.ILLEGAL_NAME })
 
-        const dirRes = this.find(dirname, { allowedTypes: [ FileT.DIR ] })
+        const dirRes = this.findInode(dirname, { allowedTypes: [ FileT.DIR ] })
         if (dirRes.type !== FOpT.OK) return dirRes
-        const { file: parent } = dirRes
-        if (parent.entries[filename]) return fErr({ type: FOpT.ALREADY_EXISTS })
+        const { inode: parentInode } = dirRes
+        if (parentInode.file.entries[filename]) return fErr({ type: FOpT.ALREADY_EXISTS })
 
-        const { iid, file } = this.build(FsBuilder.dir())
-        parent.entries[filename] = iid
+        const { file } = this.createAt(parentInode, filename, Vfs.dir())
 
         return {
             type: FOpT.OK,
@@ -373,161 +322,38 @@ export class Fs {
         return this.unwrap(this.mkdir(path), `Cannot create directory ${path}`)
     }
 
-    private createFileHandle<FM extends FileMode>(file: NormalFile, mode: FM): FileHandleFromMode<FM> {
-        type R = FileHandleFromMode<FM>
-
-        switch (mode as FileMode) {
-        case 'r':
-            return new FileHandleR(file) as R
-        case 'w':
-            return new FileHandleW(file) as R
-        case 'a':
-            return new FileHandleA(file) as R
-        case 'rw':
-            return new FileHandleRW(file) as R
-        case 'ra':
-            return new FileHandleRA(file) as R
-        }
+    private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
+        const Handle = FILE_HANDLE_FROM_MODE[mode]
+        return new Handle(this.ctx, inode) as FileHandleFromMode<FM>
     }
 
     open<FM extends FileMode>(path: string, mode: FM): FOpenResult<FM> {
-        const res = this.find(path, { allowedTypes: [ FileT.NORMAL ] })
+        const res = this.findInode(path, { allowedTypes: [ FileT.NORMAL ] })
 
-        let file: NormalFile
+        let inode: Inode<NormalFile>
         if (res.type !== FOpT.OK) {
             if (mode === 'r' || res.type === FOpT.NOT_ALLOWED_TYPE) return res
             const { dirname, filename } = Path.getDirAndName(path)
 
             if (! filename) return fErr({ type: FOpT.ILLEGAL_NAME })
 
-            const dirRes = this.find(dirname, { allowedTypes: [ FileT.DIR ] })
+            const dirRes = this.findInode(dirname, { allowedTypes: [ FileT.DIR ] })
             if (dirRes.type !== FOpT.OK) return dirRes
 
-            const { file: dir } = dirRes
-            const inode = this.build({
-                ...FsBuilder.normal(''),
-            })
-            file = inode.file
-            dir.entries[filename] = inode.iid
+            const { inode: parentInode } = dirRes
+            inode = this.createAt(parentInode, filename, Vfs.normal(''))
         }
         else {
-            file = res.file
+            inode = res.inode
         }
 
         return {
             type: FOpT.OK,
-            handle: this.createFileHandle(file, mode),
+            handle: this.createFileHandle(inode, mode),
         }
     }
 
     openU<FM extends FileMode>(path: string, mode: FM) {
         return this.unwrap(this.open(path, mode), path)
     }
-}
-
-export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'
-export type FileMode = 'r' | FileModeWritable
-
-export abstract class FileHandle {
-    constructor(protected file: NormalFile) {}
-
-    abstract readonly mode: FileMode
-
-    protected cursor = 0
-
-    get isAtEof() {
-        return this.cursor >= this.file.content.length
-    }
-
-    get currentChar() {
-        return this.file.content[this.cursor]
-    }
-}
-
-export type FileHandleFromMode<FM extends FileMode> =
-    FM extends 'r' ? FileHandleR :
-    FM extends 'w' ? FileHandleW :
-    FM extends 'a' ? FileHandleA :
-    FM extends 'rw' ? FileHandleRW :
-    FM extends 'ra' ? FileHandleRA :
-    never
-
-export class FileHandleR extends FileHandle implements FRead {
-    readonly mode: FileMode = 'r'
-
-    readChar() {
-        if (this.isAtEof) return null
-        const char = this.currentChar
-        this.cursor ++
-        return char
-    }
-    readKey({}: FReadKeyOptions) {
-        return this.readChar()
-    }
-    readUntil(pred: Pred<string>) {
-        let start = this.cursor
-        while (! (this.isAtEof || pred(this.currentChar))) this.cursor ++
-        return this.file.content.slice(start, this.cursor)
-    }
-
-    read() {
-        return this.readUntil(() => false)
-    }
-    readLn() {
-        return this.readUntil(char => char === '\n')
-    }
-}
-
-export abstract class FileHandleWritable extends FileHandle implements FWrite {
-    abstract readonly mode: FileModeWritable
-
-    write(data: string) {
-        if (this.mode.endsWith('a')) this.append(data)
-        else this.rewrite(data)
-    }
-    writeLn(data: string) {
-        this.write(data + '\n')
-    }
-
-    rewrite(data: string) {
-        this.file.content = data
-    }
-    rewriteLn(data: string) {
-        this.rewrite(data + '\n')
-    }
-
-    append(data: string) {
-        this.file.content += data
-    }
-    appendLn(data: string) {
-        this.append(data + '\n')
-    }   
-}
-
-export class FileHandleW extends FileHandleWritable implements FWrite {
-    readonly mode: FileModeWritable = 'w'
-}
-
-export class FileHandleA extends FileHandleWritable implements FWrite {
-    readonly mode: FileModeWritable = 'a'
-}
-
-export interface FileHandleRW extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
-export class FileHandleRW extends FileHandle implements FReadWrite {
-    static {
-        mixin(this, FileHandleR)
-        mixin(this, FileHandleW)
-    }
-
-    readonly mode: FileMode = 'rw'
-}
-
-export interface FileHandleRA extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
-export class FileHandleRA extends FileHandle implements FReadWrite {
-    static {
-        mixin(this, FileHandleR)
-        mixin(this, FileHandleA)
-    }
-
-    readonly mode: FileMode = 'ra'
 }

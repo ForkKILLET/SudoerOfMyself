@@ -3,6 +3,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import '@/effects/xterm_ex'
 import '@/effects/vanilla_ex'
+import '@/effects/storage_ex'
 import '@/effects/chalk_init'
 
 import { Context } from '@/sys0/context'
