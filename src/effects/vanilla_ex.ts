@@ -35,6 +35,10 @@ declare global {
         values<T>(obj: T): T[keyof T][]
         entries<T>(obj: T): [StringKeyOf<T>, T[keyof T]][]
     }
+
+    interface Number {
+        toPercent(precision?: number): string
+    }
 }
 
 Array.prototype.sum = function(this: number[]) {
@@ -98,4 +102,8 @@ Array.replicate = function(n: number, value) {
 }
 Array.lift = function(value) {
     return Array.isArray(value) ? value : [ value ]
+}
+
+Number.prototype.toPercent = function(this: number, precision = 0) {
+    return `${(this * 100).toFixed(precision)}%`
 }
