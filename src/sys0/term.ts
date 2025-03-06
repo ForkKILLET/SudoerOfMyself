@@ -52,6 +52,6 @@ export class Term extends Terminal {
     }
 
     getStringWidth(str: string) {
-        return [...str].map(char => this.getCharWidth(char)).sum()
+        return [ ...str ].map(char => this.getCharWidth(char)).sum()
     }
 }

@@ -11,8 +11,8 @@ declare global {
         sortWith<U>(fn: (value: T) => U): T[]
 
         groupWith<U extends keyof any>(fn: (value: T) => U): Record<U, T[]>
-        divideWith<U extends T>(fn: (value: T) => value is U): [U[], Exclude<T, U>[]]
-        divideWith(fn: (value: T) => boolean): [T[], T[]]
+        divideWith<U extends T>(fn: (value: T) => value is U): [ U[], Exclude<T, U>[] ]
+        divideWith(fn: (value: T) => boolean): [ T[], T[] ]
 
         findMap<U>(callback: (value: T, index: number, array: T[]) => U | typeof Control['continue']): U | undefined
 

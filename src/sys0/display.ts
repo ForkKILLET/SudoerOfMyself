@@ -3,7 +3,7 @@ import { Term } from './term'
 
 export const calcMaxRows = (term: Term, widths: number[]) => {
     const { cols: termWidth } = term
-    const sortedWidths = [...widths].sort((a, b) => b - a)
+    const sortedWidths = [ ...widths ].sort((a, b) => b - a)
     let width = 0
     let col = 0
     for (const w of sortedWidths) {

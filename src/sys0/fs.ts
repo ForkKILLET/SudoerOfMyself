@@ -2,7 +2,8 @@ import { getSysImage } from '@/data/sys_image'
 import { Program } from '@/sys0/program'
 import { Awaitable, DistributiveOmit, MakeOptional, Pred, StrictOmit } from '@/utils/types'
 import { Context } from './context'
-import { mixin, Signal } from '@/utils'
+import { mixin, Signal, Stack } from '@/utils'
+import { Bitmap } from '@/utils/bitmap'
 
 export namespace Path {
     export const hasSlash = (path: string) => path.includes('/')
@@ -10,6 +11,7 @@ export namespace Path {
     export const isRel = (path: string) => path.match(/^\.\.?(\/|$)/)
     export const isAbsOrRel = (path: string) => isAbs(path) || isRel(path)
     export const split = (path: string) => path.split('/').filter(Boolean)
+    export const joinAbs = (parts: string[]) => '/' + parts.slice(1).join('/')
     export const getDirAndName = (path: string) => {
         if (! isAbsOrRel(path)) path = `./${path}`
         const parts = split(path)
@@ -36,32 +38,40 @@ export const displayFileT = (type: FileT) => {
     return FileTNames[type]
 }
 
+export type InodeId = number
+export interface Inode<FT extends FileT = FileT> {
+    iid: InodeId
+    file: FileFromT<FT>
+}
+export type Inodes = Map<InodeId, Inode>
+
 export type File =
     | DirFile
     | NormalFile
     | JsExeFile
 
-export interface FileEntry<F extends File = File> {
+export interface FileLoc<F extends File = File> {
     path: string
     file: F
 }
 
+export interface DirEntries {
+    [name: string]: InodeId
+}
+
 export interface DirFile {
     type: FileT.DIR
-    children: Record<string, File>
-    parent: DirFile | null
+    entries: DirEntries
 }
 
 export interface NormalFile {
     type: FileT.NORMAL
     content: string
-    parent: DirFile
 }
 
 export interface JsExeFile {
     type: FileT.JSEXE
     program: Program
-    parent: DirFile
 }
 
 export type FileFromT<FT extends FileT> =
@@ -87,38 +97,95 @@ export interface FWrite {
 
 export interface FReadWrite extends FRead, FWrite {}
 
-export namespace FileBuilder {
-    export type Orphan<F extends File> = MakeOptional<F, 'parent'>
+export const MAX_INODE_COUNT = 1024
 
-    export const dir = (children: Record<string, Orphan<File>> = {}): DirFile => {
-        const self: DirFile = {
+export interface InodeMaintainer {
+    inodes: Inodes
+    inodeBitmap: Bitmap 
+}
+
+export namespace FsBuilder {
+    export interface DirVfile {
+        type: FileT.DIR
+        children: Record<string, Vfile>
+    }
+    export interface NormalVfile {
+        type: FileT.NORMAL
+        content: string
+    }
+    export interface JsExeVfile {
+        type: FileT.JSEXE
+        program: Program
+    }
+    export type Vfile =
+        | DirVfile
+        | NormalVfile
+        | JsExeVfile
+
+    export const dir = (children: Record<string, Vfile> = {}): DirVfile => {
+        return {
             type: FileT.DIR,
-            children: children as Record<string, File>,
-            parent: null,
+            children,
         }
-
-        for (const name in children) {
-            children[name].parent = self
-        }
-        
-        return self
     }
 
-    export const normal = (content: string): Orphan<NormalFile> => ({
+    export const normal = (content: string): NormalVfile => ({
         type: FileT.NORMAL,
         content,
     })
 
-    export const jsExe = (program: Program): Orphan<JsExeFile> => ({
+    export const jsExe = (program: Program): JsExeVfile => ({
         type: FileT.JSEXE,
         program,
     })
+
+    interface FsBuildStep {
+        vfile: Vfile
+        entries: DirEntries
+        name: string
+    }
+
+    export const build = <FB extends Vfile>(
+        fs: InodeMaintainer,
+        vroot: FB,
+    ): Inode<FB['type']> => {
+        const queue: FsBuildStep[] = [ { vfile: vroot, entries: {}, name: '' } ]
+        let rootInode: Inode | undefined
+    
+        while (queue.length) {
+            const { vfile: tree, entries, name } = queue.shift()!
+
+            let file: File
+            if (tree.type === FileT.DIR) {
+                file = {
+                    type: FileT.DIR,
+                    entries: {}
+                }
+                for (const [ name, child ] of Object.entries(tree.children)) {
+                    queue.push({ vfile: child, entries: file.entries, name })
+                }
+            }
+            else {
+                file = tree
+            }
+
+            // TODO: optimize
+            const iid = fs.inodeBitmap.getFree(1)
+            const inode: Inode = { iid, file }
+            fs.inodes.set(iid, inode)
+            if (! rootInode) rootInode = inode
+            entries[name] = iid
+        }
+
+        return rootInode as Inode<FB['type']>
+    }
 }
 
 export const enum FOpT {
     OK,
     ILLEGAL_NAME,
     NOT_FOUND,
+    DANGLING_Inode,
     NOT_DIR,
     NOT_ALLOWED_TYPE,
     ALREADY_EXISTS,
@@ -128,6 +195,7 @@ export const kFOpError: unique symbol = Symbol('FOpError')
 export type FOpError = { [kFOpError]: true } & (
     | { type: FOpT.ILLEGAL_NAME }
     | { type: FOpT.NOT_FOUND }
+    | { type: FOpT.DANGLING_Inode }
     | { type: FOpT.NOT_DIR }
     | { type: FOpT.NOT_ALLOWED_TYPE, allowedTypes: readonly FileT[] }
     | { type: FOpT.ALREADY_EXISTS }
@@ -142,7 +210,14 @@ export const fErr = <E extends DistributiveOmit<FOpError, typeof kFOpError>>(
 export type FOpOk<T> = { type: FOpT.OK } & T
 export type FOpResult<T> = FOpOk<T> | FOpError
 
-export type FFindResult<F extends File = File> = FOpResult<{ file: F }>
+export type FFindInodeResult<F extends File = File> = FOpResult<{
+    inode: Inode<F['type']>
+    path: string
+}>
+export type FFindResult<F extends File = File> = FOpResult<{
+    file: F
+    path: string
+}>
 export type FMkdirResult = FOpResult<{ dir: DirFile }>
 export type FReadResult = FOpResult<{ content: string }>
 export type FOpenResult<FM extends FileMode> = FOpResult<{ handle: FileHandleFromMode<FM> }>
@@ -154,42 +229,30 @@ export interface FindOptions<FT extends FileT = FileT> {
 export type FOpMethod = 'find' | 'mkdir' | 'read'
 
 export class Fs {
-    root = getSysImage()
+    inodes: Inodes = new Map()
+    inodeBitmap: Bitmap = new Bitmap(MAX_INODE_COUNT)
+    rootIid = 1
+    get root() {
+        return this.inodes.get(this.rootIid)!
+    }
 
-    constructor(public ctx: Context) {}
+    constructor(public ctx: Context) {
+        this.build(getSysImage())
+    }
 
     get cwd() {
         return this.ctx.fgProc.cwd
     }
 
-    getFilename(file: File) {
-        const { parent } = file
-        if (! parent) return ''
-        for (const name in parent.children) {
-            if (parent.children[name] === file) return name
-        }
-        return ''
-    }
-
-    getPath(file: File) {
-        const parts: string[] = []
-        let current = file
-        let parent = file.parent
-        while (parent) {
-            for (const name in parent.children) {
-                if (parent.children[name] === current) {
-                    parts.unshift(name)
-                    break
-                }
-            }
-            current = parent
-            parent = current.parent
-        }
-        return '/' + parts.join('/')
-    }
-
-    isOfType<FT extends FileT>(file: File, types: readonly FT[]): file is FileFromT<FT> {
+    isFileOfType<FT extends FileT>(file: File, types: readonly FT[]): file is FileFromT<FT> {
         return types.includes(file.type)
+    }
+    isInodeOfType<FT extends FileT>(inode: Inode, types: readonly FT[]): inode is Inode<FT> {
+        return this.isFileOfType(inode.file, types)
+    }
+
+    build<FB extends FsBuilder.Vfile>(tree: FB) {
+        return FsBuilder.build(this, tree)
     }
 
     unwrap<T>(res: FOpResult<T>, errHead: string): FOpOk<T> {
@@ -200,6 +263,8 @@ export class Fs {
             throw `${errHead}: Illegal file name`
         case FOpT.NOT_FOUND:
             throw `${errHead}: No such file or directory`
+        case FOpT.DANGLING_Inode:
+            throw `${errHead}: Dangling Inode`
         case FOpT.NOT_DIR:
             throw `${errHead}: Not a directory`
         case FOpT.NOT_ALLOWED_TYPE:
@@ -209,10 +274,10 @@ export class Fs {
         }
     }
 
-    find<FT extends FileT = FileT>(
+    findInode<FT extends FileT = FileT>(
         path: string,
         { allowedTypes }: FindOptions<FT> = {}
-    ): FFindResult<FileFromT<FT>> {
+    ): FFindInodeResult<FileFromT<FT>> {
         let path1 = path
         if (! Path.isAbsOrRel(path1)) path1 = `./${path1}`
         const parts = Path.split(path1)
@@ -221,25 +286,49 @@ export class Fs {
             parts.unshift(...Path.split(this.cwd))
         }
 
-        let file: File = this.root
+        const inodeStack = new Stack(this.root)
+        const partStack = new Stack('')
+
         for (const part of parts) {
+            const { file } = inodeStack.top
             if (file.type !== FileT.DIR) return fErr({ type: FOpT.NOT_DIR })
             if (part === '.') continue
             if (part === '..') {
-                file = file.parent ?? this.root
+                if (inodeStack.length > 1) {
+                    inodeStack.pop()
+                    partStack.pop()
+                }
                 continue
             }
-            if (! (part in file.children)) return fErr({ type: FOpT.NOT_FOUND })
-            file = file.children[part]
+            if (! (part in file.entries)) return fErr({ type: FOpT.NOT_FOUND })
+            const inode = this.inodes.get(file.entries[part])
+            if (! inode) return fErr({ type: FOpT.NOT_FOUND })
+            inodeStack.push(inode)
+            partStack.push(part)
         }
 
-        if (allowedTypes && ! this.isOfType(file, allowedTypes)) {
+        const inode = inodeStack.top
+        if (allowedTypes && ! this.isFileOfType(inode.file, allowedTypes)) {
             return fErr({ type: FOpT.NOT_ALLOWED_TYPE, allowedTypes })
         }
 
         return {
             type: FOpT.OK,
-            file: file as FileFromT<FT>,
+            inode,
+            path: Path.joinAbs(partStack),
+        }
+    }
+
+    find<FT extends FileT = FileT>(
+        path: string,
+        { allowedTypes }: FindOptions<FT> = {}
+    ): FFindResult<FileFromT<FT>> {
+        const res = this.findInode(path, { allowedTypes })
+        if (res.type !== FOpT.OK) return res
+        return {
+            type: FOpT.OK,
+            file: res.inode.file,
+            path: res.path,
         }
     }
 
@@ -269,14 +358,14 @@ export class Fs {
         const dirRes = this.find(dirname, { allowedTypes: [ FileT.DIR ] })
         if (dirRes.type !== FOpT.OK) return dirRes
         const { file: parent } = dirRes
-        if (parent.children[filename]) return fErr({ type: FOpT.ALREADY_EXISTS })
+        if (parent.entries[filename]) return fErr({ type: FOpT.ALREADY_EXISTS })
 
-        const dir = parent.children[filename] = FileBuilder.dir()
-        dir.parent = parent
+        const { iid, file } = this.build(FsBuilder.dir())
+        parent.entries[filename] = iid
 
         return {
             type: FOpT.OK,
-            dir,
+            dir: file,
         }
     }
 
@@ -315,10 +404,11 @@ export class Fs {
             if (dirRes.type !== FOpT.OK) return dirRes
 
             const { file: dir } = dirRes
-            file = dir.children[filename] = {
-                ...FileBuilder.normal(''),
-                parent: dir,
-            }
+            const inode = this.build({
+                ...FsBuilder.normal(''),
+            })
+            file = inode.file
+            dir.entries[filename] = inode.iid
         }
         else {
             file = res.file

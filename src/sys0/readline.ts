@@ -208,7 +208,7 @@ export class Readline {
                     break
                 }
                 default:
-                    console.debug('ESC', data, [...data.slice(1)].map(c => c.charCodeAt(0)))
+                    console.debug('ESC', data, [ ...data.slice(1) ].map(c => c.charCodeAt(0)))
                     break
                 }
             }
@@ -238,7 +238,7 @@ export class Readline {
             }
             else {
                 if (data.charCodeAt(0) < 32) {
-                    console.debug([...data].map(c => c.charCodeAt(0)))
+                    console.debug([ ...data ].map(c => c.charCodeAt(0)))
                     continue
                 }
                 line.isDirty = true

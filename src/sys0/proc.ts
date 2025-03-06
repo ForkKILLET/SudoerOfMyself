@@ -54,8 +54,11 @@ export class Process extends Emitter<ProcessEvents> {
         return proc
     }
 
-    error(err: string | string[], name = this.name) {
-        Array.lift(err).forEach(err => this.stdio.writeLn(`${name}: ${err}`))
+    error(err: any | any[], name = this.name) {
+        Array.lift(err).forEach(err => {
+            if (err instanceof Error) console.error(err)
+            this.stdio.writeLn(`${name}: ${err}`)
+        })
     }
 
     async spawn(program: Program, options: CreateProcOptions, ...args: string[]) {

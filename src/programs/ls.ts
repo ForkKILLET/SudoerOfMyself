@@ -1,11 +1,11 @@
 import { wrapProgram } from '@/sys0/program'
 import { displayList } from '@/sys0/display'
-import { DirFile, FileEntry, FileT } from '@/sys0/fs'
+import { DirFile, FileLoc, FileT } from '@/sys0/fs'
 
 export const ls = wrapProgram((proc, _, ...paths) => {
     const { stdio, ctx } = proc
 
-    const entries: FileEntry[] = []
+    const entries: FileLoc[] = []
     const errs: string[] = []
 
     if (! paths.length) paths.push('')
@@ -22,7 +22,7 @@ export const ls = wrapProgram((proc, _, ...paths) => {
     proc.error(errs)
 
     const [ dirEntries, otherEntries ] = entries
-        .divideWith((entry): entry is FileEntry<DirFile> => entry.file.type === FileT.DIR)
+        .divideWith((entry): entry is FileLoc<DirFile> => entry.file.type === FileT.DIR)
     
     const outputs: string[] = []
     if (otherEntries.length)
@@ -30,7 +30,7 @@ export const ls = wrapProgram((proc, _, ...paths) => {
 
     outputs.push(...dirEntries.map(({ file, path }) => (
         (paths.length > 1 ? `${path}:\n` : '')
-            + displayList(ctx.term, Object.keys(file.children))
+            + displayList(ctx.term, Object.keys(file.entries))
     )))
 
     stdio.write(outputs.join('\n'))

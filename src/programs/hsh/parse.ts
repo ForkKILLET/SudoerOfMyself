@@ -9,13 +9,13 @@ const ESCAPES: Record<string, string> = {
 }
 
 namespace CHARS {
-    export const white = [...' \t\r\n']
-    export const d8 = [...'01234567']
-    export const d10 = [...d8, ...'89']
-    export const d16 = [...d10, ...'abcdefABCDEF']
-    export const letter = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ']
-	export const senv = [...d10, '?']
-    export const env = [...letter, ...d10, '_']
+    export const white = [ ...' \t\r\n' ]
+    export const d8 = [ ...'01234567' ]
+    export const d10 = [ ...d8, ...'89' ]
+    export const d16 = [ ...d10, ...'abcdefABCDEF' ]
+    export const letter = [ ...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' ]
+	export const senv = [ ...d10, '?' ]
+    export const env = [ ...letter, ...d10, '_' ]
 }
 
 export const is = <K extends keyof typeof CHARS>(kind: K, ch: string) => CHARS[kind].includes(ch)

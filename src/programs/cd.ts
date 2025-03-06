@@ -6,7 +6,6 @@ export const cd = wrapProgram(async (proc, self, ...args) => {
     if (args.length === 0) return cd(proc, self, env.HOME)
     if (args.length > 1) throw 'Too many arguments'
     const [ path ] = args
-    const { file } = ctx.fs.findU(path, { allowedTypes: [ FileT.DIR ] })
-    proc.cwd = ctx.fs.getPath(file)
+    proc.cwd = ctx.fs.findU(path, { allowedTypes: [ FileT.DIR ] }).path
     return 0
 })
