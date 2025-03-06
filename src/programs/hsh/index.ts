@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import { Process } from '@/sys0/proc'
 import { Program } from '@/sys0/program'
-import { FOpT } from '@/sys0/fs'
+import { fOpIsErr, FOpT } from '@/sys0/fs'
 import { Readline } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
@@ -43,7 +43,7 @@ export const execute = async (proc: Process, command: HshAstCommand): Promise<nu
         }
         else {
             const exeRes = ctx.fs.findInEnvPath(name, env.PATH, { cwd: env.PWD })
-            if (exeRes.type !== FOpT.OK) {
+            if (fOpIsErr(exeRes)) {
                 proc.error(`${name}: Command not found`)
                 return 127
             }

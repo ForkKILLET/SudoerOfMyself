@@ -108,33 +108,35 @@ export interface InodeMaintainer {
     inodeBitmap: Bitmap 
 }
 
-
-
 export const enum FOpT {
     OK,
     ILLEGAL_NAME,
     NOT_FOUND,
-    DANGLING_Inode,
+    DANGLING_INODE,
     NOT_DIR,
     NOT_ALLOWED_TYPE,
     ALREADY_EXISTS,
+    OUT_OF_INODES,
 }
 
 export const kFOpError: unique symbol = Symbol('FOpError')
 export type FOpError = { [kFOpError]: true } & (
     | { type: FOpT.ILLEGAL_NAME }
     | { type: FOpT.NOT_FOUND }
-    | { type: FOpT.DANGLING_Inode }
+    | { type: FOpT.DANGLING_INODE }
     | { type: FOpT.NOT_DIR }
     | { type: FOpT.NOT_ALLOWED_TYPE, allowedTypes: readonly FileT[] }
     | { type: FOpT.ALREADY_EXISTS }
+    | { type: FOpT.OUT_OF_INODES }
 )
-export const fErr = <E extends DistributiveOmit<FOpError, typeof kFOpError>>(
+export const fOpErr = <E extends DistributiveOmit<FOpError, typeof kFOpError>>(
     err: E
 ): FOpError => ({
     [kFOpError]: true,
     ...err
 })
+export const fOpIsErr = <T>(res: FOpResult<T>): res is FOpError => res.type !== FOpT.OK
+export const fOpIsOk = <T>(res: FOpResult<T>): res is FOpOk<T> => res.type === FOpT.OK
 
 export type FOpOk<T> = { type: FOpT.OK } & T
 export type FOpResult<T> = FOpOk<T> | FOpError
@@ -150,6 +152,7 @@ export type FFindResult<F extends File = File> = FOpResult<{
 export type FMkdirResult = FOpResult<{ dir: DirFile }>
 export type FReadResult = FOpResult<{ content: string }>
 export type FOpenResult<FM extends FileMode> = FOpResult<{ handle: FileHandleFromMode<FM> }>
+export type FCreateResult<F extends File = File> = FOpResult<{ inode: Inode<F> }>
 
 export interface FindOptions<FT extends FileT = FileT> {
     allowedTypes?: readonly FT[]
@@ -194,15 +197,17 @@ export class Fs {
         return this.isFileOfType(inode.file, types)
     }
 
-    create<FB extends Vfs.Vfile>(tree: FB) {
+    create<FB extends Vfs.Vfile>(tree: FB): FCreateResult<FileFromT<FB["type"]>> {
         return Vfs.create(this, tree)
     }
 
-    createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB) {
-        const inode = this.create(tree)
-        parent.file.entries[name] = inode.iid
+    createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB): FCreateResult<FileFromT<FB["type"]>> {
+        const createRes = this.create(tree)
+        if (fOpIsErr(createRes)) return createRes
+
+        parent.file.entries[name] = createRes.inode.iid
         this.persistence.set(parent.iid, parent)
-        return inode
+        return createRes
     }
 
     unwrap<T>(res: FOpResult<T>, errHead: string): FOpOk<T> {
@@ -213,7 +218,7 @@ export class Fs {
             throw `${errHead}: Illegal file name`
         case FOpT.NOT_FOUND:
             throw `${errHead}: No such file or directory`
-        case FOpT.DANGLING_Inode:
+        case FOpT.DANGLING_INODE:
             throw `${errHead}: Dangling Inode`
         case FOpT.NOT_DIR:
             throw `${errHead}: Not a directory`
@@ -221,6 +226,8 @@ export class Fs {
             throw `${errHead}: Not ${res.allowedTypes.map(displayFileT).join(' or ')}`
         case FOpT.ALREADY_EXISTS:
             throw `${errHead}: File already exists`
+        case FOpT.OUT_OF_INODES:
+            throw `${errHead}: Out of Inodes`
         }
     }
 
@@ -241,7 +248,7 @@ export class Fs {
 
         for (const part of parts) {
             const { file } = inodeStack.top
-            if (file.type !== FileT.DIR) return fErr({ type: FOpT.NOT_DIR })
+            if (file.type !== FileT.DIR) return fOpErr({ type: FOpT.NOT_DIR })
             if (part === '.') continue
             if (part === '..') {
                 if (inodeStack.length > 1) {
@@ -250,16 +257,16 @@ export class Fs {
                 }
                 continue
             }
-            if (! (part in file.entries)) return fErr({ type: FOpT.NOT_FOUND })
+            if (! (part in file.entries)) return fOpErr({ type: FOpT.NOT_FOUND })
             const inode = this.inodes.get(file.entries[part])
-            if (! inode) return fErr({ type: FOpT.NOT_FOUND })
+            if (! inode) return fOpErr({ type: FOpT.NOT_FOUND })
             inodeStack.push(inode)
             partStack.push(part)
         }
 
         const inode = inodeStack.top
         if (allowedTypes && ! this.isInodeOfType(inode, allowedTypes)) {
-            return fErr({ type: FOpT.NOT_ALLOWED_TYPE, allowedTypes })
+            return fOpErr({ type: FOpT.NOT_ALLOWED_TYPE, allowedTypes })
         }
 
         return {
@@ -274,7 +281,7 @@ export class Fs {
         { allowedTypes }: FindOptions<FT> = {}
     ): FFindResult<FileFromT<FT>> {
         const res = this.findInode(path, { allowedTypes })
-        if (res.type !== FOpT.OK) return res
+        if (fOpIsErr(res)) return res
         return {
             type: FOpT.OK,
             file: res.inode.file,
@@ -298,23 +305,25 @@ export class Fs {
             const entry = this.find(`${envPath}/${path}`, { allowedTypes: [ FileT.JSEXE ] })
             if (entry.type === FOpT.OK) return entry
         }
-        return fErr({ type: FOpT.NOT_FOUND })
+        return fOpErr({ type: FOpT.NOT_FOUND })
     }
 
     mkdir(path: string): FMkdirResult {
         const { dirname, filename } = Path.getDirAndName(path)
-        if (! Path.isLegalFilename(filename)) return fErr({ type: FOpT.ILLEGAL_NAME })
+        if (! Path.isLegalFilename(filename)) return fOpErr({ type: FOpT.ILLEGAL_NAME })
 
         const dirRes = this.findInode(dirname, { allowedTypes: [ FileT.DIR ] })
-        if (dirRes.type !== FOpT.OK) return dirRes
+        if (fOpIsErr(dirRes)) return dirRes
         const { inode: parentInode } = dirRes
-        if (parentInode.file.entries[filename]) return fErr({ type: FOpT.ALREADY_EXISTS })
+        if (parentInode.file.entries[filename]) return fOpErr({ type: FOpT.ALREADY_EXISTS })
 
-        const { file } = this.createAt(parentInode, filename, Vfs.dir())
+        const createRes = this.createAt(parentInode, filename, Vfs.dir())
+        if (fOpIsErr(createRes)) return createRes
 
+        const { inode } = createRes
         return {
             type: FOpT.OK,
-            dir: file,
+            dir: inode.file,
         }
     }
 
@@ -331,17 +340,19 @@ export class Fs {
         const res = this.findInode(path, { allowedTypes: [ FileT.NORMAL ] })
 
         let inode: Inode<NormalFile>
-        if (res.type !== FOpT.OK) {
+        if (fOpIsErr(res)) {
             if (mode === 'r' || res.type === FOpT.NOT_ALLOWED_TYPE) return res
             const { dirname, filename } = Path.getDirAndName(path)
 
-            if (! filename) return fErr({ type: FOpT.ILLEGAL_NAME })
+            if (! filename) return fOpErr({ type: FOpT.ILLEGAL_NAME })
 
             const dirRes = this.findInode(dirname, { allowedTypes: [ FileT.DIR ] })
-            if (dirRes.type !== FOpT.OK) return dirRes
+            if (fOpIsErr(dirRes)) return dirRes
 
             const { inode: parentInode } = dirRes
-            inode = this.createAt(parentInode, filename, Vfs.normal(''))
+            const createRes = this.createAt(parentInode, filename, Vfs.normal(''))
+            if (fOpIsErr(createRes)) return createRes
+            inode = createRes.inode as Inode<NormalFile>
         }
         else {
             inode = res.inode
