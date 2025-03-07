@@ -39,8 +39,9 @@ export class GridDisplay {
 
         if (useEqualWidth) {
             const colWidth = Math.max(minWidth, cells.map(str => term.getStringWidth(str)).max()) + gap
-            this.cols = Math.floor((term.cols + gap) / colWidth)
-            this.rows = Math.ceil(cells.length / this.cols)
+            const maxCols = Math.floor((term.cols + gap) / colWidth)
+            this.rows = Math.ceil(cells.length / maxCols)
+            this.cols = Math.ceil(cells.length / this.rows)
             this.colWidths = Array.replicate(this.cols, colWidth)
             return
         }

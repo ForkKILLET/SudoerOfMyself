@@ -339,17 +339,17 @@ export class Readline {
             }
             else if (data === '\x1B[C') { // Right
                 if (line.compState) {
-                    renderCompletion(({ index, length, display: { grid } }) => {
+                    renderCompletion(({ index, length, display: { grid: { cols, rows } } }) => {
                         if (index === null) return null
-                        let row = index % grid.rows
-                        let col = index / grid.rows | 0
-                        const lastColHeight = length % grid.rows
+                        let row = index % rows
+                        let col = index / rows | 0
+                        const lastColHeight = length % rows || rows
                         col ++
-                        if (col === grid.cols || col === grid.cols - 1 && row >= lastColHeight) {
+                        if (col === cols || col === cols - 1 && row >= lastColHeight) {
                             col = 0
-                            row = (row + 1).mod(grid.rows)
+                            row = (row + 1).mod(rows)
                         }
-                        return col * grid.rows + row
+                        return col * rows + row
                     })
                     continue
                 }
@@ -364,7 +364,7 @@ export class Readline {
                 if (line.compState) {
                     renderCompletion(({ index, length, display: { grid: { rows, cols } } }) => {
                         if (index === null) return null
-                        const lastColHeight = length % rows
+                        const lastColHeight = length % rows || rows
                         let row = index % rows
                         let col = index / rows | 0
                         col --
