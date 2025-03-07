@@ -5,5 +5,3 @@ export const fs_format = wrapProgram(proc => {
     proc.stdio.writeLn('File system formatted')
     return 0
 })
-
-export default fs_format

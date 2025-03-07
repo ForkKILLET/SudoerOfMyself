@@ -1,5 +1,5 @@
 import { wrapProgram } from '@/sys0/program'
-import { displayList } from '@/sys0/display'
+import { GridDisplay } from '@/sys0/display'
 import { DirFile, FileLoc, FileT } from '@/sys0/fs'
 
 export const ls = wrapProgram((proc, _, ...paths) => {
@@ -26,16 +26,14 @@ export const ls = wrapProgram((proc, _, ...paths) => {
     
     const outputs: string[] = []
     if (otherEntries.length)
-        outputs.push(displayList(ctx.term, otherEntries.map(entry => entry.path)))
+        outputs.push(new GridDisplay(ctx.term, otherEntries.map(entry => entry.path)).toString())
 
     outputs.push(...dirEntries.map(({ file, path }) => (
         (paths.length > 1 ? `${path}:\n` : '')
-            + displayList(ctx.term, Object.keys(file.entries))
+            + new GridDisplay(ctx.term, Object.keys(file.entries))
     )))
 
     stdio.write(outputs.join('\n'))
 
     return errs.length ? 1 : 0
 })
-
-export default ls

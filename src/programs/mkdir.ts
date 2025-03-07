@@ -22,5 +22,3 @@ export const mkdir = wrapProgram(async (proc, _, ...paths) => {
 
     return 0
 })
-
-export default mkdir

@@ -1,4 +1,4 @@
-import { IDisposable } from '@xterm/xterm'
+import { IDisposable } from './dispoable'
 import { RemoveIndex } from './types'
 
 export interface Events {

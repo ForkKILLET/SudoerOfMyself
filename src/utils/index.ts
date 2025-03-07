@@ -1,3 +1,6 @@
+import { Emitter } from './emitter'
+import { AllConstructor } from './types'
+
 export const placeholder = null as any
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -21,12 +24,12 @@ export class Stack<T> extends Array<T> {
     }
 }
 
-export const _break: unique symbol = Symbol('Control.break')
-export const _continue: unique symbol = Symbol('Control.continue')
+export const kBreak: unique symbol = Symbol('Control.break')
+export const kContinue: unique symbol = Symbol('Control.continue')
 
 export const Control = {
-    break: _break,
-    continue: _continue
+    break: kBreak,
+    continue: kContinue
 } as const
 
 export type Computed<T> = T | (() => T)
@@ -34,12 +37,20 @@ export const compute = <T>(value: Computed<T>): T => (
     typeof value === 'function' ? (value as () => T)() : value
 )
 
-export type Constructor<T> = new (...args: any[]) => T
-export type AbstarctConstructor<T> = abstract new (...args: any[]) => T
 
-export const mixin = <C, M>(ctor: Constructor<C>, mixin: Constructor<M> | AbstarctConstructor<M>) => Object
+export const mixin = <C, M>(ctor: AllConstructor<C>, mixin: AllConstructor<M>) => Object
     .getOwnPropertyNames(mixin.prototype)
     .filter(key => key !== 'constructor')
     .forEach(key => {
         ctor.prototype[key] = mixin.prototype[key]
     })
+
+export const id = <T>(value: T) => value
+
+export class AbortEmitter extends Emitter<{ abort: [] }> {}
+
+export type IAbortable = {
+    abortEmitter: AbortEmitter
+}
+
+export const prop = <T, K extends keyof T>(key: K) => (obj: T) => obj[key]

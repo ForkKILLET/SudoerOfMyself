@@ -1,10 +1,9 @@
 import { getSysImage } from '@/data/sys_image'
-import { Program } from '@/sys0/program'
 import { Awaitable, DistributiveOmit, StrictOmit } from '@/utils/types'
 import { Context } from '@/sys0/context'
-import { Signal, Stack } from '@/utils'
+import { IAbortable, Stack } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
-import { FileMode, FileHandleFromMode, FileHandleR, FileHandleW, FileHandleA, FileHandleRW, FileHandleRA, FILE_HANDLE_FROM_MODE } from './file_handle'
+import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
 import { FsPersistence, LocalStorageFsPersistence } from './persistence'
 import { Vfs } from './vfs'
 import { ProgramName } from '@/programs'
@@ -84,9 +83,7 @@ export type FileFromT<FT extends FileT> =
     FT extends FileT.JSEXE ? JsExeFile :
     never
 
-export interface FReadKeyOptions {
-    abort?: Signal
-}
+export interface FReadKeyOptions extends Partial<IAbortable> {}
 
 export interface FRead {
     readKey(options?: FReadKeyOptions): Awaitable<string | null>

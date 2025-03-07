@@ -7,7 +7,7 @@ import '@/effects/storage_ex'
 import '@/effects/chalk_init'
 
 import { Context } from '@/sys0/context'
-import game0 from '@/programs/game0'
+import { game0 } from '@/programs/game0'
 
 const ctx = new Context()
 Object.assign(window, { ctx })

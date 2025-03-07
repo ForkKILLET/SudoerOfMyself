@@ -1,12 +1,21 @@
-import { compute, Computed, createSignal, Signal } from '@/utils'
-import { MakeOptional } from '@/utils/types'
+import { AbortEmitter, compute, Computed, createSignal, prop } from '@/utils'
+import { MakeOptional, StrictPick } from '@/utils/types'
 import { Process } from './proc'
+import { GridDisplay } from './display'
+import { Term } from './term'
+import chalk from 'chalk'
 
 export type DoPrevent = boolean
 
+export interface CompCandidate {
+    display: string
+    value: string
+}
+
 export interface ReadlineReadLnOptions {
     history?: ReadlineHistory
-    doEcho: boolean
+    doEcho?: boolean
+    onCompletion?: (line: ReadlineCurrentLine) => CompCandidate[]
     onBeforeClear?: () => DoPrevent
     onClear?: () => void
 }
@@ -43,10 +52,25 @@ export class ReadlineHistory {
     }
 }
 
+export interface CompDisplay {
+    type: 'grid'
+    grid: GridDisplay
+}
+
+export interface CompState {
+    before: string
+    display: CompDisplay
+    index: number | null
+    candidates: string[]
+    length: number
+}
+
 export class ReadlineCurrentLine {
     constructor(public history = new ReadlineHistory()) {}
 
     cursor = 0
+
+    compState: CompState | null = null 
 
     get content() {
         return this.history.current
@@ -85,26 +109,31 @@ export class Readline {
     constructor(
         public readonly proc: Process,
         public readonly stdio = proc.stdio,
+        public readonly term?: Term
     ) {}
 
     private isReadingLn = false
 
-    private async _readLn(
-        toBeInterrupted: Signal,
-        {
-            history,
-            doEcho = true,
-            onBeforeClear,
-            onClear,
-        }: Partial<ReadlineReadLnOptions> = {},
-    ): Promise<string | null> {
+    private async _readLn({
+        history,
+        doEcho = true,
+        onCompletion,
+        onBeforeClear,
+        onClear,
+    }: ReadlineReadLnOptions): Promise<string | null> {
         const line = new ReadlineCurrentLine(history)
 
         const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
+        const useCompleton = !! (this.term && onCompletion)
     
+        const hideCursor = '\x1B[?25l'
+        const showCursor = '\x1B[?25h'
+        const clearScreen = '\x1B[2J\x1B[H'
         const back = (width: number) => '\b'.repeat(width)
         const left = (width: number) => '\x1B[D'.repeat(width)
         const right = (width: number) => '\x1B[C'.repeat(width)
+        const up = (height: number) => '\x1B[A'.repeat(height)
+        const down = (height: number) => '\x1B[B'.repeat(height)
         const clear = (width: number) => ' '.repeat(width)
         const eraseAfter = (width: number) => clear(width) + back(width)
         const rewrite = (str: string) => (
@@ -147,15 +176,85 @@ export class Readline {
             line.cursor += length
         }
 
+        const renderCompletion = (mapIndex: (compState: CompState) => number | null) => {
+            const term = this.term!
+            const compState = line.compState!
+            const { display: { grid }, candidates } = compState
+
+            const index = mapIndex(compState)
+            if (index !== null) {
+                replaceCandidate(candidates[index])
+            }
+            compState.index = index
+
+            const { cursorX } = term.buffer.active
+            write(
+                '\n' +
+                grid.toString({
+                    formatter: (str, i) => index === i ? chalk.black(chalk.bgWhiteBright(str)) : str
+                }) +
+                hideCursor + '\r' + up(grid.rows + 1) + right(cursorX) + showCursor
+            )
+        }
+        const clearCompletion = () => {
+            const compState = line.compState!
+            const term = this.term!
+            const { display: { grid } } = compState
+
+            const { cursorX } = term.buffer.active
+            write(
+                ('\n' + clear(term.cols)).repeat(grid.rows) +
+                hideCursor + '\r' + up(grid.rows) + right(cursorX) + showCursor
+            )
+            line.compState = null
+        }
+        const replaceCandidate = (target: string) => {
+            const { index, candidates } = line.compState!
+            const candidate = index === null ? '' : candidates[index]
+            write(
+                back(w(candidate)) +
+                target + line.after +
+                eraseAfter(Math.max(0, w(candidate) - w(target))) + back(w(line.after))
+            )
+        }
+        const acceptCompletion = () => {
+            const { index, candidates } = line.compState!
+            if (index !== null) {
+                const candidate = candidates[index]
+                line.content = line.before + candidate + line.after
+                line.cursor += candidate.length
+            }
+            clearCompletion()
+        }
+        const discardCompletion = () => {
+            replaceCandidate('')
+            clearCompletion()
+        }
+
+        const abortEmitter = new AbortEmitter()
+        this.proc.on('interrupt', () => abortEmitter.emit('abort'))
+
         while (true) {
-            const data = await this.stdio.readKey({ abort: toBeInterrupted })
+            const data = await this.stdio.readKey({ abortEmitter })
+
             if (data === null) {
+                if (line.compState) {
+                    discardCompletion()
+                    continue
+                }
+
+                write('\n')
                 line.content = ''
                 line.cursor = 0
                 return null
             }
 
             if (data === '\r') { // Enter
+                if (line.compState) {
+                    acceptCompletion()
+                    continue
+                }
+
                 write('\n')
                 const { content } = line
                 if (history && content.trim()) {
@@ -164,56 +263,138 @@ export class Readline {
                 return content
             }
             if (data === '\x7F' || data === '\x08') { // Backspace / Ctrl + H
+                if (line.compState) {
+                    acceptCompletion()
+                    continue
+                }
                 if (line.cursor) kill(1)
             }
-            else if (data[0] === '\x1B') { // Esc
-                switch (data.slice(1)) {
-                case '[A': { // Up
-                    if (! history || line.isDirty) break
-                    if (history.isAtBegin) break
-                    const prev = history.hist[history.index - 1]
-                    write(rewrite(prev))
-                    history.index --
-                    line.cursor = prev.length
-                    line.isDirty = false
-                    break
-                }
-                case '[B': { // Down
-                    if (! history || line.isDirty) break
-                    if (history.isAtEnd) break
-                    const next = history.hist[history.index + 1]
-                    write(rewrite(next))
-                    history.index ++
-                    line.cursor = next.length
-                    line.isDirty = false
+            else if (data === '\t' || data === '\x1B[Z') { // Tab / Shift + Tab
+                const dir = data === '\t' ? + 1 : - 1
 
-                    break
+                if (useCompleton) {
+                    const isNew = line.before !== line.compState?.before
+                    if (isNew) {
+                        if (dir === - 1) continue
+                        const candidates = onCompletion(line)
+                        if (! candidates.length) {
+                            line.compState = null
+                            continue
+                        }
+                        else {
+                            const grid = new GridDisplay(
+                                this.term,
+                                candidates.map(prop('display')),
+                                { useEqualWidth: true }
+                            )
+                            line.compState = {
+                                before: line.before,
+                                index: null,
+                                display: {
+                                    type: 'grid',
+                                    grid,
+                                },
+                                candidates: candidates.map(prop('value')),
+                                length: candidates.length,
+                            }
+                        }
+                    }
+
+                    renderCompletion(({ index, length }) => {
+                        if (isNew) return index
+                        if (index === null) return dir === 1 ? 0 : length - 1
+                        else return (index + dir).mod(length)
+                    })
                 }
-                case '[C': // Right
-                    if (line.cursor === line.content.length) break
-                    moveRight(1)
-                    break
-                case '[1;5C': // Ctrl + Right
-                    if (line.cursor === line.content.length) break
-                    moveRight(wordEnd() - line.cursor)
-                    break
-                case '[D': // Arrow left
-                    if (! line.cursor) break
-                    moveLeft(1)
-                    break
-                case '[1;5D': // Ctrl + Left
-                    if (! line.cursor) break
-                    moveLeft(line.cursor - wordBegin())
-                    break
-                case '\x7F': { // Alt + Backspace
-                    if (! line.cursor) break
-                    kill(line.cursor - wordBegin())
-                    break
+            }
+            else if (data === '\x1B[A') { // Up
+                if (line.compState) {
+                    renderCompletion(({ index, length }) =>
+                        index === null ? null : (index - 1).mod(length)
+                    )
+                    continue
                 }
-                default:
-                    console.debug('ESC', data, [ ...data.slice(1) ].map(c => c.charCodeAt(0)))
-                    break
+                if (! history || line.isDirty) continue
+                if (history.isAtBegin) continue
+                const prev = history.hist[history.index - 1]
+                write(rewrite(prev))
+                history.index --
+                line.cursor = prev.length
+                line.isDirty = false
+            }
+            else if (data === '\x1B[B') { // Down
+                if (line.compState) {
+                    renderCompletion(({ index, length }) =>
+                        index === null ? null : (index + 1).mod(length)
+                    )
+                    continue
                 }
+                if (! history || line.isDirty) continue
+                if (history.isAtEnd) continue
+                const next = history.hist[history.index + 1]
+                write(rewrite(next))
+                history.index ++
+                line.cursor = next.length
+                line.isDirty = false
+            }
+            else if (data === '\x1B[C') { // Right
+                if (line.compState) {
+                    renderCompletion(({ index, length, display: { grid } }) => {
+                        if (index === null) return null
+                        let row = index % grid.rows
+                        let col = index / grid.rows | 0
+                        const lastColHeight = length % grid.rows
+                        col ++
+                        if (col === grid.cols || col === grid.cols - 1 && row >= lastColHeight) {
+                            col = 0
+                            row = (row + 1).mod(grid.rows)
+                        }
+                        return col * grid.rows + row
+                    })
+                    continue
+                }
+                if (line.cursor === line.content.length) continue
+                moveRight(1)
+            }
+            else if (data === '\x1B[1;5C') { // Ctrl + Right
+                if (line.cursor === line.content.length) continue
+                moveRight(wordEnd() - line.cursor)
+            }
+            else if (data === '\x1B[D') { // Left
+                if (line.compState) {
+                    renderCompletion(({ index, length, display: { grid: { rows, cols } } }) => {
+                        if (index === null) return null
+                        const lastColHeight = length % rows
+                        let row = index % rows
+                        let col = index / rows | 0
+                        col --
+                        if (col < 0) {
+                            row = (row - 1).mod(rows)
+                            col = cols - 1 - (row < lastColHeight ? 0 : 1)
+                        }
+                        return col * rows + row
+                    })
+                    continue
+                }
+                if (line.compState) {
+                    renderCompletion(({ index, length, display: { grid } }) =>
+                        index === null ? null : (index - grid.rows).mod(length)
+                    )
+                    continue
+                }
+                if (! line.cursor) continue
+                moveLeft(1)
+            }
+            else if (data === '\x1B[1;5D') { // Ctrl + Left
+                if (! line.cursor) continue
+                moveLeft(line.cursor - wordBegin())
+            }
+            else if (data === '\x1B\x7F') { // Alt + Backspace
+                if (! line.cursor) continue
+                kill(line.cursor - wordBegin())
+            }
+            else if (data[0] === '\x1B') { // Unknown escape sequence
+                console.debug(JSON.stringify(data), [ ...data ].map(char => char.charCodeAt(0)))
             }
             else if (data === '\x01') { // Ctrl + A
                 if (line.before) line.isDirty = true
@@ -227,21 +408,18 @@ export class Readline {
             }
             else if (data === '\x0C') { // Ctrl + L
                 if (onBeforeClear?.()) continue
-                this.stdio.write('\x1B[?25l\x1B[2J\x1B[H')
+                this.stdio.write(hideCursor + clearScreen)
                 onClear?.()
-                write(line.content + back(w(line.after)) + '\x1B[?25h')
+                write(line.content + back(w(line.after)) + showCursor)
             }
             else if (data === '\x15') { // Ctrl + U
                 write(rewrite(''))
                 line.content = ''
                 line.cursor = 0
             }
-            else if (data === '\t') { // Tab
-                // TODO: completion
-            }
             else {
                 if (data.charCodeAt(0) < 32) {
-                    console.debug([ ...data ].map(c => c.charCodeAt(0)))
+                    console.debug(JSON.stringify(data), [ ...data ].map(c => c.charCodeAt(0)))
                     continue
                 }
                 line.isDirty = true
@@ -254,21 +432,11 @@ export class Readline {
         }
     }
 
-    async readLn(options?: Partial<ReadlineReadLnOptions>) {
+    async readLn(options: ReadlineReadLnOptions = {}) {
         if (this.isReadingLn) throw new Error('Already reading a line.')
         this.isReadingLn = true
-
-        const toBeInterrupted = createSignal()
-        const { dispose } = this.proc.on('interrupt', () => {
-            this.stdio.writeLn('')
-            toBeInterrupted.trigger()
-        })
-
-        const line = await this._readLn(toBeInterrupted, options)
-
+        const line = await this._readLn(options)
         this.isReadingLn = false
-        dispose()
-
         return line
     }
 
@@ -280,16 +448,11 @@ export class Readline {
     }
 }
 
-export interface ReadlineLoopOptions {
+export interface ReadlineLoopOptions extends StrictPick<ReadlineReadLnOptions, 'onCompletion'> {
     history?: ReadlineHistory
     prompt: Computed<string>
     onLine?: (line: string) => void | Promise<void>
     onEnd?: () => void
-    onCompletion?: (state: {
-        cursor: number
-        before: string
-        line: string
-    }) => void
     onInterrupt?: () => DoPrevent
 }
 
@@ -325,6 +488,7 @@ export class ReadlineLoopHandle {
             const line = await Promise.race([
                 this.readline.readLn({
                     history,
+                    onCompletion: this.options.onCompletion,
                     onClear: () => this.writePrompt(),
                 }),
                 this.toStop.signal,

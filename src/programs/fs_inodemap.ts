@@ -8,5 +8,3 @@ export const fs_inodemap: Program = (proc) => {
     stdio.writeLn(`${used}/${total} (${(used / total).toPercent(2)}) inodes used`)
     return 0
 }
-
-export default fs_inodemap

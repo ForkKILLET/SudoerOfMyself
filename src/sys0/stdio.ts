@@ -3,6 +3,7 @@ import { sleep } from '@/utils'
 import { Emitter, Events } from '@/utils/emitter'
 import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
 import { Pred } from '@/utils/types'
+import { Disposable } from '@/utils/dispoable'
 
 export interface StdinEvents extends Events {
     'data': [ string ]
@@ -24,21 +25,20 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
         })
     }
 
-    async readKey({
-        abort
+    readKey({
+        abortEmitter
     }: FReadKeyOptions = {}) {
         return new Promise<string | null>(resolve => {
-            let done = false
-            const { dispose } = this.on('data', data => {
-                resolve(data)
-                done = true
-            }, { once: true })
-
-            abort?.signal.then(() => {
-                if (done) return
-                dispose()
-                resolve(null)
-            })
+            const { dispose } = Disposable.combine(
+                this.on('data', data => {
+                    resolve(data)
+                    dispose()
+                }),
+                abortEmitter?.on('abort', (() => {
+                    resolve(null)
+                    dispose()
+                }))
+            )
         })
     }
 

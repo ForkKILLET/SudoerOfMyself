@@ -1,19 +1,21 @@
 import chalk from 'chalk'
 
 import { Process } from '@/sys0/proc'
-import { Program } from '@/sys0/program'
-import { fOpIsErr, FOpT } from '@/sys0/fs'
+import { Program, wrapProgram } from '@/sys0/program'
+import { fOpIsErr } from '@/sys0/fs'
 import { Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
 import { HshAstCommand, HshAstScript, parse, tokenize } from './parse'
 import { cd } from '../cd'
 import { echo } from '../echo'
+import { hsh_tokenize } from '../hsh_tokenize'
 import { PROGRAMS } from '..'
 
-const builtins: Record<string, Program> = {
+const BUILTINS: Record<string, Program> = {
     cd,
     echo,
+    hsh_tokenize
 }
 
 export const execute = async (proc: Process, command: HshAstCommand): Promise<number> => {
@@ -31,11 +33,11 @@ export const execute = async (proc: Process, command: HshAstCommand): Promise<nu
     }
 
     try {
-        if (name in builtins) {
+        if (name in BUILTINS) {
             const originalStdio = proc.stdio
             proc.stdio = getStdio()
             try {
-                return await builtins[name](proc, name, ...args)
+                return await BUILTINS[name](proc, name, ...args)
             }
             finally {
                 proc.stdio = originalStdio
@@ -64,19 +66,39 @@ export const executeScript = async (proc: Process, script: HshAstScript): Promis
     }
 }
 
-export const hsh: Program = async (proc: Process) => {
+export const hsh = wrapProgram(async (proc: Process) => {
     const { ctx, env, stdio } = proc
     proc.cwd = env.HOME
 
     const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
 
-    const readline = new Readline(proc, stdio)
+    const readline = new Readline(proc, stdio, ctx.term)
     const loop = readline.createLoop({
         history: new ReadlineHistory(historyFile.read().split('\n')),
 		prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
+        onCompletion: (line) => {
+            // TODO
+            return [ ...Object.keys(PROGRAMS), ...Object.keys(BUILTINS) ]
+                .sort()
+                .filter(name => name.startsWith(line.before))
+                .map(name => ({
+                    value: name.slice(line.before.length),
+                    display: name
+                }))
+        },
         onLine: async (line) => {
-            const tokens = tokenize(line, env)
-            const script = parse(tokens)
+            const script = await Promise.try(() => {
+                const tokens = tokenize(line, env)
+                const script = parse(tokens)
+                return script
+            }).catch(err => {
+                proc.error(err as string)
+                return null
+            })
+            if (! script) {
+                proc.env['?'] = '130'
+                return
+            }
             await executeScript(proc, script)
             historyFile.appendLn(line)
         },
@@ -84,6 +106,4 @@ export const hsh: Program = async (proc: Process) => {
     })
     await loop.start()
     return 0
-}   
-
-export default hsh
+})

@@ -24,17 +24,22 @@ export type HshToken =
 	| HshTokenText
 	| HshTokenRedirect
 
-export type HshTokenText = {
+export interface HshTokenBase {
+	begin: number
+	end: number
+}
+
+export interface HshTokenText extends HshTokenBase {
 	type: 'text'
 	content: string
 }
 
-export type HshTokenRedirect = {
+export interface HshTokenRedirect extends HshTokenBase {
 	type: 'redirect'
 	mode: 'write' | 'append'
 }
 
-export const tokenize = (line: string, env: Env) => {
+export const tokenize = (line: string, env: Env, isStrict = true) => {
 	const tokens: HshToken[] = []
 	let isEsc = false
 	let isNesc = false as false | 'x' | 'u' | 'o'
@@ -45,12 +50,20 @@ export const tokenize = (line: string, env: Env) => {
 	let now = ''
     let enow = ''
     let vnow = ''
+	let begin = 0
 	let i = 0
 
 	const consumeNow = () => {
-		if (! now) return
-		tokens.push({ type: 'text', content: now })
-		now = ''
+		if (now) {
+			tokens.push({
+				type: 'text',
+				content: now,
+				begin,
+				end: i - 2,
+			})
+			now = ''
+		}
+		begin = i - 1
 	}
 
 	const consumeEnow = () => {
@@ -62,7 +75,7 @@ export const tokenize = (line: string, env: Env) => {
 	while (true) {
 		let ch = line[i ++] ?? '\0'
 
-		if (isEsc) {
+		if (isEsc && isDq) {
 			if (ch === 'x' || ch === 'u' || ch === '0') isNesc = ch === '0' ? 'o' : ch
 			else now += ESCAPES[ch] ?? ch
 			isEsc = false
@@ -113,30 +126,38 @@ export const tokenize = (line: string, env: Env) => {
 		}
 		if (ch === '\0') break
 		if (is('white', ch) && ! isSq && ! isDq) {
-			if (isWh) continue
-			consumeNow()
-			isWh = true
+			if (! isWh) {
+				consumeNow()
+				isWh = true
+			}
+			begin ++
 			continue
 		}
 		else isWh = false
 		if (! isDq && ! isSq && ch === '>') {
 			consumeNow()
 			if (line[i] === '>') {
+				tokens.push({ type: 'redirect', mode: 'append', begin, end: i })
 				i ++
-				tokens.push({ type: 'redirect', mode: 'append' })
 			}
 			else {
-				tokens.push({ type: 'redirect', mode: 'write' })
+				tokens.push({ type: 'redirect', mode: 'write', begin, end: i - 1 })
 			}
+			begin = i
 		}
 		else if (ch === '\\' && ! isSq) isEsc = true
 		else if (ch === '\'' && ! isDq) isSq = ! isSq
 		else if (ch === '"' && ! isSq) isDq = ! isDq
-		else if (! isDq && ! isSq && ch === '~')  now += '/home'
+		else if (! isDq && ! isSq && ch === '~') now += env.HOME
 		else if (! isSq && ch === '$') isVar = true
 		else now += ch
 	}
-	if (now) tokens.push({ type: 'text', content: now })
+	consumeNow()
+
+	if (isStrict) {
+		if (isSq) throw 'Unmatched single quote'
+		if (isDq) throw 'Unmatched double quote'
+	}
 
 	return tokens
 }

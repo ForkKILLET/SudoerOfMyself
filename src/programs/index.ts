@@ -1,10 +1,10 @@
-import cat from './cat'
-import fs_inodemap from './fs_inodemap'
-import fs_format from './fs_format'
-import ls from './ls'
-import mkdir from './mkdir'
-import pwd from './pwd'
-import rm from './rm'
+import { cat } from './cat'
+import { fs_inodemap } from './fs_inodemap'
+import { fs_format } from './fs_format'
+import { ls } from './ls'
+import { mkdir } from './mkdir'
+import { pwd } from './pwd'
+import { rm } from './rm'
 
 export const PROGRAMS = {
     cat,

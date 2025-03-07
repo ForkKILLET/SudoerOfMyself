@@ -34,10 +34,17 @@ declare global {
         keys<T>(obj: T): StringKeyOf<T>[]
         values<T>(obj: T): T[keyof T][]
         entries<T>(obj: T): [StringKeyOf<T>, T[keyof T]][]
+
+        assign<T, U extends T>(dest: T, src: U): T
     }
 
     interface Number {
         toPercent(precision?: number): string
+        mod(operand: number): number
+    }
+
+    interface PromiseConstructor {
+        try<T>(fn: () => T): Promise<T>
     }
 }
 
@@ -106,4 +113,14 @@ Array.lift = function(value) {
 
 Number.prototype.toPercent = function(this: number, precision = 0) {
     return `${(this * 100).toFixed(precision)}%`
+}
+
+Number.prototype.mod = function(this: number, operand: number) {
+    if (! operand) return NaN
+    const rem = this % operand
+    return rem >= 0 ? rem : rem + operand
+}
+
+Promise.try ??= function<T>(fn: () => T) {
+    return (async () => fn())()
 }

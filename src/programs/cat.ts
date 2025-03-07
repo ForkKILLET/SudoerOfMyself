@@ -28,5 +28,3 @@ export const cat = wrapProgram((proc, _, ...paths) => {
 
     return hasError ? 1 : 0
 })
-
-export default cat

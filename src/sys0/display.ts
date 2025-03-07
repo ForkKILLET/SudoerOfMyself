@@ -1,49 +1,102 @@
-import { Control } from '@/utils'
+import { Control, id } from '@/utils'
 import { Term } from './term'
 
-export const calcMaxRows = (term: Term, widths: number[]) => {
-    const { cols: termWidth } = term
-    const sortedWidths = [ ...widths ].sort((a, b) => b - a)
-    let width = 0
-    let col = 0
-    for (const w of sortedWidths) {
-        width += w
-        if (width > termWidth) break
-        col ++
-    }
-    col ||= 1
-    return Math.ceil(widths.length / col)
+export interface GridToStringOptions {
+    formatter?: (cell: string, index: number) => string
 }
 
-export const LIST_GAP = 2
+export interface GridOptions {
+    minWidth: number
+    useEqualWidth: boolean
+    direction: 'row' | 'col'
+    gap: number
+}
 
-export const displayList = (term: Term, strs: string[]) => {
-    if (! strs.length) return ''
-    const widths = strs.map(str => term.getStringWidth(str) + LIST_GAP)
-    const maxRows = calcMaxRows(term, widths)
-    const { rows, colWidths } = Array
-        .range(maxRows, 0, - 1)
-        .findMap(rows => {
-            const colWidths = Array
-                .range(0, Math.ceil(widths.length / rows))
-                .map(col => widths
-                    .slice(col * rows, (col + 1) * rows)
-                    .max()
-                )
-            if (colWidths.sum() - LIST_GAP > term.cols) return Control.continue
-            return { rows, colWidths }
-        })!
-    const cols = colWidths.length
-    return Array
-        .range(0, rows)
-        .map(row => Array
-            .range(0, cols)
-            .map(col => {
-                const index = row + col * rows
-                return (strs[index] ?? '').padEnd(colWidths[col] - LIST_GAP)
-                    + (col === cols - 1 ? '\n' : ' '.repeat(LIST_GAP))
-            })
+export class GridDisplay {
+    colWidths: number[]
+    rows: number
+    cols: number
+    options: GridOptions
+
+    constructor(
+        public term: Term,
+        public cells: string[],
+        {
+            minWidth = 6,
+            useEqualWidth = false,
+            gap = 2,
+            direction = 'col',
+        }: Partial<GridOptions> = {}
+    ) {
+        this.options = { minWidth, useEqualWidth, gap, direction }
+
+        if (! cells.length) {
+            this.rows = 0
+            this.cols = 0
+            this.colWidths = []
+            return
+        }
+
+        if (useEqualWidth) {
+            const colWidth = Math.max(minWidth, cells.map(str => term.getStringWidth(str)).max()) + gap
+            this.cols = Math.floor((term.cols + gap) / colWidth)
+            this.rows = Math.ceil(cells.length / this.cols)
+            this.colWidths = Array.replicate(this.cols, colWidth)
+            return
+        }
+
+        const widths = cells.map(str => term.getStringWidth(str) + gap)
+        const maxRows = this.calcMaxRows(widths)
+        const { rows, colWidths } = Array
+            .range(maxRows, 0, - 1)
+            .findMap(rows => {
+                const colWidths = Array
+                    .range(0, Math.ceil(widths.length / rows))
+                    .map(col => widths
+                        .slice(col * rows, (col + 1) * rows)
+                        .max()
+                    )
+                if (colWidths.sum() - gap > term.cols) return Control.continue
+                return { rows, colWidths }
+            })!
+        const cols = colWidths.length
+
+        this.rows = rows
+        this.cols = cols
+        this.colWidths = colWidths
+    }
+
+    private calcMaxRows(widths: number[]) {
+        const { cols: termWidth } = this.term
+        const sortedWidths = [ ...widths ].sort((a, b) => b - a)
+        let width = 0
+        let col = 0
+        for (const w of sortedWidths) {
+            width += w
+            if (width > termWidth) break
+            col ++
+        }
+        col ||= 1
+        return Math.ceil(widths.length / col)
+    }
+
+    toString({
+        formatter = id,
+    }: GridToStringOptions = {}) {
+        return Array
+            .range(0, this.rows)
+            .map(row => Array
+                .range(0, this.cols)
+                .map(col => {
+                    const index = this.options.direction === 'col'
+                        ? row + col * this.rows
+                        : col + row * this.cols
+                    const cell = this.cells[index]
+                    return formatter((cell ?? '').padEnd(this.colWidths[col] - this.options.gap), index)
+                        + (col === this.cols - 1 ? '\n' : ' '.repeat(this.options.gap))
+                })
+                .join('')
+            )
             .join('')
-        )
-        .join('')
+    }
 }
