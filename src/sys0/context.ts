@@ -3,7 +3,7 @@ import { Process } from './proc'
 import { Term } from './term'
 import { Fs } from './fs'
 
-export interface ContextEvents extends Events { 
+export interface ContextEvents extends Events {
     'term-data': [ string ]
 }
 

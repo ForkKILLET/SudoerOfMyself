@@ -23,7 +23,7 @@ export const ls = wrapProgram((proc, _, ...paths) => {
 
     const [ dirEntries, otherEntries ] = entries
         .divideWith((entry): entry is FileLoc<DirFile> => entry.file.type === FileT.DIR)
-    
+
     const outputs: string[] = []
     if (otherEntries.length)
         outputs.push(new GridDisplay(ctx.term, otherEntries.map(entry => entry.path)).toString())

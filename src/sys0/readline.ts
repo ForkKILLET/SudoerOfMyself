@@ -1,4 +1,4 @@
-import { AbortEmitter, compute, Computed, createSignal, prop } from '@/utils'
+import { AbortEmitter, compute, Computed, createSignal, equalBy, getCommonPrefix, pick, prop } from '@/utils'
 import { MakeOptional, StrictPick } from '@/utils/types'
 import { Process } from './proc'
 import { GridDisplay } from './display'
@@ -12,10 +12,12 @@ export interface CompCandidate {
     value: string
 }
 
+export type CompProvider = (line: ReadlineCurrentLine) => CompCandidate[]
+
 export interface ReadlineReadLnOptions {
     history?: ReadlineHistory
     doEcho?: boolean
-    onCompletion?: (line: ReadlineCurrentLine) => CompCandidate[]
+    onCompletion?: CompProvider
     onBeforeClear?: () => DoPrevent
     onClear?: () => void
 }
@@ -52,13 +54,18 @@ export class ReadlineHistory {
     }
 }
 
+export interface CompSource {
+    content: string
+    cursor: number
+}
+
 export interface CompDisplay {
     type: 'grid'
     grid: GridDisplay
 }
 
 export interface CompState {
-    before: string
+    source: CompSource
     display: CompDisplay
     index: number | null
     candidates: string[]
@@ -70,7 +77,7 @@ export class ReadlineCurrentLine {
 
     cursor = 0
 
-    compState: CompState | null = null 
+    compState: CompState | null = null
 
     get content() {
         return this.history.current
@@ -125,7 +132,7 @@ export class Readline {
 
         const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
         const useCompleton = !! (this.term && onCompletion)
-    
+
         const hideCursor = '\x1B[?25l'
         const showCursor = '\x1B[?25h'
         const clearScreen = '\x1B[2J\x1B[H'
@@ -139,10 +146,10 @@ export class Readline {
         const rewrite = (str: string) => (
             back(w(line.before)) + str + eraseAfter(Math.max(0, w(line.content) - w(str)))
         )
+
         const write = (char: string) => {
             if (doEcho) this.stdio.write(char)
         }
-
         const wordBegin = () => {
             let i = line.cursor
             while (i && line.content[i - 1] === ' ') i --
@@ -157,7 +164,7 @@ export class Readline {
         }
 
         const kill = (length: number) => {
-            line.isDirty = true
+            markDirty()
             const erased = line.content.slice(line.cursor - length, line.cursor)
             const erasedWidth = w(erased)
             const { after } = line
@@ -166,19 +173,28 @@ export class Readline {
             line.cursor -= length
         }
         const moveLeft = (length: number) => {
-            line.isDirty = true
+            markDirty()
             write(left(w(line.content.slice(line.cursor - length, line.cursor))))
             line.cursor -= length
         }
         const moveRight = (length: number) => {
-            line.isDirty = true
+            markDirty()
             write(right(w(line.content.slice(line.cursor, line.cursor + length))))
             line.cursor += length
         }
+        const insert = (str: string) => {
+            markDirty()
+            const { after } = line
+            line.content = line.before + str + after
+            line.cursor += str.length
+            write(str + after + back((w(after))))
+        }
 
         const renderCompletion = (mapIndex: (compState: CompState) => number | null) => {
-            const term = this.term!
-            const compState = line.compState!
+            const { term } = this
+            const { compState } = line
+            if (! compState || ! term) return
+
             const { display: { grid }, candidates } = compState
 
             const index = mapIndex(compState)
@@ -197,8 +213,10 @@ export class Readline {
             )
         }
         const clearCompletion = () => {
-            const compState = line.compState!
-            const term = this.term!
+            const { compState } = line
+            const { term } = this
+            if (! compState || ! term) return
+
             const { display: { grid } } = compState
 
             const { cursorX } = term.buffer.active
@@ -208,9 +226,21 @@ export class Readline {
             )
             line.compState = null
         }
+        const getCandidate = () => {
+            if (! line.compState) return null
+            const { index, candidates } = line.compState
+            if (index === null) return null
+            return candidates[index]
+        }
         const replaceCandidate = (target: string) => {
-            const { index, candidates } = line.compState!
-            const candidate = index === null ? '' : candidates[index]
+            let candidate: string
+            if (line.compState) {
+                const { index, candidates } = line.compState
+                candidate = index === null ? '' : candidates[index]
+            }
+            else {
+                candidate = ''
+            }
             write(
                 back(w(candidate)) +
                 target + line.after +
@@ -230,6 +260,12 @@ export class Readline {
             replaceCandidate('')
             clearCompletion()
         }
+        const markDirty = () => {
+            line.isDirty = true
+            if (line.compState && line.compState.index !== null) {
+                acceptCompletion()
+            }
+        }
 
         const abortEmitter = new AbortEmitter()
         this.proc.on('interrupt', () => abortEmitter.emit('abort'))
@@ -237,7 +273,7 @@ export class Readline {
         while (true) {
             const data = await this.stdio.readKey({ abortEmitter })
 
-            if (data === null) {
+            if (data === null) { // Interrupt
                 if (line.compState) {
                     discardCompletion()
                     continue
@@ -262,41 +298,51 @@ export class Readline {
                 }
                 return content
             }
-            if (data === '\x7F' || data === '\x08') { // Backspace / Ctrl + H
+            else if (data === '\x1B') { // Escape
                 if (line.compState) {
-                    acceptCompletion()
+                    discardCompletion()
                     continue
                 }
+            }
+            else if (data === '\x7F' || data === '\x08') { // Backspace / Ctrl + H
                 if (line.cursor) kill(1)
             }
             else if (data === '\t' || data === '\x1B[Z') { // Tab / Shift + Tab
                 const dir = data === '\t' ? + 1 : - 1
 
                 if (useCompleton) {
-                    const isNew = line.before !== line.compState?.before
+                    const isNew = ! line.compState
+                        || ! equalBy(line, line.compState.source, [ 'content', 'cursor' ])
                     if (isNew) {
-                        if (dir === - 1) continue
                         const candidates = onCompletion(line)
+
+                        clearCompletion()
+
                         if (! candidates.length) {
                             line.compState = null
                             continue
                         }
-                        else {
-                            const grid = new GridDisplay(
-                                this.term,
-                                candidates.map(prop('display')),
-                                { useEqualWidth: true }
-                            )
-                            line.compState = {
-                                before: line.before,
-                                index: null,
-                                display: {
-                                    type: 'grid',
-                                    grid,
-                                },
-                                candidates: candidates.map(prop('value')),
-                                length: candidates.length,
-                            }
+
+                        const commonPrefix = getCommonPrefix(candidates.map(prop('value')))
+                        if (commonPrefix) {
+                            insert(commonPrefix)
+                            continue
+                        }
+
+                        const grid = new GridDisplay(
+                            this.term,
+                            candidates.map(prop('display')),
+                            { useEqualWidth: true }
+                        )
+                        line.compState = {
+                            source: pick(line, [ 'content', 'cursor' ]),
+                            index: null,
+                            display: {
+                                type: 'grid',
+                                grid,
+                            },
+                            candidates: candidates.map(prop('value')),
+                            length: candidates.length,
                         }
                     }
 
@@ -338,11 +384,9 @@ export class Readline {
                 line.isDirty = false
             }
             else if (data === '\x1B[C') { // Right
-                if (line.compState) {
+                if (line.compState?.index != null) {
                     renderCompletion(({ index, length, display: { grid: { cols, rows } } }) => {
-                        if (index === null) return null
-                        let row = index % rows
-                        let col = index / rows | 0
+                        let [ row, col ] = index!.remDiv(rows)
                         const lastColHeight = length % rows || rows
                         col ++
                         if (col === cols || col === cols - 1 && row >= lastColHeight) {
@@ -361,12 +405,10 @@ export class Readline {
                 moveRight(wordEnd() - line.cursor)
             }
             else if (data === '\x1B[D') { // Left
-                if (line.compState) {
+                if (line.compState?.index != null) {
                     renderCompletion(({ index, length, display: { grid: { rows, cols } } }) => {
-                        if (index === null) return null
                         const lastColHeight = length % rows || rows
-                        let row = index % rows
-                        let col = index / rows | 0
+                        let [ row, col ] = index!.remDiv(rows)
                         col --
                         if (col < 0) {
                             row = (row - 1).mod(rows)
@@ -374,12 +416,6 @@ export class Readline {
                         }
                         return col * rows + row
                     })
-                    continue
-                }
-                if (line.compState) {
-                    renderCompletion(({ index, length, display: { grid } }) =>
-                        index === null ? null : (index - grid.rows).mod(length)
-                    )
                     continue
                 }
                 if (! line.cursor) continue
@@ -397,12 +433,18 @@ export class Readline {
                 console.debug(JSON.stringify(data), [ ...data ].map(char => char.charCodeAt(0)))
             }
             else if (data === '\x01') { // Ctrl + A
-                if (line.before) line.isDirty = true
+                if (line.compState) {
+                    continue
+                }
+                if (line.before) markDirty()
                 write(left(w(line.before)))
                 line.cursor = 0
             }
             else if (data === '\x05') { // Ctrl + E
-                if (line.after) line.isDirty = true
+                if (line.compState) {
+                    continue
+                }
+                if (line.after) markDirty()
                 write(right(w(line.after)))
                 line.cursor = line.content.length
             }
@@ -410,9 +452,14 @@ export class Readline {
                 if (onBeforeClear?.()) continue
                 this.stdio.write(hideCursor + clearScreen)
                 onClear?.()
-                write(line.content + back(w(line.after)) + showCursor)
+                const { after } = line
+                write(line.before + (getCandidate() ?? '') + after + back(w(after)) + showCursor)
+                if (line.compState) {
+                    setTimeout(() => renderCompletion(({ index }) => index), 0)
+                }
             }
             else if (data === '\x15') { // Ctrl + U
+                markDirty()
                 write(rewrite(''))
                 line.content = ''
                 line.cursor = 0
@@ -422,12 +469,7 @@ export class Readline {
                     console.debug(JSON.stringify(data), [ ...data ].map(c => c.charCodeAt(0)))
                     continue
                 }
-                line.isDirty = true
-                const inserted = data
-                const after = line.after
-                line.content = line.before + inserted + after
-                line.cursor += data.length
-                write(inserted + after + '\b'.repeat(w(after)))
+                insert(data)
             }
         }
     }

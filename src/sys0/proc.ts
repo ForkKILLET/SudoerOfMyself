@@ -34,7 +34,7 @@ export class Process extends Emitter<ProcessEvents> {
         options: CreateProcOptions
     ) {
         super()
-        
+
         this.name = options.name
         this.env = createEnv({ ...parent?.env, ...options.env })
         this.cwd = options.cwd ?? parent?.cwd ?? '/'

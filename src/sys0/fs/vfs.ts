@@ -48,7 +48,7 @@ export namespace Vfs {
     ): FCreateResult<FileFromT<FB['type']>> => {
         const queue: FsBuildStep[] = [ { vfile: vroot, entries: {}, name: '' } ]
         let rootInode: Inode | undefined
-    
+
         while (queue.length) {
             const { vfile: tree, entries, name } = queue.shift()!
 

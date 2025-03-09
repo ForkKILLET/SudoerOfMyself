@@ -7,7 +7,7 @@ import { Disposable } from '@/utils/dispoable'
 
 export interface StdinEvents extends Events {
     'data': [ string ]
-}   
+}
 
 export const kStdin = Symbol('Stdin')
 export const kStdout = Symbol('Stdout')

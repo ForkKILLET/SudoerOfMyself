@@ -8,7 +8,7 @@ const ESCAPES: Record<string, string> = {
 	'e': '\x1B',
 }
 
-namespace CHARS {
+export namespace HSH_CHARS {
     export const white = [ ...' \t\r\n' ]
     export const d8 = [ ...'01234567' ]
     export const d10 = [ ...d8, ...'89' ]
@@ -18,20 +18,38 @@ namespace CHARS {
     export const env = [ ...letter, ...d10, '_' ]
 }
 
-export const is = <K extends keyof typeof CHARS>(kind: K, ch: string) => CHARS[kind].includes(ch)
+export const is = <K extends keyof typeof HSH_CHARS>(kind: K, ch: string) => HSH_CHARS[kind].includes(ch)
 
 export type HshToken =
 	| HshTokenText
+	| HshTokenVariable
+	| HshTokenHome
+	| HshTokenRedirect
+
+export type HshExpandedTokenText = Omit<HshTokenText, 'isDq' | 'isSq'>
+
+export type HshExpandedToken =
+	| HshExpandedTokenText
 	| HshTokenRedirect
 
 export interface HshTokenBase {
 	begin: number
 	end: number
+	content: string
 }
 
 export interface HshTokenText extends HshTokenBase {
 	type: 'text'
-	content: string
+	isDq: boolean
+	isSq: boolean
+}
+
+export interface HshTokenVariable extends HshTokenBase {
+	type: 'variable'
+}
+
+export interface HshTokenHome extends HshTokenBase {
+	type: 'home'
 }
 
 export interface HshTokenRedirect extends HshTokenBase {
@@ -39,7 +57,7 @@ export interface HshTokenRedirect extends HshTokenBase {
 	mode: 'write' | 'append'
 }
 
-export const tokenize = (line: string, env: Env, isStrict = true) => {
+export const tokenize = (line: string, isStrict = true) => {
 	const tokens: HshToken[] = []
 	let isEsc = false
 	let isNesc = false as false | 'x' | 'u' | 'o'
@@ -53,13 +71,15 @@ export const tokenize = (line: string, env: Env, isStrict = true) => {
 	let begin = 0
 	let i = 0
 
-	const consumeNow = () => {
+	const consumeNow = (d = - 1) => {
 		if (now) {
 			tokens.push({
 				type: 'text',
 				content: now,
 				begin,
-				end: i - 2,
+				end: i - 1 + d,
+				isDq,
+				isSq,
 			})
 			now = ''
 		}
@@ -99,7 +119,12 @@ export const tokenize = (line: string, env: Env, isStrict = true) => {
 		if (isVar) {
 			if (! vnow.length) {
 				if (is('senv', ch)) {
-					now += env[ch]
+					tokens.push({
+						type: 'variable',
+						content: '$' + ch,
+						begin,
+						end: i - 1
+					})
 					isVar = false
 					continue
 				}
@@ -118,7 +143,13 @@ export const tokenize = (line: string, env: Env, isStrict = true) => {
 					continue
 				}
 				else {
-					now += env[vnow]
+					tokens.push({
+						type: 'variable',
+						content: '$' + vnow,
+						begin,
+						end: i - 2
+					})
+					begin = i - 1
 					isVar = false
 					vnow = ''
 				}
@@ -137,19 +168,58 @@ export const tokenize = (line: string, env: Env, isStrict = true) => {
 		if (! isDq && ! isSq && ch === '>') {
 			consumeNow()
 			if (line[i] === '>') {
-				tokens.push({ type: 'redirect', mode: 'append', begin, end: i })
+				tokens.push({
+					type: 'redirect',
+					mode: 'append',
+					begin,
+					end: i,
+					content: '>>',
+				})
 				i ++
 			}
 			else {
-				tokens.push({ type: 'redirect', mode: 'write', begin, end: i - 1 })
+				tokens.push({
+					type: 'redirect',
+					mode: 'write',
+					begin,
+					end: i - 1,
+					content: '>',
+				})
 			}
 			begin = i
 		}
 		else if (ch === '\\' && ! isSq) isEsc = true
-		else if (ch === '\'' && ! isDq) isSq = ! isSq
-		else if (ch === '"' && ! isSq) isDq = ! isDq
-		else if (! isDq && ! isSq && ch === '~') now += env.HOME
-		else if (! isSq && ch === '$') isVar = true
+		else if (ch === '\'' && ! isDq) {
+			if (isSq) {
+				consumeNow(0)
+				begin = i
+			}
+			isSq = ! isSq
+		}
+		else if (ch === '"' && ! isSq) {
+			if (isDq) {
+				consumeNow(0)
+				begin = i
+			}
+			isDq = ! isDq
+		}
+		else if (! isDq && ! isSq && ch === '~') {
+			consumeNow()
+			tokens.push({
+				type: 'home',
+				begin,
+				end: i - 1,
+				content: '~',
+			})
+			begin = i
+		}
+		else if (! isSq && ch === '$') {
+			if (is('env', line[i]) || is('senv', line[i])) {
+				consumeNow()
+				isVar = true
+			}
+			else now += ch
+		}
 		else now += ch
 	}
 	consumeNow()
@@ -160,6 +230,52 @@ export const tokenize = (line: string, env: Env, isStrict = true) => {
 	}
 
 	return tokens
+}
+
+export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
+	const expanded: HshExpandedToken[] = []
+
+	let text: HshExpandedTokenText | null = null
+	for (const token of tokens) {
+		if (token.type === 'redirect') {
+			if (text) {
+				expanded.push(text)
+				text = null
+			}
+			expanded.push(token)
+			continue
+		}
+		else {
+			const content =
+				token.type === 'text' ? token.content :
+				token.type === 'home' ? env.HOME :
+				token.type === 'variable' ? env[token.content.slice(1)] :
+				''
+			if (text) {
+				if (text.end + 1 === token.begin) {
+					text.content += content
+					text.end = token.end
+					continue
+				}
+				else {
+					expanded.push(text)
+				}
+			}
+
+			text = {
+				type: 'text',
+				content,
+				begin: token.begin,
+				end: token.end,
+			}
+		}
+	}
+
+	if (text) {
+		expanded.push(text)
+	}
+
+	return expanded
 }
 
 export interface HshAstScript {
@@ -176,7 +292,7 @@ export interface HshAstCommand {
 		| { type: 'appendTo', path: string }
 }
 
-export const parse = (tokens: HshToken[]): HshAstScript => {
+export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
 	const script: HshAstScript = {
 		commands: []
 	}
@@ -202,7 +318,7 @@ export const parse = (tokens: HshToken[]): HshAstScript => {
 					path: target.content
 				}
 			}
-			else {
+			else if (token.type === 'text') {
 				command.args.push(token.content)
 			}
 		}

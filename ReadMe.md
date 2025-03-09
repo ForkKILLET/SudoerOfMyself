@@ -6,7 +6,7 @@
 
   - [ ] Shell
     - [x] History file
-    - [ ] Tab completion
+    - [x] Tab completion
     - [ ] Pipe
     - [ ] Input redirecting
 

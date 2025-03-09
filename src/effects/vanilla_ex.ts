@@ -40,7 +40,11 @@ declare global {
 
     interface Number {
         toPercent(precision?: number): string
+
         mod(operand: number): number
+        remDiv(operand: number): [ number, number ]
+
+        isBetween(min: number, max: number): boolean
     }
 
     interface PromiseConstructor {
@@ -119,6 +123,15 @@ Number.prototype.mod = function(this: number, operand: number) {
     if (! operand) return NaN
     const rem = this % operand
     return rem >= 0 ? rem : rem + operand
+}
+Number.prototype.remDiv = function(this: number, operand: number) {
+    if (! operand) return [ NaN, NaN ]
+    const rem = this % operand, div = (this - rem) / operand
+    return [ rem, div ]
+}
+
+Number.prototype.isBetween = function(this: number, min: number, max: number) {
+    return min <= this && this <= max
 }
 
 Promise.try ??= function<T>(fn: () => T) {

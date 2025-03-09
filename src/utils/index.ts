@@ -54,3 +54,31 @@ export type IAbortable = {
 }
 
 export const prop = <T, K extends keyof T>(key: K) => (obj: T) => obj[key]
+
+export const getCommonPrefix = (strs: string[]) => {
+    if (! strs.length) return ''
+    const min = strs.map(prop('length')).min()
+    let i = 0
+    while (i < min && new Set(strs.map(str => str[i])).size === 1) i ++
+    return strs[0].slice(0, i)
+}
+
+export const pick = <T, K extends keyof T>(obj: T, keys: K[]) => {
+    const result = {} as Pick<T, K>
+    keys.forEach(key => {
+        result[key] = obj[key]
+    })
+    return result
+}
+
+export const omit = <T, K extends keyof T>(obj: T, keys: K[]) => {
+    const result = { ...obj }
+    keys.forEach(key => {
+        delete result[key]
+    })
+    return result as Omit<T, K>
+}
+
+export const equalBy = <T, K extends keyof T>(a: T, b: T, keys: K[]) => (
+    keys.every(key => a[key] === b[key])
+)

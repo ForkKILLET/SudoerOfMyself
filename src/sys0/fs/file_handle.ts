@@ -85,7 +85,7 @@ export abstract class FileHandleWritable extends FileHandle implements FWrite {
     }
     appendLn(data: string) {
         this.append(data + '\n')
-    }   
+    }
 }
 
 export class FileHandleW extends FileHandleWritable implements FWrite {

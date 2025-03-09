@@ -1,29 +1,14 @@
-import { getSysImage } from '@/data/sys_image'
-import { Awaitable, DistributiveOmit, StrictOmit } from '@/utils/types'
 import { Context } from '@/sys0/context'
+import { ProgramName } from '@/programs'
+import { getSysImage } from '@/data/sys_image'
 import { IAbortable, Stack } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
+import { Awaitable, DistributiveOmit, StrictOmit } from '@/utils/types'
+
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
 import { FsPersistence, LocalStorageFsPersistence } from './persistence'
 import { Vfs } from './vfs'
-import { ProgramName } from '@/programs'
-
-export namespace Path {
-    export const hasSlash = (path: string) => path.includes('/')
-    export const isAbs = (path: string) => path.startsWith('/')
-    export const isRel = (path: string) => path.match(/^\.\.?(\/|$)/)
-    export const isAbsOrRel = (path: string) => isAbs(path) || isRel(path)
-    export const split = (path: string) => path.split('/').filter(Boolean)
-    export const joinAbs = (parts: string[]) => '/' + parts.slice(1).join('/')
-    export const getDirAndName = (path: string) => {
-        if (! isAbsOrRel(path)) path = `./${path}`
-        const parts = split(path)
-        const filename = parts.pop()!
-        const dirname = parts.join('/')
-        return { dirname, filename }
-    }
-    export const isLegalFilename = (name: string) => !! name && ! name.includes('/')
-}
+import { Path } from './path'
 
 export const enum FileT {
     DIR,
@@ -102,7 +87,7 @@ export const MAX_INODE_COUNT = 1024
 
 export interface InodeMaintainer {
     inodes: Inodes
-    inodeBitmap: Bitmap 
+    inodeBitmap: Bitmap
 }
 
 export const enum FOpT {
@@ -250,6 +235,7 @@ export class Fs {
         if (parts[0] === '.' || parts[0] === '..') {
             parts.unshift(...Path.split(this.cwd))
         }
+        if (! parts[0]) parts.shift()
 
         const inodeStack = new Stack(this.root)
         const partStack = new Stack('')
@@ -295,6 +281,12 @@ export class Fs {
             file: res.inode.file,
             path: res.path,
         }
+    }
+
+    getFileByIid(iid: InodeId): File | null {
+        const inode = this.inodes.get(iid)
+        if (! inode) return null
+        return inode.file
     }
 
     findU<FT extends FileT = FileT>(path: string, options: FindOptions<FT> = {}) {

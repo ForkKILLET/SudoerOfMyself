@@ -32,7 +32,7 @@ export type StringKeyOf<T> = `${Exclude<keyof T, symbol>}`
 
 export type IsEqual<T, U> =
     T extends U
-        ? U extends T 
+        ? U extends T
             ? true
             : false
         : false
