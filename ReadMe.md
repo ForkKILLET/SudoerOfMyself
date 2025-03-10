@@ -15,8 +15,11 @@
     - [ ] Modes
 
   - [ ] Programs
+    - [x] `cat` (read stdin)
     - [ ] `rm`
     - [ ] `ls` (options)
+      - [x] `-a`
+      - [ ] `-l`
     - [ ] `ln` (soft and hard)
 
 - [ ] Story

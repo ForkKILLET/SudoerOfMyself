@@ -17,7 +17,6 @@ export type CompProvider = (line: ReadlineCurrentLine) => CompCandidate[]
 
 export interface ReadlineReadLnOptions {
     history?: ReadlineHistory
-    doEcho?: boolean
     onCompletion?: CompProvider
     onBeforeClear?: () => DoPrevent
     onClear?: () => void
@@ -117,14 +116,13 @@ export class Readline {
     constructor(
         public readonly proc: Process,
         public readonly stdio = proc.stdio,
-        public readonly term?: Term
+        public readonly term: Term
     ) {}
 
     private isReadingLn = false
 
     private async _readLn({
         history,
-        doEcho = true,
         onCompletion,
         onBeforeClear,
         onClear,
@@ -132,7 +130,7 @@ export class Readline {
         const line = new ReadlineCurrentLine(history)
 
         const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
-        const useCompleton = !! (this.term && onCompletion)
+        const useCompleton = !! onCompletion
 
         const hideCursor = '\x1B[?25l'
         const showCursor = '\x1B[?25h'
@@ -148,9 +146,7 @@ export class Readline {
             back(w(line.before)) + str + eraseAfter(Math.max(0, w(line.content) - w(str)))
         )
 
-        const write = (char: string) => {
-            if (doEcho) this.stdio.write(char)
-        }
+        const write = (char: string) => this.stdio.write(char)
         const wordBegin = () => {
             let i = line.cursor
             while (i && line.content[i - 1] === ' ') i --
@@ -478,7 +474,10 @@ export class Readline {
     async readLn(options: ReadlineReadLnOptions = {}) {
         if (this.isReadingLn) throw new Error('Already reading a line.')
         this.isReadingLn = true
+        const doEcho = this.term.doEcho
+        this.term.doEcho = false
         const line = await this._readLn(options)
+        this.term.doEcho = doEcho
         this.isReadingLn = false
         return line
     }

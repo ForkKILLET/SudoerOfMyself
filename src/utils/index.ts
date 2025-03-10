@@ -55,6 +55,8 @@ export type IAbortable = {
 
 export const prop = <T, K extends keyof T>(key: K) => (obj: T) => obj[key]
 
+export const eq = <T>(a: T) => (b: T) => a === b
+
 export const getCommonPrefix = (strs: string[]) => {
     if (! strs.length) return ''
     const min = strs.map(prop('length')).min()

@@ -16,12 +16,18 @@ export const execute = async (proc: Process, command: HshAstCommand): Promise<nu
     const { ctx, env } = proc
 
     const getStdio = () => {
+        const stdin = new Stdin(ctx.term)
+        const stdout = new Stdout(ctx.term)
+
         const { output: outputDesc } = command
-        const input = new Stdin(proc.ctx.term)
+        const input = stdin
         const output = outputDesc
             ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
-            : new Stdout(proc.ctx.term)
+            : stdout
+
         const stdio = new Stdio(input, output)
+        stdio.stdin = stdin
+        stdio.stdout = stdout
         return stdio
     }
 

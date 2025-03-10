@@ -2,7 +2,7 @@ import { Term } from './term'
 import { sleep } from '@/utils'
 import { Emitter, Events } from '@/utils/emitter'
 import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
-import { Pred } from '@/utils/types'
+import { Awaitable, Pred } from '@/utils/types'
 import { Disposable } from '@/utils/dispoable'
 
 export interface StdinEvents extends Events {
@@ -14,6 +14,8 @@ export const kStdout = Symbol('Stdout')
 
 export class Stdin extends Emitter<StdinEvents> implements FRead {
     readonly [kStdin] = true
+    static isStdin = (obj: any): obj is Stdin => obj[kStdin]
+
     isDisabled = false
 
     constructor(private term: Term) {
@@ -46,14 +48,15 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
         while (true) {
             const key = await this.readKey()
             if (! key) return '\0'
-            yield *key
+            yield *[ ...key ].map(char => char === '\r' ? '\n' : char)
         }
     }
 
     async readUntil(pred: Pred<string>) {
         let data = ''
         for await (const char of this.readChar()) {
-            if (char === '\0' || pred(char)) break
+            console.log(JSON.stringify(char))
+            if (char === '\0' || char === '\x04' || pred(char)) break
             data += char
         }
         return data
@@ -77,6 +80,8 @@ export interface StdoutEvents extends Events {
 
 export class Stdout extends Emitter<StdoutEvents> implements FWrite {
     readonly [kStdout] = true
+    static isStdout = (obj: any): obj is Stdout => obj[kStdout]
+
     isDisabled = false
     isWriting = false
 
@@ -118,6 +123,10 @@ export class Stdout extends Emitter<StdoutEvents> implements FWrite {
 
 export class Stdio implements FReadWrite {
     isTied = true
+    doEcho = true
+
+    stdin?: Stdin
+    stdout?: Stdout
 
     constructor(
         public input: FRead,
@@ -128,6 +137,8 @@ export class Stdio implements FReadWrite {
         const input = new Stdin(term)
         const output = new Stdout(term)
         const stdio = new Stdio(input, output)
+        stdio.stdin = input
+        stdio.stdout = output
 
         output.on('start-writing', () => {
             if (stdio.isTied) input.isDisabled = true
@@ -143,6 +154,7 @@ export class Stdio implements FReadWrite {
     readKey(options?: FReadKeyOptions) { return this.input.readKey(options) }
     read() { return this.input.read() }
     readLn() { return this.input.readLn() }
+    readUntil(pred: Pred<string>) { return this.input.readUntil(pred) }
     write(data: string) { this.output.write(data) }
     writeLn(data: string) { this.output.writeLn(data) }
 }

@@ -95,10 +95,10 @@ export class Command<O = {}> {
     }
     
     help<K extends string>(
-        name: K, format: string,
+        name: K, format = '--help', description = 'Show this help message'
     ) {
         this.helpOption = name
-        return this.option(name, format, 'boolean', 'Show this help message')
+        return this.option(name, format, 'boolean', description)
     }
 
     private runHelp(proc: Process) {
@@ -107,9 +107,9 @@ export class Command<O = {}> {
 
         if (this.description) stdio.writeLn(`${this.description}\n`)
 
-        stdio.writeLn(`${title('Usage:')} ${this.name} ${this.args}\n`)
-
+        stdio.writeLn(`${title('Usage:')} ${this.name} ${this.args}`)
         if (this.usageMessage) stdio.writeLn(this.usageMessage)
+        stdio.writeLn('')
 
         const optionNames = Object.keys(this.optionTypes)
         if (optionNames.length) {

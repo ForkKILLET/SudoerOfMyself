@@ -4,7 +4,7 @@ import { DirFile, FileLoc, FileT } from '@/sys0/fs'
 import { prop } from '@/utils'
 
 export const ls = createCommand('ls', '<path...>', 'List directory contents')
-    .help('help', '--help')
+    .help('help')
     .option('all', '--all, -a', 'boolean', 'Show hidden files')
     .program(({ proc, options }, ...paths) => {
         const { stdio, ctx } = proc

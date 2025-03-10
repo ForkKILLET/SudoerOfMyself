@@ -17,6 +17,8 @@ export class Term extends Terminal {
         mixin(this, Emitter)
     }
 
+    doEcho = true
+
     constructor(options?: ITerminalOptions & ITerminalInitOnlyOptions) {
         super({
             rows: 30,
@@ -39,6 +41,10 @@ export class Term extends Terminal {
         this.loadAddon(webglAddon)
 
         this.onData(data => {
+            if (this.doEcho) {
+                this.write(this.escape(data))
+            }
+
             if (data === '\x03') { // Ctrl+C
                 this.emit('interrupt')
                 return
@@ -54,5 +60,14 @@ export class Term extends Terminal {
 
     getStringWidth(str: string) {
         return [ ...stripAnsi(str) ].map(char => this.getCharWidth(char)).sum()
+    }
+
+    escape(str: string) {
+        return str
+            .replace(/[\x00-\x1F]/g, char => {
+                if (char === '\x04') return ''
+                if (char === '\r') return '\r\n'
+                else return `^${String.fromCharCode(char.charCodeAt(0) + 64)}`
+            })
     }
 }

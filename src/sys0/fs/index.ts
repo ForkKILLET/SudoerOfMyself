@@ -3,7 +3,7 @@ import { ProgramName } from '@/programs'
 import { getSysImage } from '@/data/sys_image'
 import { IAbortable, Stack } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
-import { Awaitable, DistributiveOmit, StrictOmit } from '@/utils/types'
+import { Awaitable, DistributiveOmit, Pred, StrictOmit } from '@/utils/types'
 
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
 import { FsPersistence, LocalStorageFsPersistence } from './persistence'
@@ -73,6 +73,7 @@ export interface FReadKeyOptions extends Partial<IAbortable> {}
 export interface FRead {
     readKey(options?: FReadKeyOptions): Awaitable<string | null>
     read(): Awaitable<string>
+    readUntil(pred: Pred<string>): Awaitable<string>
     readLn(): Awaitable<string>
 }
 
