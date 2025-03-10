@@ -7,7 +7,7 @@ import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
-import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parse, tokenize } from './parse'
+import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshExpandedToken, HshTokenText, parse, tokenize } from './parse'
 import { PROGRAMS, BUILTINS } from '@/programs'
 
 export const execute = async (proc: Process, command: HshAstCommand): Promise<number> => {
@@ -63,26 +63,34 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
     const { ctx, env } = proc
 
     const tokens = tokenize(line.content, false)
+    const etokens = expand(tokens, env)
 
-    const [ tokenIndex, token ] = [ ...tokens.entries() ]
-        .find(([ , token ]) => (line.cursor - 1).isBetween(token.begin, token.end))
-        ?? [ tokens.length ? null : 0, {
+    const getEmptyTokenEntry = (): [ number | null, HshTokenText ] => [
+        tokens.length ? null : 0,
+        {
 			type: 'text',
 			content: '',
 			begin: -1,
 			end: - 1,
-			isDq: false,
-			isSq: false,
-        } ]
+        }
+    ]
+
+    const [ tokenIndex, token ] = [ ...tokens.entries() ]
+        .find(([ , token ]) => (line.cursor - 1).isBetween(token.begin, token.end))
+        ?? getEmptyTokenEntry()
+    const [ etokenIndex, etoken ] = [ ...etokens.entries() ]
+        .find(([ , etoken ]) => (line.cursor - 1).isBetween(etoken.begin, etoken.end))
+        ?? getEmptyTokenEntry()
 
     const getCandidates = (
         list: string[],
-        { startIndex = 0, endIndex = token.content.length } = {}
+        { cursorToken = token, startIndex = 0, endIndex = token.content.length } = {}
     ) => {
-        const tokenBefore = token.content.slice(startIndex, line.cursor - token!.begin)
-        const tokenAfter = token.content.slice(line.cursor - token!.begin, endIndex)
+        const { content, begin, end } = cursorToken
+        const tokenBefore = content.slice(startIndex, line.cursor - begin)
+        const tokenAfter = content.slice(line.cursor - begin, endIndex)
         return list
-            .filter(str => str.startsWith(tokenBefore) && str.endsWith(tokenAfter) && str !== token.content)
+            .filter(str => str.startsWith(tokenBefore) && str.endsWith(tokenAfter) && str !== content)
             .map((str): CompCandidate => ({
                 value: str.slice(tokenBefore.length, str.length - tokenAfter.length),
                 display: str
@@ -99,9 +107,7 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
         return getCandidates([ ...Object.keys(PROGRAMS), ...Object.keys(BUILTINS) ])
     }
 
-    if (! token) return []
-
-    const { dirname, filename } = Path.getDirAndName(token.content, true)
+    const { dirname, filename } = Path.getDirAndName(etoken.content, true)
 
     if (filename === '..') return [ { value: '/', display: '../' } ]
 
@@ -117,7 +123,7 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
                 return name + (child?.type === FileT.DIR ? '/' : '')
             })
             .sort(),
-        { startIndex: token.content.length - filename.length }
+        { cursorToken: etoken, startIndex: etoken.content.length - filename.length }
     )
 }
 
@@ -135,8 +141,8 @@ export const hsh = wrapProgram(async (proc: Process) => {
         onLine: async (line) => {
             const script = await Promise.try(() => {
                 const tokens = tokenize(line)
-                const expanded = expand(tokens, env)
-                const script = parse(expanded)
+                const etokens = expand(tokens, env)
+                const script = parse(etokens)
                 return script
             }).catch(err => {
                 proc.error(err as string)

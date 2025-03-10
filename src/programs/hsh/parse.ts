@@ -40,8 +40,8 @@ export interface HshTokenBase {
 
 export interface HshTokenText extends HshTokenBase {
 	type: 'text'
-	isDq: boolean
-	isSq: boolean
+	isDq?: boolean
+	isSq?: boolean
 }
 
 export interface HshTokenVariable extends HshTokenBase {
