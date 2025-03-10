@@ -1,5 +1,5 @@
 import { Control } from '@/utils'
-import { StringKeyOf } from '@/utils/types'
+import { StringifiedKeyOf, StringKeyOf } from '@/utils/types'
 
 declare global {
     interface Array<T> {
@@ -31,9 +31,9 @@ declare global {
     }
 
     interface ObjectConstructor {
-        keys<T>(obj: T): StringKeyOf<T>[]
-        values<T>(obj: T): T[keyof T][]
-        entries<T>(obj: T): [StringKeyOf<T>, T[keyof T]][]
+        keys<T>(obj: T): StringifiedKeyOf<T>[]
+        values<T>(obj: T): T[Exclude<keyof T, symbol>][]
+        entries<T>(obj: T): [StringifiedKeyOf<T>, T[keyof T]][]
 
         assign<T, U extends T>(dest: T, src: U): T
     }

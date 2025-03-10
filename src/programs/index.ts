@@ -18,7 +18,6 @@ export const PROGRAMS = {
     fs_format,
     ls,
     mkdir,
-    pwd,
     rm,
 }
 
@@ -26,6 +25,7 @@ export const BUILTINS: Record<string, Program> = {
     cd,
     echo,
     hsh_tokenize,
+    pwd,
 }
 
 export type ProgramName = keyof typeof PROGRAMS

@@ -1,5 +1,5 @@
 import { Emitter } from './emitter'
-import { AllConstructor } from './types'
+import { AllConstructor, Nullable } from './types'
 
 export const placeholder = null as any
 
@@ -81,4 +81,8 @@ export const omit = <T, K extends keyof T>(obj: T, keys: K[]) => {
 
 export const equalBy = <T, K extends keyof T>(a: T, b: T, keys: K[]) => (
     keys.every(key => a[key] === b[key])
+)
+
+export const mapOrNull = <T, U>(value: Nullable<T>, fn: (value: T) => U) => (
+    value == null ? null : fn(value)
 )

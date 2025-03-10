@@ -28,7 +28,8 @@ export interface IStorage<K, V> {
     set: (key: K, value: V) => void
 }
 
-export type StringKeyOf<T> = `${Exclude<keyof T, symbol>}`
+export type StringKeyOf<T> = keyof T & string
+export type StringifiedKeyOf<T> = `${Exclude<keyof T, symbol>}`
 
 export type IsEqual<T, U> =
     T extends U

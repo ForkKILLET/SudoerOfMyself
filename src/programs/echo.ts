@@ -1,6 +1,9 @@
-import { Program } from '@/sys0/program'
+import { createCommand } from '@/sys0/program'
 
-export const echo: Program = async (proc, _, ...argv) => {
-    proc.stdio.writeLn(argv.join(' '))
-    return 0
-}
+export const echo = createCommand('echo', '<text...>', 'Display a line of text')
+    .whenUnknownOption('make-arg')
+    .help('help', '--help')
+    .program(({ proc }, ...args) => {
+        proc.stdio.writeLn(args.join(' '))
+        return 0
+    })
