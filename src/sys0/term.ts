@@ -1,3 +1,4 @@
+import stripAnsi from 'strip-ansi'
 import { Terminal, ITerminalOptions, ITerminalInitOnlyOptions } from '@xterm/xterm'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -52,6 +53,6 @@ export class Term extends Terminal {
     }
 
     getStringWidth(str: string) {
-        return [ ...str ].map(char => this.getCharWidth(char)).sum()
+        return [ ...stripAnsi(str) ].map(char => this.getCharWidth(char)).sum()
     }
 }

@@ -9,6 +9,7 @@ import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
 import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshExpandedToken, HshTokenText, parse, tokenize } from './parse'
 import { PROGRAMS, BUILTINS } from '@/programs'
+import { MakeOptional } from '@/utils/types'
 
 export const execute = async (proc: Process, command: HshAstCommand): Promise<number> => {
     const { name, args } = command
@@ -83,28 +84,28 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
         ?? getEmptyTokenEntry()
 
     const getCandidates = (
-        list: string[],
+        list: MakeOptional<CompCandidate, 'display'>[],
         { cursorToken = token, startIndex = 0, endIndex = token.content.length } = {}
     ) => {
-        const { content, begin, end } = cursorToken
+        const { content, begin } = cursorToken
         const tokenBefore = content.slice(startIndex, line.cursor - begin)
         const tokenAfter = content.slice(line.cursor - begin, endIndex)
         return list
-            .filter(str => str.startsWith(tokenBefore) && str.endsWith(tokenAfter) && str !== content)
-            .map((str): CompCandidate => ({
-                value: str.slice(tokenBefore.length, str.length - tokenAfter.length),
-                display: str
+            .filter(({ value }) => value.startsWith(tokenBefore) && value.endsWith(tokenAfter) && value !== content)
+            .map(({ value, display = value }): CompCandidate => ({
+                value: value.slice(tokenBefore.length, value.length - tokenAfter.length),
+                display,
             }))
     }
 
     if (token.type === 'variable' || token.type === 'text' && token.content === '$' && ! token.isSq) {
-        return getCandidates([ ...Object.keys(env).sort(), ...HSH_CHARS.senv ].map(name => '$' + name))
+        return getCandidates([ ...Object.keys(env).sort(), ...HSH_CHARS.senv ].map(name => ({ value: '$' + name })))
     }
 
     const isExplicitPath = Path.isAbsOrRel(token.content)
 
     if (tokenIndex === 0 && ! isExplicitPath) {
-        return getCandidates([ ...Object.keys(PROGRAMS), ...Object.keys(BUILTINS) ])
+        return getCandidates([ ...Object.keys(PROGRAMS), ...Object.keys(BUILTINS) ].map(name => ({ value: name })))
     }
 
     const { dirname, filename } = Path.getDirAndName(etoken.content, true)
@@ -114,15 +115,26 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
     const dirRes = ctx.fs.find(dirname, { allowedTypes: [ FileT.DIR ] })
     if (fOpIsErr(dirRes)) return []
 
-    const { entries } = dirRes.file
+    const { file: dir } = dirRes
     return getCandidates(
         Object
-            .keys(entries)
+            .keys(dir.entries)
+            .sort()
             .map(name => {
-                const child = ctx.fs.getFileByIid(entries[name])
-                return name + (child?.type === FileT.DIR ? '/' : '')
-            })
-            .sort(),
+                const child = ctx.fs.getChild(dir, name)
+                let display = name, value = name
+                if (! child) {
+                    display = chalk.redBright.strikethrough(display)
+                }
+                else if (child.type === FileT.DIR) {
+                    display = chalk.blueBright(display) + '/'
+                    value += '/'
+                }
+                else if (child.type === FileT.JSEXE) {
+                    display = chalk.greenBright(display) + '*'
+                }
+                return { value, display }
+            }),
         { cursorToken: etoken, startIndex: etoken.content.length - filename.length }
     )
 }

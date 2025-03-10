@@ -4,6 +4,7 @@ import { Process } from './proc'
 import { GridDisplay } from './display'
 import { Term } from './term'
 import chalk from 'chalk'
+import stripAnsi from 'strip-ansi'
 
 export type DoPrevent = boolean
 
@@ -207,7 +208,7 @@ export class Readline {
             write(
                 '\n' +
                 grid.toString({
-                    formatter: (str, i) => index === i ? chalk.black(chalk.bgWhiteBright(str)) : str
+                    formatter: (str, i) => index === i ? chalk.black.bgWhiteBright(stripAnsi(str)) : str
                 }) +
                 hideCursor + '\r' + up(grid.rows + 1) + right(cursorX) + showCursor
             )

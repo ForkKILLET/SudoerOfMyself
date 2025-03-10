@@ -289,6 +289,12 @@ export class Fs {
         return inode.file
     }
 
+    getChild(dir: DirFile, childName: string) {
+        if (! (childName in dir.entries)) return null
+        const iid = dir.entries[childName]
+        return this.getFileByIid(iid)
+    }
+
     findU<FT extends FileT = FileT>(path: string, options: FindOptions<FT> = {}) {
         return this.unwrap(this.find(path, options), `${path}`)
     }

@@ -46,7 +46,7 @@ export class GridDisplay {
             return
         }
 
-        const widths = cells.map(str => term.getStringWidth(str) + gap)
+        const widths = cells.map(str => term.getStringWidth( str) + gap)
         const maxRows = this.calcMaxRows(widths)
         const { rows, colWidths } = Array
             .range(maxRows, 0, - 1)
