@@ -26,4 +26,8 @@ export class LocalStorageFsPersistence implements FsPersistence {
     set(iid: number, inode: Inode) {
         localStorage.setJson(`i:${iid}`, inode)
     }
+
+    delete(iid: number) {
+        localStorage.removeItem(`i:${iid}`)
+    }
 }

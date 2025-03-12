@@ -26,6 +26,7 @@ export interface IStorage<K, V> {
     get: (key: K) => V
     getAll: () => [K, V][]
     set: (key: K, value: V) => void
+    delete: (key: K) => void
 }
 
 export type StringKeyOf<T> = keyof T & string

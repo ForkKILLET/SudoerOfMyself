@@ -55,9 +55,9 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
     async readUntil(pred: Pred<string>) {
         let data = ''
         for await (const char of this.readChar()) {
-            console.log(JSON.stringify(char))
             if (char === '\0' || char === '\x04' || pred(char)) break
-            data += char
+            if (char === '\x7F') data = data.slice(0, -1)
+            else data += char
         }
         return data
     }
@@ -157,4 +157,9 @@ export class Stdio implements FReadWrite {
     readUntil(pred: Pred<string>) { return this.input.readUntil(pred) }
     write(data: string) { this.output.write(data) }
     writeLn(data: string) { this.output.writeLn(data) }
+    async prompt(msg: string): Promise<boolean> {
+        this.write(`${msg} (y/n) `)
+        const line = await this.readLn()
+        return line.trim().toLowerCase() === 'y'
+    }
 }

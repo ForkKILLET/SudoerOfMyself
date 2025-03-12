@@ -69,5 +69,6 @@ export class Term extends Terminal {
                 if (char === '\r') return '\r\n'
                 else return `^${String.fromCharCode(char.charCodeAt(0) + 64)}`
             })
+            .replace(/\x7F/g, '\b \b')
     }
 }

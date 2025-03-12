@@ -17,6 +17,7 @@ export interface CreateProcOptions {
 
 export class Process extends Emitter<ProcessEvents> {
     name: string
+    staticName?: string
     env: Env
     stdio: Stdio
 
@@ -54,10 +55,16 @@ export class Process extends Emitter<ProcessEvents> {
         return proc
     }
 
-    error(err: any | any[], name = this.name) {
+    log(msg: any | any[]) {
+        Array.lift(msg).forEach(msg => {
+            this.stdio.writeLn(`${this.staticName ?? this.name}: ${msg}`)
+        })
+    }
+
+    error(err: any | any[]) {
         Array.lift(err).forEach(err => {
             if (err instanceof Error) console.error(err)
-            this.stdio.writeLn(`${name}: ${err}`)
+            this.stdio.writeLn(`${this.staticName ?? this.name}: ${err}`)
         })
     }
 

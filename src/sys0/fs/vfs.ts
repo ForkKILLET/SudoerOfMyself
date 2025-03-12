@@ -1,5 +1,5 @@
 import { ProgramName } from '@/programs'
-import { File, FileT, DirEntries, InodeMaintainer, Inode, FileFromT, FCreateResult, FOpT, fOpErr } from '.'
+import { File, FileT, DirEntries, InodeMaintainer, Inode, FileFromT, FOp } from '.'
 
 export namespace Vfs {
     export interface DirVfile {
@@ -45,7 +45,7 @@ export namespace Vfs {
     export const create = <FB extends Vfile>(
         fs: InodeMaintainer,
         vroot: FB,
-    ): FCreateResult<FileFromT<FB['type']>> => {
+    ): FOp.CreateResult<FileFromT<FB['type']>> => {
         const queue: FsBuildStep[] = [ { vfile: vroot, entries: {}, name: '' } ]
         let rootInode: Inode | undefined
 
@@ -68,7 +68,7 @@ export namespace Vfs {
 
             // TODO: optimize
             const iid = fs.inodeBitmap.getFree(1)
-            if (iid === - 1) return fOpErr({ type: FOpT.OUT_OF_INODES })
+            if (iid === - 1) return FOp.err({ type: FOp.T.OUT_OF_INODES })
 
             const inode: Inode = { iid, file }
             fs.inodes.set(iid, inode)
@@ -77,7 +77,7 @@ export namespace Vfs {
         }
 
         return {
-            type: FOpT.OK,
+            type: FOp.T.OK,
             inode: rootInode as Inode<FileFromT<FB['type']>>
         }
     }

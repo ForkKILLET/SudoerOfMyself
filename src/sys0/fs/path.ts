@@ -10,7 +10,8 @@ export namespace Path {
             i === parts.length - 1 && doKeepSlashAtEnd
         ))
     )
-    export const joinAbs = (parts: string[]) => '/' + parts.slice(1).join('/')
+    export const trimSlash = (segment: string) => segment.replace(/\/+$/, '')
+    export const join = (...segments: string[]) => segments.map(trimSlash).join('/')
     export const getDirAndName = (path: string, doKeepSlashAtEnd = false) => {
         if (! isAbs(path)) path = `./${path}`
         const parts = split(path, doKeepSlashAtEnd)
@@ -19,4 +20,19 @@ export namespace Path {
         return { dirname, filename }
     }
     export const isLegalFilename = (name: string) => !! name && ! name.includes('/')
+
+    export const normalize = (path: string) => {
+        const parts = split(path || '.', true)
+        if (! [ '', '.', '..' ].includes(parts.at(0))) parts.unshift('.')
+        const normalizedParts: string[] = []
+        normalizedParts.push(parts[0])
+        for (let i = 1; i < parts.length; i ++) {
+            const part = parts[i]
+            if (part === '..') normalizedParts.pop()
+            else if (part !== '.') normalizedParts.push(part)
+        }
+        return normalizedParts.join('/')
+    }
 }
+
+Object.assign(window, {Path})

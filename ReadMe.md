@@ -16,7 +16,7 @@
 
   - [ ] Programs
     - [x] `cat` (read stdin)
-    - [ ] `rm`
+    - [x] `rm`
     - [ ] `ls` (options)
       - [x] `-a`
       - [ ] `-l`

@@ -1,24 +1,34 @@
-import { wrapProgram } from '@/sys0/program'
+import { createCommand } from '@/sys0/program'
 
-export const mkdir = wrapProgram(async (proc, _, ...paths) => {
-    if (! paths.length) {
-        throw 'Missing operand'
-    }
-    const errs: string[] = []
+export const mkdir = createCommand('mkdir', '<DIRECTORY...>', 'Create the DIRECTORY(ies), if they do not already exist.')
+    .help('help')
+    .option('parent', '--parent, -p', 'boolean', 'Create parent directories as needed')
+    .option('verbose', '--verbose, -v', 'boolean', 'Print a message for each created directory')
+    .program(async ({ proc, options }, ...paths) => {
+        const { ctx, stdio } = proc
+        proc.staticName = 'mkdir'
 
-    for (const path of paths) {
-        try {
-            proc.ctx.fs.mkdirU(path)
+        if (! paths.length) {
+            throw 'Missing operand'
         }
-        catch (err) {
-            errs.push(err as string)
+        const errs: string[] = []
+
+        for (const path of paths) {
+            try {
+                ctx.fs.mkdirU(path)
+                if (options.verbose) {
+                    proc.log(`Created directory '${path}'`)
+                }
+            }
+            catch (err) {
+                errs.push(err as string)
+            }
         }
-    }
 
-    if (errs.length) {
-        proc.error(errs)
-        return 1
-    }
+        if (errs.length) {
+            proc.error(errs)
+            return 1
+        }
 
-    return 0
-})
+        return 0
+    })

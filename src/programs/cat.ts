@@ -1,19 +1,21 @@
 import { createCommand } from '@/sys0/program'
 import chalk from 'chalk'
 
-export const cat = createCommand('cat', '<file...>', 'Concatenate file(s) to standard output.')
+export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to standard output.')
     .help('help')
-    .usage('With no <file>, or when <file> is -, read standard input.')
+    .usage('With no FILE, or when FILE is -, read standard input.')
     .program(async ({ proc }, ...paths) => {
-        if (! paths.length) paths.push('-')
-
+        proc.staticName = 'cat'
         const { stdio, ctx } = proc
+
         const eol = chalk.blackBright(chalk.bgWhiteBright('%')) + '\n'
         const writeEolBy = (str: string) => {
             if (! str.endsWith('\n')) stdio.stdout?.write(eol)
         }
 
         let hasError = false
+
+        if (! paths.length) paths.push('-')
         for (const path of paths) {
             if (path === '-') {
                 const data = await stdio.read()
@@ -28,7 +30,7 @@ export const cat = createCommand('cat', '<file...>', 'Concatenate file(s) to sta
                 writeEolBy(data)
             }
             catch (err) {
-                proc.error(err as string)
+                proc.error(err)
                 hasError = true
             }
         }

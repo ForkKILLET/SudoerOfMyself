@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import { Process } from '@/sys0/proc'
 import { wrapProgram } from '@/sys0/program'
-import { FileT, fOpIsErr, FOpT } from '@/sys0/fs'
+import { FileT, FOp } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
@@ -31,31 +31,32 @@ export const execute = async (proc: Process, command: HshAstCommand): Promise<nu
         return stdio
     }
 
-    try {
-        if (name in BUILTINS) {
-            const originalStdio = proc.stdio
-            proc.stdio = getStdio()
-            try {
-                return await BUILTINS[name](proc, name, ...args)
-            }
-            finally {
-                proc.stdio = originalStdio
-            }
+    if (name in BUILTINS) {
+        const originalStdio = proc.stdio
+        const originalName = proc.name
+        proc.stdio = getStdio()
+        proc.name = name
+        try {
+            return await BUILTINS[name](proc, name, ...args)
         }
-        else {
-            const exeRes = ctx.fs.findInEnvPath(name, env.PATH, { cwd: env.PWD })
-            if (fOpIsErr(exeRes)) {
-                if (exeRes.type === FOpT.NOT_ALLOWED_TYPE) proc.error(`${name}: Not an executable`)
-                else proc.stdio.writeLn(`${name}: Command not found`)
-                return 127
-            }
-            const { programName } = exeRes.file
-            return await proc.spawn(PROGRAMS[programName], { name, stdio: getStdio() }, ...args)
+        catch (err) {
+            proc.error(err)
+            return 1
+        }
+        finally {
+            proc.stdio = originalStdio
+            proc.name = originalName
         }
     }
-    catch (err) {
-        proc.error(err as string, name)
-        return 1
+    else {
+        const exeRes = ctx.fs.findInEnvPath(name, env.PATH, { cwd: env.PWD })
+        if (FOp.isErr(exeRes)) {
+            if (exeRes.type === FOp.T.NOT_ALLOWED_TYPE) proc.error(`${name}: Not an executable`)
+            else proc.stdio.writeLn(`${name}: Command not found`)
+            return 127
+        }
+        const { programName } = exeRes.file
+        return await proc.spawn(PROGRAMS[programName], { name, stdio: getStdio() }, ...args)
     }
 }
 
@@ -119,7 +120,7 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
     if (filename === '..') return [ { value: '/', display: '../' } ]
 
     const dirRes = ctx.fs.find(dirname, { allowedTypes: [ FileT.DIR ] })
-    if (fOpIsErr(dirRes)) return []
+    if (FOp.isErr(dirRes)) return []
 
     const { file: dir } = dirRes
     return getCandidates(
@@ -130,7 +131,7 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
                 const child = ctx.fs.getChild(dir, name)
                 let display = name, value = name
                 if (! child) {
-                    display = chalk.redBright.strikethrough(display)
+                    display = chalk.redBright(display)
                 }
                 else if (child.type === FileT.DIR) {
                     display = chalk.blueBright(display) + '/'
@@ -163,7 +164,7 @@ export const hsh = wrapProgram(async (proc: Process) => {
                 const script = parse(etokens)
                 return script
             }).catch(err => {
-                proc.error(err as string)
+                proc.error(err)
                 return null
             })
             if (! script) {
