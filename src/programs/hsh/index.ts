@@ -148,7 +148,8 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
 
 export const hsh = createCommand('hsh', '[FILE]', 'Human SHell')
     .help('help')
-    .program(async ({ proc }, path) => {
+    .option('command', '-c', 'string', 'Execute command')
+    .program(async ({ proc, options }, path) => {
         const { ctx, env, stdio } = proc
         proc.cwd = env.HOME
 
@@ -169,9 +170,14 @@ export const hsh = createCommand('hsh', '[FILE]', 'Human SHell')
             await executeScript(proc, script)
         }
 
-        const isInteractive = ! path
+        if (options.command) {
+            const lines = options.command.split('\n')
+            for (const line of lines) {
+                await executeLine(proc, line)
+            }
+        }        
 
-        if (isInteractive) {
+        else if (! path) {
             const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
 
             const readline = new Readline(proc, stdio, ctx.term)

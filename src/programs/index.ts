@@ -12,8 +12,9 @@ import { cd } from './cd'
 import { echo } from './echo'
 import { hsh_tokenize } from './hsh_tokenize'
 import { hsh } from './hsh'
+import { help } from './help'
 
-export const PROGRAMS = {
+export const PROGRAMS: Record<string, Program> = {
     cat,
     fs_inodemap,
     fs_format,
@@ -21,6 +22,7 @@ export const PROGRAMS = {
     mkdir,
     rm,
     hsh,
+    help,
 }
 
 export const BUILTINS: Record<string, Program> = {
