@@ -46,7 +46,7 @@ export class GridDisplay {
             return
         }
 
-        const widths = cells.map(str => term.getStringWidth( str) + gap)
+        const widths = cells.map(str => term.getStringWidth(str) + gap)
         const maxRows = this.calcMaxRows(widths)
         const { rows, colWidths } = Array
             .range(maxRows, 0, - 1)
@@ -92,8 +92,9 @@ export class GridDisplay {
                     const index = this.options.direction === 'col'
                         ? row + col * this.rows
                         : col + row * this.cols
-                    const cell = this.cells[index]
-                    return formatter((cell ?? '').padEnd(this.colWidths[col] - this.options.gap), index)
+                    const cell = this.cells[index] ?? ''
+                    const padWidth = this.colWidths[col] - this.options.gap - this.term.getStringWidth(cell)
+                    return formatter(cell + ' '.repeat(padWidth), index)
                         + (col === this.cols - 1 ? '\n' : ' '.repeat(this.options.gap))
                 })
                 .join('')
