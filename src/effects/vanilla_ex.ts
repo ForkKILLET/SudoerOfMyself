@@ -1,5 +1,5 @@
 import { Control } from '@/utils'
-import { StringifiedKeyOf, StringKeyOf } from '@/utils/types'
+import { StringifiedKeyOf } from '@/utils/types'
 
 declare global {
     interface Array<T> {

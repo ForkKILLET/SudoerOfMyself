@@ -2,7 +2,7 @@ import { Term } from './term'
 import { sleep } from '@/utils'
 import { Emitter, Events } from '@/utils/emitter'
 import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
-import { Awaitable, Pred } from '@/utils/types'
+import { Pred } from '@/utils/types'
 import { Disposable } from '@/utils/dispoable'
 
 export interface StdinEvents extends Events {

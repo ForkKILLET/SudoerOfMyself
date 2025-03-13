@@ -1,13 +1,13 @@
 import chalk from 'chalk'
 
 import { Process } from '@/sys0/proc'
-import { createCommand, wrapProgram } from '@/sys0/program'
+import { createCommand } from '@/sys0/program'
 import { FileT, FOp } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 
-import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshExpandedToken, HshTokenText, parse, tokenize } from './parse'
+import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parse, tokenize } from './parse'
 import { PROGRAMS, BUILTINS } from '@/programs'
 import { MakeOptional } from '@/utils/types'
 
@@ -86,7 +86,7 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
     const [ tokenIndex, token ] = [ ...tokens.entries() ]
         .find(([ , token ]) => (line.cursor - 1).isBetween(token.begin, token.end))
         ?? getEmptyTokenEntry()
-    const [ etokenIndex, etoken ] = [ ...etokens.entries() ]
+    const [ _etokenIndex, etoken ] = [ ...etokens.entries() ]
         .find(([ , etoken ]) => (line.cursor - 1).isBetween(etoken.begin, etoken.end))
         ?? getEmptyTokenEntry()
 

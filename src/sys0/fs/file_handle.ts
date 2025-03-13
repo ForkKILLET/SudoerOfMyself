@@ -1,6 +1,6 @@
 import { mixin } from '@/utils'
 import { Pred } from '@/utils/types'
-import { NormalFile, FRead, FReadKeyOptions, FWrite, FReadWrite, Inode, FileT } from '.'
+import { NormalFile, FRead, FReadKeyOptions, FWrite, FReadWrite, Inode } from '.'
 import { Context } from '../context'
 
 export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'

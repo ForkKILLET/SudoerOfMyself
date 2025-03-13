@@ -5,7 +5,7 @@ export const mkdir = createCommand('mkdir', '<DIRECTORY...>', 'Create the DIRECT
     .option('parent', '--parent, -p', 'boolean', 'Create parent directories as needed')
     .option('verbose', '--verbose, -v', 'boolean', 'Print a message for each created directory')
     .program(async ({ proc, options }, ...paths) => {
-        const { ctx, stdio } = proc
+        const { ctx } = proc
         proc.staticName = 'mkdir'
 
         if (! paths.length) {

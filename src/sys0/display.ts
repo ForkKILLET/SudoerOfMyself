@@ -1,8 +1,5 @@
 import { Control, id } from '@/utils'
 import { Term } from './term'
-import { DirFile, FileT } from './fs'
-import { Context } from './context'
-import chalk from 'chalk'
 
 export interface GridToStringOptions {
     formatter?: (cell: string, index: number) => string

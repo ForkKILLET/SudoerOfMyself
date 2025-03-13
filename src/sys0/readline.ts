@@ -1,10 +1,10 @@
-import { AbortEmitter, compute, Computed, createSignal, equalBy, getCommonPrefix, pick, prop } from '@/utils'
-import { MakeOptional, StrictPick } from '@/utils/types'
+import chalk from 'chalk'
+import stripAnsi from 'strip-ansi'
 import { Process } from './proc'
 import { GridDisplay } from './display'
 import { Term } from './term'
-import chalk from 'chalk'
-import stripAnsi from 'strip-ansi'
+import { AbortEmitter, compute, Computed, createSignal, equalBy, getCommonPrefix, pick, prop } from '@/utils'
+import { MakeOptional, StrictPick } from '@/utils/types'
 
 export type DoPrevent = boolean
 
@@ -130,16 +130,18 @@ export class Readline {
         const line = new ReadlineCurrentLine(history)
 
         const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
-        const useCompleton = !! onComp
+        const useComp = !! onComp
 
         const hideCursor = '\x1B[?25l'
         const showCursor = '\x1B[?25h'
         const clearScreen = '\x1B[2J\x1B[H'
         const back = (width: number) => '\b'.repeat(width)
-        const left = (width: number) => '\x1B[D'.repeat(width)
-        const right = (width: number) => '\x1B[C'.repeat(width)
-        const up = (height: number) => '\x1B[A'.repeat(height)
-        const down = (height: number) => '\x1B[B'.repeat(height)
+        const m = {
+            left: (width: number) => '\x1B[D'.repeat(width),
+            right: (width: number) => '\x1B[C'.repeat(width),
+            up: (height: number) => '\x1B[A'.repeat(height),
+            down: (height: number) => '\x1B[B'.repeat(height),
+        }
         const clear = (width: number) => ' '.repeat(width)
         const eraseAfter = (width: number) => clear(width) + back(width)
         const rewrite = (str: string) => (
@@ -171,12 +173,12 @@ export class Readline {
         }
         const moveLeft = (length: number) => {
             markDirty()
-            write(left(w(line.content.slice(line.cursor - length, line.cursor))))
+            write(m.left(w(line.content.slice(line.cursor - length, line.cursor))))
             line.cursor -= length
         }
         const moveRight = (length: number) => {
             markDirty()
-            write(right(w(line.content.slice(line.cursor, line.cursor + length))))
+            write(m.right(w(line.content.slice(line.cursor, line.cursor + length))))
             line.cursor += length
         }
         const insert = (str: string) => {
@@ -206,7 +208,7 @@ export class Readline {
                 grid.toString({
                     formatter: (str, i) => index === i ? chalk.black.bgWhiteBright(stripAnsi(str)) : str
                 }) +
-                hideCursor + '\r' + up(grid.rows + 1) + right(cursorX) + showCursor
+                hideCursor + '\r' + m.up(grid.rows + 1) + m.right(cursorX) + showCursor
             )
         }
         const clearComp = () => {
@@ -219,7 +221,7 @@ export class Readline {
             const { cursorX } = term.buffer.active
             write(
                 ('\n' + clear(term.cols)).repeat(grid.rows) +
-                hideCursor + '\r' + up(grid.rows) + right(cursorX) + showCursor
+                hideCursor + '\r' + m.up(grid.rows) + m.right(cursorX) + showCursor
             )
             line.compState = null
         }
@@ -310,7 +312,7 @@ export class Readline {
             else if (data === '\t' || data === '\x1B[Z') { // Tab / Shift + Tab
                 const dir = data === '\t' ? + 1 : - 1
 
-                if (useCompleton) {
+                if (useComp) {
                     const isNew = ! line.compState
                         || ! equalBy(line, line.compState.source, [ 'content', 'cursor' ])
                     if (isNew) {
@@ -437,7 +439,7 @@ export class Readline {
                     continue
                 }
                 if (line.before) markDirty()
-                write(left(w(line.before)))
+                write(m.left(w(line.before)))
                 line.cursor = 0
             }
             else if (data === '\x05') { // Ctrl + E
@@ -445,7 +447,7 @@ export class Readline {
                     continue
                 }
                 if (line.after) markDirty()
-                write(right(w(line.after)))
+                write(m.right(w(line.after)))
                 line.cursor = line.content.length
             }
             else if (data === '\x0C') { // Ctrl + L

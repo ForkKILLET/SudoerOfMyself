@@ -1,7 +1,7 @@
 import { Context } from '@/sys0/context'
 import { ProgramName } from '@/programs'
 import { getSysImage } from '@/data/sys_image'
-import { IAbortable, id, Stack } from '@/utils'
+import { IAbortable, Stack } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
 import { Awaitable, DistributiveOmit, Pred, StrictOmit } from '@/utils/types'
 

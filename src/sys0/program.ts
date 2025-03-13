@@ -1,7 +1,7 @@
-import { Awaitable, StringKeyOf } from '@/utils/types'
-import { Process } from './proc'
 import chalk from 'chalk'
-import { compute, mapOrNull, prop } from '@/utils'
+import { Process } from './proc'
+import { mapOrNull, prop } from '@/utils'
+import { Awaitable } from '@/utils/types'
 
 export type Program = (proc: Process, ...argv: string[]) => Awaitable<number>
 

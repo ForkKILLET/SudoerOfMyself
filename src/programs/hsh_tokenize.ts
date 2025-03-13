@@ -2,7 +2,7 @@ import { wrapProgram } from '@/sys0/program'
 import { tokenize } from './hsh/parse'
 
 export const hsh_tokenize = wrapProgram((proc, _, ...args) => {
-    const { stdio, ctx, env } = proc
+    const { stdio, ctx } = proc
 
     const raw = args.join(' ')
     const tokens = tokenize(raw, false)
