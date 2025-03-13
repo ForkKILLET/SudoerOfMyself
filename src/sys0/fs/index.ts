@@ -290,7 +290,7 @@ export class Fs {
         return {
             type: FOp.T.OK,
             inode: inode as Inode<FileFromT<FT>>,
-            path: partStack.map(part => `/${part}`).join(''),
+            path: partStack.join('/') || '/',
             filename: partStack.top,
             parentInode: inodeStack.top as Inode<DirFile> ?? this.root,
         }
