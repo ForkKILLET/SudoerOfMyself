@@ -7,15 +7,20 @@ export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, 
 
 export type Signal = {
     trigger: () => void
-    signal: Promise<null>
+    promise: Promise<null>
+    triggered: boolean
 }
 
 export const createSignal = (): Signal => {
     let trigger: () => void = placeholder
-    const signal = new Promise<null>(resolve => {
-        trigger = () => resolve(null)
+    const promise = new Promise<null>(resolve => {
+        trigger = () => {
+            resolve(null)
+            signal.triggered = true
+        }
     })
-    return { trigger, signal }
+    const signal = { trigger, promise, triggered: false }
+    return signal
 }
 
 export class Stack<T> extends Array<T> {

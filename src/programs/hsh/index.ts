@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 
 import { Process } from '@/sys0/proc'
-import { wrapProgram } from '@/sys0/program'
+import { createCommand, wrapProgram } from '@/sys0/program'
 import { FileT, FOp } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
@@ -146,18 +146,13 @@ export const getCompProvider = (proc: Process): CompProvider => (line) => {
     )
 }
 
-export const hsh = wrapProgram(async (proc: Process) => {
-    const { ctx, env, stdio } = proc
-    proc.cwd = env.HOME
+export const hsh = createCommand('hsh', '[FILE]', 'Human SHell')
+    .help('help')
+    .program(async ({ proc }, path) => {
+        const { ctx, env, stdio } = proc
+        proc.cwd = env.HOME
 
-    const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
-
-    const readline = new Readline(proc, stdio, ctx.term)
-    const loop = readline.createLoop({
-        history: new ReadlineHistory(historyFile.read().split('\n')),
-		prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
-        onCompletion: getCompProvider(proc),
-        onLine: async (line) => {
+        const executeLine = async (proc: Process, line: string) => {
             const script = await Promise.try(() => {
                 const tokens = tokenize(line)
                 const etokens = expand(tokens, env)
@@ -172,10 +167,40 @@ export const hsh = wrapProgram(async (proc: Process) => {
                 return
             }
             await executeScript(proc, script)
-            historyFile.appendLn(line)
-        },
-        onInterrupt: () => true
+        }
+
+        const isInteractive = ! path
+
+        if (isInteractive) {
+            const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
+
+            const readline = new Readline(proc, stdio, ctx.term)
+            const loop = readline.createLoop({
+                history: new ReadlineHistory(historyFile.read().split('\n')),
+                prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
+                onComp: getCompProvider(proc),
+                onLine: async (line) => {
+                    if (line === '\x04') {
+                        stdio.writeLn('')
+                        loop.stop()
+                        return
+                    }
+                    await executeLine(proc, line)
+                    historyFile.appendLn(line)
+                },
+                onInterrupt: () => true,
+                onEnd: () => stdio.writeLn('[Process exited]'),
+            })
+            await loop.start()
+        }
+
+        else {
+            const fh = ctx.fs.openU(path, 'r').handle
+            const lines = fh.read().split('\n')
+            for (const line of lines) {
+                await executeLine(proc, line)
+            }
+        }
+
+        return 0
     })
-    await loop.start()
-    return 0
-})

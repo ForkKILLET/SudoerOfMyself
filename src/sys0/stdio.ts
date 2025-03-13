@@ -30,14 +30,14 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
     readKey({
         abortEmitter
     }: FReadKeyOptions = {}) {
-        return new Promise<string | null>(resolve => {
+        return new Promise<string>(resolve => {
             const { dispose } = Disposable.combine(
                 this.on('data', data => {
                     resolve(data)
                     dispose()
                 }),
                 abortEmitter?.on('abort', (() => {
-                    resolve(null)
+                    resolve('\x03')
                     dispose()
                 }))
             )

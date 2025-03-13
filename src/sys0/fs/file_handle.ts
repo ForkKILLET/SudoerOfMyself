@@ -34,7 +34,7 @@ export class FileHandleR extends FileHandle implements FRead {
     readonly mode: FileMode = 'r'
 
     readChar() {
-        if (this.isAtEof) return null
+        if (this.isAtEof) return '\x04'
         const char = this.currentChar
         this.cursor ++
         return char

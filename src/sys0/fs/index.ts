@@ -71,7 +71,7 @@ export type FileFromT<FT extends FileT> =
 export interface FReadKeyOptions extends Partial<IAbortable> {}
 
 export interface FRead {
-    readKey(options?: FReadKeyOptions): Awaitable<string | null>
+    readKey(options?: FReadKeyOptions): Awaitable<string>
     read(): Awaitable<string>
     readUntil(pred: Pred<string>): Awaitable<string>
     readLn(): Awaitable<string>

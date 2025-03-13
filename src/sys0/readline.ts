@@ -17,7 +17,7 @@ export type CompProvider = (line: ReadlineCurrentLine) => CompCandidate[]
 
 export interface ReadlineReadLnOptions {
     history?: ReadlineHistory
-    onCompletion?: CompProvider
+    onComp?: CompProvider
     onBeforeClear?: () => DoPrevent
     onClear?: () => void
 }
@@ -123,14 +123,14 @@ export class Readline {
 
     private async _readLn({
         history,
-        onCompletion,
+        onComp,
         onBeforeClear,
         onClear,
-    }: ReadlineReadLnOptions): Promise<string | null> {
+    }: ReadlineReadLnOptions): Promise<string> {
         const line = new ReadlineCurrentLine(history)
 
         const w = (str: string) => this.proc.ctx.term.getStringWidth(str)
-        const useCompleton = !! onCompletion
+        const useCompleton = !! onComp
 
         const hideCursor = '\x1B[?25l'
         const showCursor = '\x1B[?25h'
@@ -187,7 +187,7 @@ export class Readline {
             write(str + after + back((w(after))))
         }
 
-        const renderCompletion = (mapIndex: (compState: CompState) => number | null) => {
+        const renderComp = (mapIndex: (compState: CompState) => number | null) => {
             const { term } = this
             const { compState } = line
             if (! compState || ! term) return
@@ -209,7 +209,7 @@ export class Readline {
                 hideCursor + '\r' + up(grid.rows + 1) + right(cursorX) + showCursor
             )
         }
-        const clearCompletion = () => {
+        const clearComp = () => {
             const { compState } = line
             const { term } = this
             if (! compState || ! term) return
@@ -244,23 +244,23 @@ export class Readline {
                 eraseAfter(Math.max(0, w(candidate) - w(target))) + back(w(line.after))
             )
         }
-        const acceptCompletion = () => {
+        const acceptComp = () => {
             const { index, candidates } = line.compState!
             if (index !== null) {
                 const candidate = candidates[index]
                 line.content = line.before + candidate + line.after
                 line.cursor += candidate.length
             }
-            clearCompletion()
+            clearComp()
         }
-        const discardCompletion = () => {
+        const discardComp = () => {
             replaceCandidate('')
-            clearCompletion()
+            clearComp()
         }
         const markDirty = () => {
             line.isDirty = true
             if (line.compState && line.compState.index !== null) {
-                acceptCompletion()
+                acceptComp()
             }
         }
 
@@ -270,21 +270,24 @@ export class Readline {
         while (true) {
             const data = await this.stdio.readKey({ abortEmitter })
 
-            if (data === null) { // Interrupt
+            if (data === '\x03') { // Ctrl + C
                 if (line.compState) {
-                    discardCompletion()
+                    discardComp()
                     continue
                 }
 
                 write('\n')
                 line.content = ''
                 line.cursor = 0
-                return null
+                return '\x03'
             }
 
-            if (data === '\r') { // Enter
+            if (data === '\x04') { // Ctrl + D, EOF
+                if (! line.content) return data
+            }
+            else if (data === '\r') { // Enter
                 if (line.compState) {
-                    acceptCompletion()
+                    acceptComp()
                     continue
                 }
 
@@ -297,7 +300,7 @@ export class Readline {
             }
             else if (data === '\x1B') { // Escape
                 if (line.compState) {
-                    discardCompletion()
+                    discardComp()
                     continue
                 }
             }
@@ -311,9 +314,9 @@ export class Readline {
                     const isNew = ! line.compState
                         || ! equalBy(line, line.compState.source, [ 'content', 'cursor' ])
                     if (isNew) {
-                        const candidates = onCompletion(line)
+                        const candidates = onComp(line)
 
-                        clearCompletion()
+                        clearComp()
 
                         if (! candidates.length) {
                             line.compState = null
@@ -343,7 +346,7 @@ export class Readline {
                         }
                     }
 
-                    renderCompletion(({ index, length }) => {
+                    renderComp(({ index, length }) => {
                         if (isNew) return index
                         if (index === null) return dir === 1 ? 0 : length - 1
                         else return (index + dir).mod(length)
@@ -352,7 +355,7 @@ export class Readline {
             }
             else if (data === '\x1B[A') { // Up
                 if (line.compState) {
-                    renderCompletion(({ index, length }) =>
+                    renderComp(({ index, length }) =>
                         index === null ? null : (index - 1).mod(length)
                     )
                     continue
@@ -367,7 +370,7 @@ export class Readline {
             }
             else if (data === '\x1B[B') { // Down
                 if (line.compState) {
-                    renderCompletion(({ index, length }) =>
+                    renderComp(({ index, length }) =>
                         index === null ? null : (index + 1).mod(length)
                     )
                     continue
@@ -382,7 +385,7 @@ export class Readline {
             }
             else if (data === '\x1B[C') { // Right
                 if (line.compState?.index != null) {
-                    renderCompletion(({ index, length, display: { grid: { cols, rows } } }) => {
+                    renderComp(({ index, length, display: { grid: { cols, rows } } }) => {
                         let [ row, col ] = index!.remDiv(rows)
                         const lastColHeight = length % rows || rows
                         col ++
@@ -403,7 +406,7 @@ export class Readline {
             }
             else if (data === '\x1B[D') { // Left
                 if (line.compState?.index != null) {
-                    renderCompletion(({ index, length, display: { grid: { rows, cols } } }) => {
+                    renderComp(({ index, length, display: { grid: { rows, cols } } }) => {
                         const lastColHeight = length % rows || rows
                         let [ row, col ] = index!.remDiv(rows)
                         col --
@@ -452,7 +455,7 @@ export class Readline {
                 const { after } = line
                 write(line.before + (getCandidate() ?? '') + after + back(w(after)) + showCursor)
                 if (line.compState) {
-                    setTimeout(() => renderCompletion(({ index }) => index), 0)
+                    setTimeout(() => renderComp(({ index }) => index), 0)
                 }
             }
             else if (data === '\x15') { // Ctrl + U
@@ -490,7 +493,7 @@ export class Readline {
     }
 }
 
-export interface ReadlineLoopOptions extends StrictPick<ReadlineReadLnOptions, 'onCompletion'> {
+export interface ReadlineLoopOptions extends StrictPick<ReadlineReadLnOptions, 'onComp'> {
     history?: ReadlineHistory
     prompt: Computed<string>
     onLine?: (line: string) => void | Promise<void>
@@ -530,10 +533,10 @@ export class ReadlineLoopHandle {
             const line = await Promise.race([
                 this.readline.readLn({
                     history,
-                    onCompletion: this.options.onCompletion,
+                    onComp: this.options.onComp,
                     onClear: () => this.writePrompt(),
                 }),
-                this.toStop.signal,
+                this.toStop.promise,
             ])
             if (line === null) {
                 if (this.options.onInterrupt?.()) continue
@@ -541,6 +544,7 @@ export class ReadlineLoopHandle {
             }
             if (! line.trim()) continue
             await this.options.onLine?.(line)
+            if (this.toStop.triggered) break
         }
     }
 }

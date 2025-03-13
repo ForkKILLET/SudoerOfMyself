@@ -11,6 +11,7 @@ import { rm } from './rm'
 import { cd } from './cd'
 import { echo } from './echo'
 import { hsh_tokenize } from './hsh_tokenize'
+import { hsh } from './hsh'
 
 export const PROGRAMS = {
     cat,
@@ -19,6 +20,7 @@ export const PROGRAMS = {
     ls,
     mkdir,
     rm,
+    hsh,
 }
 
 export const BUILTINS: Record<string, Program> = {
