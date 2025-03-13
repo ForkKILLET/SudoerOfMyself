@@ -186,6 +186,7 @@ export const hsh = createCommand('hsh', '[FILE]', 'Human SHell')
                 prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
                 onComp: getCompProvider(proc),
                 onLine: async (line) => {
+                    if (line === '\x03') return
                     if (line === '\x04') {
                         stdio.writeLn('')
                         loop.stop()
