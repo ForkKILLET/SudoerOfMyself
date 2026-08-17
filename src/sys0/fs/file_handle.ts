@@ -1,12 +1,18 @@
 import { Pred } from '@/utils/types'
 import { NormalFile, FRead, FWrite, FReadWrite, Inode } from '.'
-import { Context } from '../context'
+
+export interface FileHandlePersistence {
+  set(iid: number, inode: Inode): void
+}
 
 export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'
 export type FileMode = 'r' | FileModeWritable
 
 export abstract class FileHandle {
-  constructor(public ctx: Context, protected inode: Inode<NormalFile>) {}
+  constructor(
+    private readonly persistence: FileHandlePersistence,
+    protected inode: Inode<NormalFile>,
+  ) {}
 
   abstract readonly mode: FileMode
 
@@ -29,21 +35,37 @@ export abstract class FileHandle {
 
   protected readUntilAtCursor(pred: Pred<string>) {
     const start = this.cursor
-    while (! (this.isAtEof || pred(this.currentChar))) this.cursor ++
-    return this.inode.file.content.slice(start, this.cursor)
+    while (! this.isAtEof) {
+      if (pred(this.currentChar)) {
+        const end = this.cursor
+        this.cursor ++
+        return this.inode.file.content.slice(start, end)
+      }
+      this.cursor ++
+    }
+    return this.inode.file.content.slice(start)
   }
 
   protected sync() {
-    this.ctx.fs.persistence.set(this.inode.iid, this.inode)
+    this.persistence.set(this.inode.iid, this.inode)
   }
 
   protected rewrite(data: string) {
     this.inode.file.content = data
+    this.cursor = data.length
     this.sync()
   }
 
   protected append(data: string) {
     this.inode.file.content += data
+    this.cursor = this.inode.file.content.length
+    this.sync()
+  }
+
+  protected writeAtCursor(data: string) {
+    const content = this.inode.file.content
+    this.inode.file.content = content.slice(0, this.cursor) + data + content.slice(this.cursor + data.length)
+    this.cursor += data.length
     this.sync()
   }
 }
@@ -103,7 +125,7 @@ export abstract class FileHandleWritable extends FileHandle implements FWrite {
 
   write(data: string) {
     if (this.mode.endsWith('a')) this.append(data)
-    else this.rewrite(data)
+    else this.writeAtCursor(data)
   }
 
   writeLn(data: string) {

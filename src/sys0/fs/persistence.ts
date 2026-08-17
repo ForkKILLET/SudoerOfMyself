@@ -4,6 +4,7 @@ import { Inode } from '.'
 
 export interface FsPersistence extends IStorage<number, Inode> {
   isInitialized: boolean
+  clear(): void
 }
 
 export class LocalStorageFsPersistence implements FsPersistence {
@@ -31,5 +32,39 @@ export class LocalStorageFsPersistence implements FsPersistence {
 
   delete(iid: number) {
     localStorage.removeItem(`i:${iid}`)
+  }
+
+  clear() {
+    Object.keys(localStorage)
+      .filter(key => key.startsWith('i:'))
+      .forEach(key => localStorage.removeItem(key))
+    localStorage.removeItem('fs:initialized')
+  }
+}
+
+export class MemoryFsPersistence implements FsPersistence {
+  isInitialized = false
+  private readonly inodes = new Map<number, Inode>()
+
+  get(iid: number) {
+    const inode = this.inodes.get(iid)
+    return inode && structuredClone(inode)
+  }
+
+  getAll() {
+    return [...this.inodes].map(([iid, inode]): [number, Inode] => [iid, structuredClone(inode)])
+  }
+
+  set(iid: number, inode: Inode) {
+    this.inodes.set(iid, structuredClone(inode))
+  }
+
+  delete(iid: number) {
+    this.inodes.delete(iid)
+  }
+
+  clear() {
+    this.inodes.clear()
+    this.isInitialized = false
   }
 }

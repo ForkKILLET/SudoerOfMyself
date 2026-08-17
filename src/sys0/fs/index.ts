@@ -1,4 +1,3 @@
-import { Context } from '@/sys0/context'
 import { IAbortable } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
 import { Awaitable, Pred, StrictOmit } from '@/utils/types'
@@ -180,17 +179,26 @@ export class Fs {
     return root
   }
 
-  persistence: FsPersistence = new LocalStorageFsPersistence()
+  readonly persistence: FsPersistence
+  private readonly getCwd: () => string
 
   constructor(
-    public ctx: Context,
     private readonly initialImage: Vfs.DirVfile,
+    {
+      persistence = new LocalStorageFsPersistence(),
+      getCwd = () => '/',
+    }: {
+      persistence?: FsPersistence
+      getCwd?: () => string
+    } = {},
   ) {
+    this.persistence = persistence
+    this.getCwd = getCwd
     this.load()
   }
 
   reset() {
-    this.persistence.isInitialized = false
+    this.persistence.clear()
     this.inodes.clear()
     this.inodeBitmap.clear()
     this.load()
@@ -213,7 +221,7 @@ export class Fs {
   }
 
   get cwd() {
-    return this.ctx.fgProc.cwd
+    return this.getCwd()
   }
 
   isFileOfType<FT extends FileT>(file: File, types: readonly FT[]): file is FileFromT<FT> {
@@ -396,11 +404,11 @@ export class Fs {
   }
 
   rm(path: string): FOp.RmResult {
-    const res = this.findInode(path, { allowedTypes: [FileT.DIR] })
+    const res = this.findInode(path)
     if (res.isErr) return res
 
-    const { parentInode: parent, filename } = res.val
-    if (parent === this.root) return FOp.err({ type: FOp.T.IS_ROOT })
+    const { inode, parentInode: parent, filename } = res.val
+    if (inode === this.root) return FOp.err({ type: FOp.T.IS_ROOT })
 
     const rmRes = this.rmWhere(parent, filename)
     if (rmRes.isErr) return rmRes
@@ -416,7 +424,7 @@ export class Fs {
 
   private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
     const Handle = FILE_HANDLE_FROM_MODE[mode]
-    return new Handle(this.ctx, inode) as FileHandleFromMode<FM>
+    return new Handle(this.persistence, inode) as FileHandleFromMode<FM>
   }
 
   open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {
@@ -439,6 +447,11 @@ export class Fs {
     }
     else {
       inode = res.val.inode
+    }
+
+    if (mode === 'w' || mode === 'rw') {
+      inode.file.content = ''
+      this.persistence.set(inode.iid, inode)
     }
 
     return FOp.ok({

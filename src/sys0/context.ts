@@ -11,7 +11,9 @@ export class Context {
 
   constructor(initialImage: Vfs.DirVfile) {
     this.term = new Term()
-    this.fs = new Fs(this, initialImage)
+    this.fs = new Fs(initialImage, {
+      getCwd: () => this.fgProc.cwd,
+    })
     this.fgProc = this.init = new Process(this, null, {
       name: 'init',
       env: {
