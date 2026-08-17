@@ -1,4 +1,5 @@
 import { Vfs } from '@/sys0/fs/vfs'
+import { FileT, FOp, FsMigration } from '@/sys0/fs'
 import { range } from '@/utils'
 
 export const getSysImage = (programNames: readonly string[]) => Vfs.dir({
@@ -13,3 +14,18 @@ export const getSysImage = (programNames: readonly string[]) => Vfs.dir({
     'hello.txt': Vfs.normal('Hello, world!'),
   }),
 })
+
+export const SYSTEM_FS_MIGRATIONS: readonly FsMigration[] = [
+  {
+    version: 1,
+    migrate: (fs) => {
+      const binResult = fs.findInode('/bin', { allowedTypes: [FileT.DIR] })
+      if (binResult.isErr) return binResult
+      const bin = binResult.val.inode
+      if ('cpu_burn' in bin.file.entries) return FOp.ok(undefined)
+
+      const created = fs.createAt(bin, 'cpu_burn', Vfs.jsExe('cpu_burn'))
+      return created.isErr ? created : FOp.ok(undefined)
+    },
+  },
+]

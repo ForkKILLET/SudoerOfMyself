@@ -4,6 +4,7 @@ import { Inode } from '.'
 
 export interface FsPersistence extends IStorage<number, Inode> {
   isInitialized: boolean
+  schemaVersion: number
   clear(): void
 }
 
@@ -14,6 +15,14 @@ export class LocalStorageFsPersistence implements FsPersistence {
 
   set isInitialized(value: boolean) {
     setJson(localStorage, 'fs:initialized', value)
+  }
+
+  get schemaVersion() {
+    return getJsonOr(localStorage, 'fs:schema-version', 0)
+  }
+
+  set schemaVersion(value: number) {
+    setJson(localStorage, 'fs:schema-version', value)
   }
 
   get(iid: number) {
@@ -39,11 +48,13 @@ export class LocalStorageFsPersistence implements FsPersistence {
       .filter(key => key.startsWith('i:'))
       .forEach(key => localStorage.removeItem(key))
     localStorage.removeItem('fs:initialized')
+    localStorage.removeItem('fs:schema-version')
   }
 }
 
 export class MemoryFsPersistence implements FsPersistence {
   isInitialized = false
+  schemaVersion = 0
   private readonly inodes = new Map<number, Inode>()
 
   get(iid: number) {
@@ -66,5 +77,6 @@ export class MemoryFsPersistence implements FsPersistence {
   clear() {
     this.inodes.clear()
     this.isInitialized = false
+    this.schemaVersion = 0
   }
 }

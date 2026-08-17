@@ -170,6 +170,11 @@ export namespace FOp {
   }
 }
 
+export interface FsMigration {
+  version: number
+  migrate(fs: Fs): FOp.OperationResult<void>
+}
+
 export class Fs {
   inodes: Inodes = new Map()
   inodeBitmap: Bitmap = new Bitmap(MAX_INODE_COUNT)
@@ -182,19 +187,23 @@ export class Fs {
 
   readonly persistence: FsPersistence
   private readonly getCwd: () => string
+  private readonly migrations: readonly FsMigration[]
 
   constructor(
     private readonly initialImage: Vfs.DirVfile,
     {
       persistence = new LocalStorageFsPersistence(),
       getCwd = () => '/',
+      migrations = [],
     }: {
       persistence?: FsPersistence
       getCwd?: () => string
+      migrations?: readonly FsMigration[]
     } = {},
   ) {
     this.persistence = persistence
     this.getCwd = getCwd
+    this.migrations = [...migrations].sort((left, right) => left.version - right.version)
     this.load()
   }
 
@@ -212,12 +221,22 @@ export class Fs {
         this.persistence.set(iid, inode)
       })
       this.persistence.isInitialized = true
+      this.persistence.schemaVersion = this.migrations.at(- 1)?.version ?? 0
     }
     else {
       this.persistence.getAll().forEach(([iid, inode]) => {
         this.inodes.set(iid, inode)
         this.inodeBitmap.set(iid, 1)
       })
+      this.runMigrations()
+    }
+  }
+
+  private runMigrations() {
+    for (const migration of this.migrations) {
+      if (migration.version <= this.persistence.schemaVersion) continue
+      this.unwrap(migration.migrate(this), `File system migration ${migration.version} failed`)
+      this.persistence.schemaVersion = migration.version
     }
   }
 
@@ -234,7 +253,14 @@ export class Fs {
   }
 
   create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
-    return Vfs.create(this, tree)
+    const existingIids = new Set(this.inodes.keys())
+    const result = Vfs.create(this, tree)
+    if (result.isOk) {
+      this.inodes.forEach((inode, iid) => {
+        if (! existingIids.has(iid)) this.persistence.set(iid, inode)
+      })
+    }
+    return result
   }
 
   createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FileT, FOp, Fs, Inode } from '@/sys0/fs'
+import { FileT, FOp, Fs, FsMigration, Inode } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import { Bitmap } from '@/utils/bitmap'
@@ -73,6 +73,41 @@ describe('Fs mutation consistency', () => {
 
     expect(fs.find('/temporary').isErr).toBe(true)
     expect(persistence.get(temporaryIid)).toBeUndefined()
+  })
+
+  it('persists files created after the initial image', () => {
+    const persistence = new MemoryFsPersistence()
+    const image = Vfs.dir({})
+    const firstBoot = new Fs(image, { persistence })
+    firstBoot.openU('/save', 'w').handle.write('progress')
+
+    const secondBoot = new Fs(image, { persistence })
+
+    expect(secondBoot.openU('/save', 'r').handle.read()).toBe('progress')
+  })
+
+  it('applies each persisted file-system migration once', () => {
+    const persistence = new MemoryFsPersistence()
+    const image = Vfs.dir({ bin: Vfs.dir() })
+    new Fs(image, { persistence })
+    let migrationRuns = 0
+    const migrations: FsMigration[] = [{
+      version: 1,
+      migrate: (fs) => {
+        migrationRuns ++
+        const bin = fs.findInodeU('/bin', { allowedTypes: [FileT.DIR] }).inode
+        const created = fs.createAt(bin, 'new-command', Vfs.jsExe('new-command'))
+        return created.isErr ? created : FOp.ok(undefined)
+      },
+    }]
+
+    const migratedBoot = new Fs(image, { persistence, migrations })
+    const followingBoot = new Fs(image, { persistence, migrations })
+
+    expect(migratedBoot.find('/bin/new-command', { allowedTypes: [FileT.JSEXE] }).isOk).toBe(true)
+    expect(followingBoot.find('/bin/new-command', { allowedTypes: [FileT.JSEXE] }).isOk).toBe(true)
+    expect(migrationRuns).toBe(1)
+    expect(persistence.schemaVersion).toBe(1)
   })
 
   it('rolls back partially allocated VFS images', () => {
