@@ -22,19 +22,25 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
   }
 
   readKey({
-    abortEmitter,
+    signal,
   }: FReadKeyOptions = {}) {
+    if (signal?.aborted) return Promise.resolve('\x03')
+
     return new Promise<string>((resolve) => {
+      const abort = () => {
+        resolve('\x03')
+        dispose()
+      }
       const { dispose } = Disposable.combine(
         this.on('data', (data) => {
           resolve(data)
           dispose()
         }),
-        abortEmitter?.on('abort', () => {
-          resolve('\x03')
-          dispose()
-        }),
+        signal && {
+          dispose: () => signal.removeEventListener('abort', abort),
+        },
       )
+      signal?.addEventListener('abort', abort, { once: true })
     })
   }
 

@@ -8,7 +8,10 @@ import { errorMessage } from '@/utils/errors'
 
 export interface ProcessEvents extends Events {
   interrupt: []
+  exit: [number]
 }
+
+export type ProcessState = 'running' | 'exited'
 
 export interface CreateProcOptions {
   name: string
@@ -22,6 +25,8 @@ export class Process extends Emitter<ProcessEvents> {
   staticName?: string
   env: Env
   stdio: Stdio
+  state: ProcessState = 'running'
+  exitCode: number | null = null
 
   private _cwd = '/'
   get cwd() {
@@ -42,7 +47,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.name = options.name
     this.env = createEnv({ ...parent?.env, ...options.env })
     this.cwd = options.cwd ?? parent?.cwd ?? '/'
-    this.stdio = options.stdio ?? Stdio.fromTerm(ctx.term)
+    this.stdio = options.stdio ?? parent?.stdio ?? Stdio.fromTerm(ctx.term)
   }
 
   subProcesses: Process[] = []
@@ -52,10 +57,29 @@ export class Process extends Emitter<ProcessEvents> {
   }
 
   fork(options: CreateProcOptions) {
+    if (this.state === 'exited') throw new Error('Exited process cannot fork')
     const proc = new Process(this.ctx, this, options)
     this.subProcesses.unshift(proc)
-    this.ctx.fgProc = proc // TODO: schedule
     return proc
+  }
+
+  interrupt() {
+    if (this.state === 'exited') return
+    const foregroundChild = this.fgProcess
+    if (foregroundChild) foregroundChild.interrupt()
+    else this.emit('interrupt')
+  }
+
+  private finish(exitCode: number) {
+    if (this.state === 'exited') return
+    this.state = 'exited'
+    this.exitCode = exitCode
+    this.emit('exit', exitCode)
+  }
+
+  private removeChild(child: Process) {
+    const index = this.subProcesses.indexOf(child)
+    if (index !== - 1) this.subProcesses.splice(index, 1)
   }
 
   log(msg: unknown | unknown[]) {
@@ -74,18 +98,19 @@ export class Process extends Emitter<ProcessEvents> {
   async spawn(program: Program, options: CreateProcOptions, ...args: string[]) {
     const { name } = options
     const proc = this.fork(options)
+    let exitCode: number
     try {
-      const ret = await program(proc, name, ...args)
-      return ret
+      exitCode = await program(proc, name, ...args)
     }
     catch (err) {
       console.error(err)
-      this.stdio.writeLn(`${name}: ${errorMessage(err)}`)
-      return 128
+      proc.stdio.writeLn(`${name}: ${errorMessage(err)}`)
+      exitCode = 128
     }
     finally {
-      this.subProcesses.shift()
-      this.ctx.fgProc = this
+      this.removeChild(proc)
     }
+    proc.finish(exitCode)
+    return exitCode
   }
 }

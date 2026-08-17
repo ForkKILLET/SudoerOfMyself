@@ -1,4 +1,3 @@
-import { IAbortable } from '@/utils'
 import { Bitmap } from '@/utils/bitmap'
 import { Awaitable, Pred, StrictOmit } from '@/utils/types'
 import { Err, Ok, Result } from 'fk-result'
@@ -67,7 +66,9 @@ export type FileFromT<FT extends FileT> =
       FT extends FileT.JSEXE ? JsExeFile :
         never
 
-export type FReadKeyOptions = Partial<IAbortable>
+export interface FReadKeyOptions {
+  signal?: AbortSignal
+}
 
 export interface FRead {
   readKey(options?: FReadKeyOptions): Awaitable<string>

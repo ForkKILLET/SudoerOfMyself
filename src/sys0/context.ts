@@ -7,14 +7,19 @@ export class Context {
   term: Term
   init: Process
   fs: Fs
-  fgProc: Process
+
+  get fgProc(): Process {
+    let process = this.init
+    while (process.fgProcess) process = process.fgProcess
+    return process
+  }
 
   constructor(initialImage: Vfs.DirVfile) {
     this.term = new Term()
     this.fs = new Fs(initialImage, {
       getCwd: () => this.fgProc.cwd,
     })
-    this.fgProc = this.init = new Process(this, null, {
+    this.init = new Process(this, null, {
       name: 'init',
       env: {
         PWD: '/home',
@@ -24,7 +29,7 @@ export class Context {
     })
 
     this.term.on('interrupt', () => {
-      this.fgProc.emit('interrupt')
+      this.init.interrupt()
     })
   }
 

@@ -4,7 +4,6 @@ import { Process } from './proc'
 import { GridDisplay } from './display'
 import { Term } from './term'
 import {
-  AbortEmitter,
   compute,
   Computed,
   createSignal,
@@ -281,11 +280,15 @@ export class Readline {
       }
     }
 
-    const abortEmitter = new AbortEmitter()
-    this.proc.on('interrupt', () => abortEmitter.emit('abort'))
+    const abortController = new AbortController()
+    const interruptSubscription = this.proc.on('interrupt', () => abortController.abort())
+    const finish = <T>(value: T) => {
+      interruptSubscription.dispose()
+      return value
+    }
 
     while (true) {
-      const data = await this.stdio.readKey({ abortEmitter })
+      const data = await this.stdio.readKey({ signal: abortController.signal })
 
       if (data === '\x03') { // Ctrl + C
         if (line.compState) {
@@ -296,11 +299,11 @@ export class Readline {
         write('\n')
         line.content = ''
         line.cursor = 0
-        return '\x03'
+        return finish('\x03')
       }
 
       if (data === '\x04') { // Ctrl + D, EOF
-        if (! line.content) return data
+        if (! line.content) return finish(data)
       }
       else if (data === '\r') { // Enter
         if (line.compState) {
@@ -313,7 +316,7 @@ export class Readline {
         if (history && content.trim()) {
           history.commit()
         }
-        return content
+        return finish(content)
       }
       else if (data === '\x1B') { // Escape
         if (line.compState) {

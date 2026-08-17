@@ -1,4 +1,3 @@
-import { Emitter } from './emitter'
 import { Nullable } from './types'
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -27,12 +26,6 @@ export const compute = <T>(value: Computed<T>): T => (
 )
 
 export const id = <T>(value: T) => value
-
-export class AbortEmitter extends Emitter<{ abort: [] }> {}
-
-export type IAbortable = {
-  abortEmitter: AbortEmitter
-}
 
 export const prop = <T, K extends keyof T>(key: K) => (obj: T) => obj[key]
 

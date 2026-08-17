@@ -5,7 +5,7 @@ import { createCommand, Program } from '@/sys0/program'
 import { FileT, FOp } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
-import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
+import { Stdio } from '@/sys0/stdio'
 
 import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parse, tokenize } from './parse'
 import { MakeOptional } from '@/utils/types'
@@ -31,20 +31,16 @@ export const execute = async (
   const getStdio = () => {
     const { input: inputDesc } = command
     const { output: outputDesc } = command
-    const stdin = inputDesc ? undefined : new Stdin(ctx.term)
-    const stdout = outputDesc ? undefined : new Stdout(ctx.term)
     const input = inputDesc
       ? ctx.fs.openU(inputDesc.path, 'r').handle
-      : stdin
+      : proc.stdio.input
     const output = outputDesc
       ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
-      : stdout
-
-    if (! input || ! output) throw new Error('Failed to create standard I/O endpoints')
+      : proc.stdio.output
 
     const stdio = new Stdio(input, output)
-    stdio.stdin = stdin
-    stdio.stdout = stdout
+    stdio.stdin = inputDesc ? undefined : proc.stdio.stdin
+    stdio.stdout = outputDesc ? undefined : proc.stdio.stdout
     return stdio
   }
 
