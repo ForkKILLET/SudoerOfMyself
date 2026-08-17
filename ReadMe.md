@@ -37,8 +37,9 @@ typed syscalls back to the main-thread kernel. Run `cpu_burn [SECONDS]` to exerc
 the path; Ctrl+C terminates the Worker even while it is inside a CPU-bound loop.
 
 `SharedArrayBuffer` requires a cross-origin-isolated page. The Vite development and
-preview servers send the required COOP/COEP headers. Production hosting must send
-the same headers:
+preview servers send the required COOP/COEP headers. Static hosts such as GitHub
+Pages use `coi-serviceworker.js` as a fallback. Other production hosts should send
+the headers directly when possible:
 
 ```text
 Cross-Origin-Opener-Policy: same-origin
