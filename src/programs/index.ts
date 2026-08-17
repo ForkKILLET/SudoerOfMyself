@@ -13,6 +13,7 @@ import { echo } from './echo'
 import { hsh_tokenize } from './hsh_tokenize'
 import { createHsh } from './hsh'
 import { createHelp } from './help'
+import { cpu_burn } from './cpu_burn'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
@@ -30,6 +31,7 @@ export const help = createHelp(hsh)
 
 export const PROGRAMS: Record<string, Program> = {
   cat,
+  cpu_burn,
   fs_inodemap,
   fs_format,
   ls,

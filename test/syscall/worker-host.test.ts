@@ -1,0 +1,116 @@
+import { describe, expect, it } from 'vitest'
+import { Context } from '@/sys0/context'
+import { FRead, FWrite } from '@/sys0/fs'
+import { Process } from '@/sys0/proc'
+import { Stdio } from '@/sys0/stdio'
+import { WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
+import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protocol'
+
+class EmptyInput implements FRead {
+  readKey() { return '\x04' }
+  read() { return '' }
+  readUntil() { return '' }
+  readLn() { return '' }
+}
+
+class MemoryOutput implements FWrite {
+  content = ''
+  write(data: string) { this.content += data }
+  writeLn(data: string) { this.write(data + '\n') }
+}
+
+class FakeWorker implements WorkerLike {
+  terminated = false
+  initMessage?: WorkerInitMessage
+  onInit?: (message: WorkerInitMessage) => void
+  private readonly messageListeners = new Set<(event: MessageEvent<unknown>) => void>()
+  private readonly errorListeners = new Set<(event: ErrorEvent) => void>()
+
+  postMessage(message: WorkerInitMessage) {
+    this.initMessage = message
+    this.onInit?.(message)
+  }
+
+  terminate() {
+    this.terminated = true
+  }
+
+  addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void
+  addEventListener(type: 'error', listener: (event: ErrorEvent) => void): void
+  addEventListener(
+    type: 'message' | 'error',
+    listener: ((event: MessageEvent<unknown>) => void) | ((event: ErrorEvent) => void),
+  ) {
+    if (type === 'message') {
+      this.messageListeners.add(listener as (event: MessageEvent<unknown>) => void)
+    }
+    else {
+      this.errorListeners.add(listener as (event: ErrorEvent) => void)
+    }
+  }
+
+  removeEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void
+  removeEventListener(type: 'error', listener: (event: ErrorEvent) => void): void
+  removeEventListener(
+    type: 'message' | 'error',
+    listener: ((event: MessageEvent<unknown>) => void) | ((event: ErrorEvent) => void),
+  ) {
+    if (type === 'message') {
+      this.messageListeners.delete(listener as (event: MessageEvent<unknown>) => void)
+    }
+    else {
+      this.errorListeners.delete(listener as (event: ErrorEvent) => void)
+    }
+  }
+
+  emitMessage(message: WorkerStatusMessage) {
+    const event = { data: message } as MessageEvent<unknown>
+    this.messageListeners.forEach(listener => listener(event))
+  }
+}
+
+const createRootProcess = () => {
+  const output = new MemoryOutput()
+  const root = new Process({} as Context, null, {
+    name: 'init',
+    env: { HOME: '/', PATH: '/bin', PWD: '/' },
+    stdio: new Stdio(new EmptyInput(), output),
+  })
+  return { root, output }
+}
+
+const definitionFor = (worker: FakeWorker): WorkerProgramDefinition => ({
+  createWorker: () => worker,
+})
+
+describe('Worker process host', () => {
+  it('propagates a normal Worker exit into the process lifecycle', async () => {
+    const { root } = createRootProcess()
+    const worker = new FakeWorker()
+    worker.onInit = () => queueMicrotask(() => worker.emitMessage({
+      type: 'sudoer:worker-exit',
+      exitCode: 5,
+    }))
+
+    const running = root.spawnWorker(definitionFor(worker), { name: 'worker-program' })
+    const child = root.subProcesses[0]
+
+    await expect(running).resolves.toBe(5)
+    expect(child.state).toBe('exited')
+    expect(child.exitCode).toBe(5)
+    expect(root.subProcesses).toEqual([])
+    expect(worker.terminated).toBe(true)
+  })
+
+  it('force-terminates a CPU-bound Worker on interrupt', async () => {
+    const { root } = createRootProcess()
+    const worker = new FakeWorker()
+    const running = root.spawnWorker(definitionFor(worker), { name: 'cpu-bound' })
+
+    root.interrupt()
+
+    await expect(running).resolves.toBe(130)
+    expect(worker.terminated).toBe(true)
+    expect(root.subProcesses).toEqual([])
+  })
+})
