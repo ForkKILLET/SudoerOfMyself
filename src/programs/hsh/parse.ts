@@ -55,7 +55,7 @@ export interface HshTokenHome extends HshTokenBase {
 
 export interface HshTokenRedirect extends HshTokenBase {
   type: 'redirect'
-  mode: 'write' | 'append'
+  mode: 'read' | 'write' | 'append'
 }
 
 export const tokenize = (line: string, isStrict = true) => {
@@ -166,9 +166,9 @@ export const tokenize = (line: string, isStrict = true) => {
       continue
     }
     else isWh = false
-    if (! isDq && ! isSq && ch === '>') {
+    if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
       consumeNow()
-      if (line[i] === '>') {
+      if (ch === '>' && line[i] === '>') {
         tokens.push({
           type: 'redirect',
           mode: 'append',
@@ -181,10 +181,10 @@ export const tokenize = (line: string, isStrict = true) => {
       else {
         tokens.push({
           type: 'redirect',
-          mode: 'write',
+          mode: ch === '<' ? 'read' : 'write',
           begin,
           end: i - 1,
-          content: '>',
+          content: ch,
         })
       }
       begin = i
@@ -317,9 +317,17 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
         if (target.type !== 'text') {
           throw new UserError('Expected redirect target, got ' + target.type)
         }
-        command.output = {
-          type: `${token.mode}To`,
-          path: target.content,
+        if (token.mode === 'read') {
+          command.input = {
+            type: 'readFrom',
+            path: target.content,
+          }
+        }
+        else {
+          command.output = {
+            type: `${token.mode}To`,
+            path: target.content,
+          }
         }
       }
       else if (token.type === 'text') {

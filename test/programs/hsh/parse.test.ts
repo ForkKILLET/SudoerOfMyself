@@ -26,6 +26,19 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses input and output redirects together', () => {
+    const script = parse(expand(tokenize('cat < input.txt > output.txt'), {}))
+
+    expect(script).toEqual({
+      commands: [{
+        name: 'cat',
+        args: [],
+        input: { type: 'readFrom', path: 'input.txt' },
+        output: { type: 'writeTo', path: 'output.txt' },
+      }],
+    })
+  })
+
   it('reports incomplete quoted input', () => {
     expect(() => tokenize('echo \'unfinished')).toThrow('Unmatched single quote')
   })

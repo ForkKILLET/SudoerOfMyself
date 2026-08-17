@@ -29,14 +29,18 @@ export const execute = async (
   const { ctx, env } = proc
 
   const getStdio = () => {
-    const stdin = new Stdin(ctx.term)
-    const stdout = new Stdout(ctx.term)
-
+    const { input: inputDesc } = command
     const { output: outputDesc } = command
-    const input = stdin
+    const stdin = inputDesc ? undefined : new Stdin(ctx.term)
+    const stdout = outputDesc ? undefined : new Stdout(ctx.term)
+    const input = inputDesc
+      ? ctx.fs.openU(inputDesc.path, 'r').handle
+      : stdin
     const output = outputDesc
       ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
       : stdout
+
+    if (! input || ! output) throw new Error('Failed to create standard I/O endpoints')
 
     const stdio = new Stdio(input, output)
     stdio.stdin = stdin
