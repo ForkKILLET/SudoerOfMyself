@@ -11,25 +11,30 @@ import { rm } from './rm'
 import { cd } from './cd'
 import { echo } from './echo'
 import { hsh_tokenize } from './hsh_tokenize'
-import { hsh } from './hsh'
-import { help } from './help'
-
-export const PROGRAMS: Record<string, Program> = {
-    cat,
-    fs_inodemap,
-    fs_format,
-    ls,
-    mkdir,
-    rm,
-    hsh,
-    help,
-}
+import { createHsh } from './hsh'
+import { createHelp } from './help'
 
 export const BUILTINS: Record<string, Program> = {
-    cd,
-    echo,
-    hsh_tokenize,
-    pwd,
+  cd,
+  echo,
+  hsh_tokenize,
+  pwd,
 }
 
-export type ProgramName = keyof typeof PROGRAMS
+export const hsh = createHsh({
+  getPrograms: () => PROGRAMS,
+  builtins: BUILTINS,
+})
+
+export const help = createHelp(hsh)
+
+export const PROGRAMS: Record<string, Program> = {
+  cat,
+  fs_inodemap,
+  fs_format,
+  ls,
+  mkdir,
+  rm,
+  hsh,
+  help,
+}

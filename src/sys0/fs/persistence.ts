@@ -1,33 +1,35 @@
 import { IStorage } from '@/utils/types'
+import { getJson, getJsonOr, setJson } from '@/utils/storage'
 import { Inode } from '.'
 
 export interface FsPersistence extends IStorage<number, Inode> {
-    isInitialized: boolean
+  isInitialized: boolean
 }
 
 export class LocalStorageFsPersistence implements FsPersistence {
-    get isInitialized() {
-        return localStorage.getJsonOr('fs:initialized', false)
-    }
-    set isInitialized(value: boolean) {
-        localStorage.setJson('fs:initialized', value)
-    }
+  get isInitialized() {
+    return getJsonOr(localStorage, 'fs:initialized', false)
+  }
 
-    get(iid: number) {
-        return localStorage.getJson(`i:${iid}`)!
-    }
+  set isInitialized(value: boolean) {
+    setJson(localStorage, 'fs:initialized', value)
+  }
 
-    getAll() {
-        return Object.entries(localStorage)
-            .filter(([ key ]) => key.startsWith('i:'))
-            .map(([ key, value ]) => [ parseInt(key.slice(2)), JSON.parse(value) ] as [ number, Inode ])
-    }
+  get(iid: number) {
+    return getJson<Inode>(localStorage, `i:${iid}`)
+  }
 
-    set(iid: number, inode: Inode) {
-        localStorage.setJson(`i:${iid}`, inode)
-    }
+  getAll() {
+    return Object.entries(localStorage)
+      .filter(([key]) => key.startsWith('i:'))
+      .map(([key, value]) => [parseInt(key.slice(2)), JSON.parse(value)] as [ number, Inode ])
+  }
 
-    delete(iid: number) {
-        localStorage.removeItem(`i:${iid}`)
-    }
+  set(iid: number, inode: Inode) {
+    setJson(localStorage, `i:${iid}`, inode)
+  }
+
+  delete(iid: number) {
+    localStorage.removeItem(`i:${iid}`)
+  }
 }

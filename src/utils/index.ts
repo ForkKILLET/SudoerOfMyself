@@ -1,95 +1,113 @@
 import { Emitter } from './emitter'
-import { AllConstructor, Nullable } from './types'
-
-export const placeholder = null as any
+import { Nullable } from './types'
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 export type Signal = {
-    trigger: () => void
-    promise: Promise<null>
-    triggered: boolean
+  trigger: () => void
+  promise: Promise<null>
+  triggered: boolean
 }
 
 export const createSignal = (): Signal => {
-    let trigger: () => void = placeholder
-    const promise = new Promise<null>(resolve => {
-        trigger = () => {
-            resolve(null)
-            signal.triggered = true
-        }
-    })
-    const signal = { trigger, promise, triggered: false }
-    return signal
-}
-
-export class Stack<T> extends Array<T> {
-    get top() {
-        return this[this.length - 1]
+  let trigger = () => {}
+  const promise = new Promise<null>((resolve) => {
+    trigger = () => {
+      resolve(null)
+      signal.triggered = true
     }
+  })
+  const signal = { trigger, promise, triggered: false }
+  return signal
 }
-
-export const kBreak: unique symbol = Symbol('Control.break')
-export const kContinue: unique symbol = Symbol('Control.continue')
-
-export const Control = {
-    break: kBreak,
-    continue: kContinue
-} as const
 
 export type Computed<T> = T | (() => T)
 export const compute = <T>(value: Computed<T>): T => (
-    typeof value === 'function' ? (value as () => T)() : value
+  typeof value === 'function' ? (value as () => T)() : value
 )
-
-
-export const mixin = <C, M>(ctor: AllConstructor<C>, mixin: AllConstructor<M>) => Object
-    .getOwnPropertyNames(mixin.prototype)
-    .filter(key => key !== 'constructor')
-    .forEach(key => {
-        ctor.prototype[key] = mixin.prototype[key]
-    })
 
 export const id = <T>(value: T) => value
 
 export class AbortEmitter extends Emitter<{ abort: [] }> {}
 
 export type IAbortable = {
-    abortEmitter: AbortEmitter
+  abortEmitter: AbortEmitter
 }
 
 export const prop = <T, K extends keyof T>(key: K) => (obj: T) => obj[key]
 
-export const eq = <T>(a: T) => (b: T) => a === b
-
 export const getCommonPrefix = (strs: string[]) => {
-    if (! strs.length) return ''
-    const min = strs.map(prop('length')).min()
-    let i = 0
-    while (i < min && new Set(strs.map(str => str[i])).size === 1) i ++
-    return strs[0].slice(0, i)
+  if (! strs.length) return ''
+  const min = Math.min(...strs.map(prop('length')))
+  let i = 0
+  while (i < min && new Set(strs.map(str => str[i])).size === 1) i ++
+  return strs[0].slice(0, i)
 }
 
 export const pick = <T, K extends keyof T>(obj: T, keys: K[]) => {
-    const result = {} as Pick<T, K>
-    keys.forEach(key => {
-        result[key] = obj[key]
-    })
-    return result
-}
-
-export const omit = <T, K extends keyof T>(obj: T, keys: K[]) => {
-    const result = { ...obj }
-    keys.forEach(key => {
-        delete result[key]
-    })
-    return result as Omit<T, K>
+  const result = {} as Pick<T, K>
+  keys.forEach((key) => {
+    result[key] = obj[key]
+  })
+  return result
 }
 
 export const equalBy = <T, K extends keyof T>(a: T, b: T, keys: K[]) => (
-    keys.every(key => a[key] === b[key])
+  keys.every(key => a[key] === b[key])
 )
 
 export const mapOrNull = <T, U>(value: Nullable<T>, fn: (value: T) => U) => (
-    value == null ? null : fn(value)
+  value == null ? null : fn(value)
+)
+
+export const range = (start: number, end: number, step = 1) => {
+  if (! step) throw new RangeError('Step cannot be zero')
+
+  const values: number[] = []
+  for (let value = start; step > 0 ? value < end : value > end; value += step) {
+    values.push(value)
+  }
+  return values
+}
+
+export const replicate = <T>(count: number, value: T) => Array<T>(count).fill(value)
+
+export const liftArray = <T>(value: T | T[]) => Array.isArray(value) ? value : [value]
+
+export function partition<T, U extends T>(
+  values: T[],
+  predicate: (value: T) => value is U,
+): [U[], Exclude<T, U>[]]
+export function partition<T>(
+  values: T[],
+  predicate: (value: T) => boolean,
+): [T[], T[]]
+export function partition<T>(
+  values: T[],
+  predicate: (value: T) => boolean,
+): [T[], T[]] {
+  const matches: T[] = []
+  const rest: T[] = []
+  values.forEach(value => (predicate(value) ? matches : rest).push(value))
+  return [matches, rest]
+}
+
+export const modulo = (value: number, divisor: number) => {
+  if (! divisor) return Number.NaN
+  const remainder = value % divisor
+  return remainder >= 0 ? remainder : remainder + divisor
+}
+
+export const divmod = (value: number, divisor: number): [number, number] => {
+  if (! divisor) return [Number.NaN, Number.NaN]
+  const remainder = value % divisor
+  return [remainder, (value - remainder) / divisor]
+}
+
+export const isBetween = (value: number, min: number, max: number) => (
+  min <= value && value <= max
+)
+
+export const toPercent = (value: number, precision = 0) => (
+  `${(value * 100).toFixed(precision)}%`
 )

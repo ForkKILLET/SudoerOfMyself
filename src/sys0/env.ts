@@ -1,9 +1,7 @@
 export interface Env {
-    [key: string]: string
+  [key: string]: string
 }
 
-export const createEnv = (env: Env): Env => new Proxy(env, {
-    get(target, prop) {
-        return Reflect.get(target, prop) ?? ''
-    }
-})
+export const createEnv = (env: Env): Env => ({ ...env })
+
+export const getEnv = (env: Env, name: string) => env[name] ?? ''

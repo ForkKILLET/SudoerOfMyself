@@ -1,10 +1,8 @@
-import { createCommand } from '@/sys0/program'
-import { hsh } from './hsh'
+import { createCommand, Program } from '@/sys0/program'
 
-export const help = createCommand('help', '[PROGRAM]', 'Show help for a PROGRAM')
-    .help('help')
-    .program(async ({ proc }, name) => {
-        console.log()
-        name ||= 'help'
-        return proc.spawn(hsh, { name: 'hsh' }, '-c', `${name} --help`)
-    })
+export const createHelp = (hsh: Program) => createCommand('help', '[PROGRAM]', 'Show help for a PROGRAM')
+  .help('help')
+  .program(async ({ proc }, name) => {
+    name ||= 'help'
+    return proc.spawn(hsh, { name: 'hsh' }, '-c', `${name} --help`)
+  })

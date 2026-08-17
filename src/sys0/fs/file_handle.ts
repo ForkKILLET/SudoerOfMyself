@@ -1,133 +1,154 @@
-import { mixin } from '@/utils'
 import { Pred } from '@/utils/types'
-import { NormalFile, FRead, FReadKeyOptions, FWrite, FReadWrite, Inode } from '.'
+import { NormalFile, FRead, FWrite, FReadWrite, Inode } from '.'
 import { Context } from '../context'
 
 export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'
 export type FileMode = 'r' | FileModeWritable
 
 export abstract class FileHandle {
-    constructor(public ctx: Context, protected inode: Inode<NormalFile>) {}
+  constructor(public ctx: Context, protected inode: Inode<NormalFile>) {}
 
-    abstract readonly mode: FileMode
+  abstract readonly mode: FileMode
 
-    protected cursor = 0
+  protected cursor = 0
 
-    get isAtEof() {
-        return this.cursor >= this.inode.file.content.length
-    }
+  protected get isAtEof() {
+    return this.cursor >= this.inode.file.content.length
+  }
 
-    get currentChar() {
-        return this.inode.file.content[this.cursor]
-    }
+  protected get currentChar() {
+    return this.inode.file.content[this.cursor]
+  }
+
+  protected readCharAtCursor() {
+    if (this.isAtEof) return '\x04'
+    const char = this.currentChar
+    this.cursor ++
+    return char
+  }
+
+  protected readUntilAtCursor(pred: Pred<string>) {
+    const start = this.cursor
+    while (! (this.isAtEof || pred(this.currentChar))) this.cursor ++
+    return this.inode.file.content.slice(start, this.cursor)
+  }
+
+  protected sync() {
+    this.ctx.fs.persistence.set(this.inode.iid, this.inode)
+  }
+
+  protected rewrite(data: string) {
+    this.inode.file.content = data
+    this.sync()
+  }
+
+  protected append(data: string) {
+    this.inode.file.content += data
+    this.sync()
+  }
 }
 
 export type FileHandleFromMode<FM extends FileMode> =
-    FM extends 'r' ? FileHandleR :
+  FM extends 'r' ? FileHandleR :
     FM extends 'w' ? FileHandleW :
-    FM extends 'a' ? FileHandleA :
-    FM extends 'rw' ? FileHandleRW :
-    FM extends 'ra' ? FileHandleRA :
-    never
+      FM extends 'a' ? FileHandleA :
+        FM extends 'rw' ? FileHandleRW :
+          FM extends 'ra' ? FileHandleRA :
+            never
 
-export class FileHandleR extends FileHandle implements FRead {
-    readonly mode: FileMode = 'r'
+export abstract class FileHandleReadable extends FileHandle implements FRead {
+  readChar() {
+    return this.readCharAtCursor()
+  }
 
-    readChar() {
-        if (this.isAtEof) return '\x04'
-        const char = this.currentChar
-        this.cursor ++
-        return char
-    }
-    readKey({}: FReadKeyOptions) {
-        return this.readChar()
-    }
-    readUntil(pred: Pred<string>) {
-        let start = this.cursor
-        while (! (this.isAtEof || pred(this.currentChar))) this.cursor ++
-        return this.inode.file.content.slice(start, this.cursor)
-    }
+  readKey() {
+    return this.readCharAtCursor()
+  }
 
-    read() {
-        return this.readUntil(() => false)
-    }
-    readLn() {
-        return this.readUntil(char => char === '\n')
-    }
+  readUntil(pred: Pred<string>) {
+    return this.readUntilAtCursor(pred)
+  }
+
+  read() {
+    return this.readUntil(() => false)
+  }
+
+  readLn() {
+    return this.readUntil(char => char === '\n')
+  }
+}
+
+export class FileHandleR extends FileHandleReadable {
+  readonly mode = 'r' as const
 }
 
 export abstract class FileHandleWritable extends FileHandle implements FWrite {
-    abstract readonly mode: FileModeWritable
+  abstract readonly mode: FileModeWritable
 
-    sync() {
-        this.ctx.fs.persistence.set(this.inode.iid, this.inode)
-    }
+  override rewrite(data: string) {
+    super.rewrite(data)
+  }
 
-    write(data: string) {
-        if (this.mode.endsWith('a')) this.append(data)
-        else this.rewrite(data)
-    }
-    writeLn(data: string) {
-        this.write(data + '\n')
-    }
+  rewriteLn(data: string) {
+    this.rewrite(data + '\n')
+  }
 
-    rewrite(data: string) {
-        this.inode.file.content = data
-        this.sync()
-    }
-    rewriteLn(data: string) {
-        this.rewrite(data + '\n')
-    }
+  override append(data: string) {
+    super.append(data)
+  }
 
-    append(data: string) {
-        this.inode.file.content += data
-        this.sync()
-    }
-    appendLn(data: string) {
-        this.append(data + '\n')
-    }
+  appendLn(data: string) {
+    this.append(data + '\n')
+  }
+
+  write(data: string) {
+    if (this.mode.endsWith('a')) this.append(data)
+    else this.rewrite(data)
+  }
+
+  writeLn(data: string) {
+    this.write(data + '\n')
+  }
 }
 
-export class FileHandleW extends FileHandleWritable implements FWrite {
-    static {
-        mixin(this, FileHandleWritable)
-    }
-
-    readonly mode: FileModeWritable = 'w'
+export class FileHandleW extends FileHandleWritable {
+  readonly mode = 'w' as const
 }
 
-export class FileHandleA extends FileHandleWritable implements FWrite {
-    static {
-        mixin(this, FileHandleWritable)
-    }
-
-    readonly mode: FileModeWritable = 'a'
+export class FileHandleA extends FileHandleWritable {
+  readonly mode = 'a' as const
 }
 
-export interface FileHandleRW extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
-export class FileHandleRW extends FileHandle implements FReadWrite {
-    static {
-        mixin(this, FileHandleR)
-        mixin(this, FileHandleW)
-    }
+abstract class FileHandleReadWrite extends FileHandleWritable implements FReadWrite {
+  readKey() {
+    return this.readCharAtCursor()
+  }
 
-    readonly mode: FileMode = 'rw'
+  readUntil(pred: Pred<string>) {
+    return this.readUntilAtCursor(pred)
+  }
+
+  read() {
+    return this.readUntil(() => false)
+  }
+
+  readLn() {
+    return this.readUntil(char => char === '\n')
+  }
 }
 
-export interface FileHandleRA extends Omit<FileHandleR, 'mode'>, Omit<FileHandleW, 'mode'> {}
-export class FileHandleRA extends FileHandle implements FReadWrite {
-    static {
-        mixin(this, FileHandleR)
-        mixin(this, FileHandleA)
-    }
+export class FileHandleRW extends FileHandleReadWrite {
+  readonly mode = 'rw' as const
+}
 
-    readonly mode: FileMode = 'ra'
+export class FileHandleRA extends FileHandleReadWrite {
+  readonly mode = 'ra' as const
 }
 
 export const FILE_HANDLE_FROM_MODE = {
-    r: FileHandleR,
-    w: FileHandleW,
-    a: FileHandleA,
-    rw: FileHandleRW,
-    ra: FileHandleRA,
+  r: FileHandleR,
+  w: FileHandleW,
+  a: FileHandleA,
+  rw: FileHandleRW,
+  ra: FileHandleRA,
 }

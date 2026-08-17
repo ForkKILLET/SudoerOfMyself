@@ -1,16 +1,15 @@
 import '@/styles/index.css'
 import '@xterm/xterm/css/xterm.css'
 
-import '@/effects/xterm_ex'
-import '@/effects/vanilla_ex'
-import '@/effects/storage_ex'
-import '@/effects/chalk_init'
-
 import { Context } from '@/sys0/context'
 import { game0 } from '@/programs/game0'
+import { PROGRAMS } from '@/programs'
+import { getSysImage } from '@/data/sys_image'
 
-const ctx = new Context()
-Object.assign(window, { ctx })
+const ctx = new Context(getSysImage(Object.keys(PROGRAMS)))
 
-ctx.attach(document.querySelector('#xterm-container')!)
+const terminalContainer = document.querySelector<HTMLElement>('#xterm-container')
+if (! terminalContainer) throw new Error('Terminal container not found')
+
+ctx.attach(terminalContainer)
 ctx.init.spawn(game0, { name: 'game0' })
