@@ -3,12 +3,15 @@ import '@xterm/xterm/css/xterm.css'
 
 import { Context } from '@/sys0/context'
 import { game0 } from '@/programs/game0'
-import { PROGRAMS } from '@/programs'
+import { NATIVE_PROGRAMS } from '@/programs'
 import { getSysImage, SYSTEM_FS_MIGRATIONS } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
 
 const start = () => {
-  const ctx = new Context(getSysImage(Object.keys(PROGRAMS)), SYSTEM_FS_MIGRATIONS)
+  const ctx = new Context(getSysImage(Object.keys(NATIVE_PROGRAMS)), {
+    migrations: SYSTEM_FS_MIGRATIONS,
+    nativePrograms: NATIVE_PROGRAMS,
+  })
 
   const terminalContainer = document.querySelector<HTMLElement>('#xterm-container')
   if (! terminalContainer) throw new Error('Terminal container not found')

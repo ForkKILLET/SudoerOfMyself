@@ -23,13 +23,12 @@ export const BUILTINS: Record<string, Program> = {
 }
 
 export const hsh = createHsh({
-  getPrograms: () => PROGRAMS,
   builtins: BUILTINS,
 })
 
 export const help = createHelp(hsh)
 
-export const PROGRAMS: Record<string, Program> = {
+export const NATIVE_PROGRAMS: Record<string, Program> = {
   cat,
   cpu_burn,
   fs_inodemap,

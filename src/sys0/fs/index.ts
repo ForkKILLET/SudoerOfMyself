@@ -167,6 +167,7 @@ export namespace FOp {
 
   export interface FindOptions<FT extends FileT = FileT> {
     allowedTypes?: readonly FT[]
+    cwd?: string
   }
 }
 
@@ -280,14 +281,14 @@ export class Fs {
 
   findInode<FT extends FileT = FileT>(
     path: string,
-    { allowedTypes }: FOp.FindOptions<FT> = {},
+    { allowedTypes, cwd = this.cwd }: FOp.FindOptions<FT> = {},
   ): FOp.FindInodeResult<FileFromT<FT>> {
     let path1 = path
     if (! Path.isAbsOrRel(path1)) path1 = `./${path1}`
     const parts = Path.split(path1)
 
     if (parts[0] === '.' || parts[0] === '..') {
-      parts.unshift(...Path.split(this.cwd))
+      parts.unshift(...Path.split(cwd))
     }
     if (! parts[0]) parts.shift()
 
@@ -381,7 +382,7 @@ export class Fs {
 
     const envPathList = envPath.split(':').filter(Boolean)
     for (const envPath of envPathList) {
-      const entry = this.find(`${envPath}/${path}`, { allowedTypes: [FileT.JSEXE] })
+      const entry = this.find(`${envPath}/${path}`, { ...options, allowedTypes: [FileT.JSEXE] })
       if (entry.isOk) return entry
     }
     return FOp.err({ type: FOp.T.NOT_FOUND })

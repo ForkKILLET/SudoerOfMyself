@@ -11,18 +11,17 @@ import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parse, to
 import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
+import { ExecErrorT } from '@/sys0/exec'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
 export interface HshConfig {
-  getPrograms: () => ProgramRegistry
   builtins: ProgramRegistry
 }
 
 export const execute = async (
   proc: Process,
   command: HshAstCommand,
-  programs: ProgramRegistry,
   builtins: ProgramRegistry,
 ): Promise<number> => {
   const { name, args } = command
@@ -62,37 +61,40 @@ export const execute = async (
     }
   }
   else {
-    const exeRes = ctx.fs.findInEnvPath(name, env.PATH, { cwd: env.PWD })
+    const exeRes = ctx.exec.resolve(name, { envPath: env.PATH, cwd: env.PWD })
     if (exeRes.isErr) {
-      if (exeRes.err.type === FOp.T.NOT_ALLOWED_TYPE) proc.error(`${name}: Not an executable`)
-      else proc.stdio.writeLn(`${name}: Command not found`)
-      return 127
+      switch (exeRes.err.type) {
+        case ExecErrorT.NOT_FOUND:
+          proc.stdio.writeLn(`${name}: Command not found`)
+          return 127
+        case ExecErrorT.NOT_EXECUTABLE:
+          proc.error(`${name}: Not an executable`)
+          return 126
+        case ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED:
+          proc.error(`${name}: Native program '${exeRes.err.programId}' is not registered`)
+          return 126
+        case ExecErrorT.FILE_SYSTEM_ERROR:
+          proc.error(`${name}: ${FOp.displayError(exeRes.err.error)}`)
+          return 126
+      }
     }
-    const { programName } = exeRes.val.file
-    const program = programs[programName]
-    if (! program) {
-      proc.error(`${name}: Executable is not registered`)
-      return 126
-    }
-    return await proc.spawn(program, { name, stdio: getStdio() }, ...args)
+    return await proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args)
   }
 }
 
 export const executeScript = async (
   proc: Process,
   script: HshAstScript,
-  programs: ProgramRegistry,
   builtins: ProgramRegistry,
 ): Promise<void> => {
   for (const command of script.commands) {
-    const ret = await execute(proc, command, programs, builtins)
+    const ret = await execute(proc, command, builtins)
     proc.env['?'] = ret.toString()
   }
 }
 
 export const getCompProvider = (
   proc: Process,
-  programs: ProgramRegistry,
   builtins: ProgramRegistry,
 ): CompProvider => (line) => {
   const { ctx, env } = proc
@@ -139,7 +141,8 @@ export const getCompProvider = (
   const isExplicitPath = Path.isAbsOrRel(token.content)
 
   if (tokenIndex === 0 && ! isExplicitPath) {
-    return getCandidates([...Object.keys(programs), ...Object.keys(builtins)].map(name => ({ value: name })))
+    const installedPrograms = ctx.exec.listInPath(env.PATH, env.PWD)
+    return getCandidates([...installedPrograms, ...Object.keys(builtins)].map(name => ({ value: name })))
   }
 
   const { dirname, filename } = Path.getDirAndName(etoken.content, true)
@@ -174,14 +177,12 @@ export const getCompProvider = (
 }
 
 export const createHsh = ({
-  getPrograms,
   builtins,
 }: HshConfig): Program => createCommand('hsh', '[FILE]', 'Human SHell')
   .help('help')
   .option('command', '-c', 'string', 'Execute command')
   .program(async ({ proc, options }, path) => {
     const { ctx, env, stdio } = proc
-    const programs = getPrograms()
     proc.cwd = env.HOME
 
     const executeLine = async (proc: Process, line: string) => {
@@ -195,7 +196,7 @@ export const createHsh = ({
         proc.env['?'] = '130'
         return
       }
-      await executeScript(proc, parseResult.val, programs, builtins)
+      await executeScript(proc, parseResult.val, builtins)
     }
 
     if (options.command) {
@@ -212,7 +213,7 @@ export const createHsh = ({
       const loop = readline.createLoop({
         history: new ReadlineHistory(historyFile.read().split('\n')),
         prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
-        onComp: getCompProvider(proc, programs, builtins),
+        onComp: getCompProvider(proc, builtins),
         onLine: async (line) => {
           if (line === '\x03') return
           if (line === '\x04') {
