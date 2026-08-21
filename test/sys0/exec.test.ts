@@ -9,8 +9,8 @@ const installedProgram = () => 0
 const createExec = () => {
   const fs = new Fs(Vfs.dir({
     bin: Vfs.dir({
-      installed: Vfs.jsExe('installed'),
-      unavailable: Vfs.jsExe('unavailable'),
+      installed: Vfs.nativeExe('installed'),
+      unavailable: Vfs.nativeExe('unavailable'),
       plain: Vfs.normal('not executable'),
     }),
   }), { persistence: new MemoryFsPersistence() })
@@ -23,12 +23,13 @@ const createExec = () => {
 
 describe('ExecService', () => {
   it('resolves an installed native program through PATH', () => {
-    const { exec } = createExec()
+    const { fs, exec } = createExec()
 
     const result = exec.resolve('installed', { envPath: '/bin', cwd: '/' })
 
     expect(result.isOk && result.val.program).toBe(installedProgram)
     expect(result.isOk && result.val.path).toBe('/bin/installed')
+    expect(fs.openU('/bin/installed', 'r').handle.read()).toBe('')
   })
 
   it('distinguishes unavailable code from an uninstalled command', () => {
@@ -50,6 +51,20 @@ describe('ExecService', () => {
     const result = exec.resolve('/bin/plain', { envPath: '/bin', cwd: '/' })
 
     expect(result.isErr && result.err.type).toBe(ExecErrorT.NOT_EXECUTABLE)
+  })
+
+  it('continues through PATH after a non-executable file', () => {
+    const fs = new Fs(Vfs.dir({
+      first: Vfs.dir({ tool: Vfs.normal('shadow') }),
+      second: Vfs.dir({ tool: Vfs.nativeExe('tool') }),
+    }), { persistence: new MemoryFsPersistence() })
+    const program = () => 0
+    const exec = new ExecService(fs, { tool: program })
+
+    const result = exec.resolve('tool', { envPath: '/first:/second', cwd: '/' })
+
+    expect(result.isOk && result.val.path).toBe('/second/tool')
+    expect(result.isOk && result.val.program).toBe(program)
   })
 
   it('lists installed files rather than every registered program', () => {

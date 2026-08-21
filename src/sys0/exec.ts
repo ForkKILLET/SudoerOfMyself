@@ -1,5 +1,13 @@
 import { Err, Ok, Result } from 'fk-result'
-import { FileT, FOp, Fs, JsExeFile } from './fs'
+import {
+  FileT,
+  FOp,
+  Fs,
+  Inode,
+  NativeExecutableDescriptor,
+  NormalFile,
+} from './fs'
+import { Path } from './fs/path'
 import { Program } from './program'
 
 export type NativeProgramRegistry = Record<string, Program>
@@ -19,7 +27,7 @@ export type ExecError =
 
 export interface ResolvedExecutable {
   path: string
-  file: JsExeFile
+  inode: Inode<NormalFile> & { executable: NativeExecutableDescriptor }
   program: Program
 }
 
@@ -38,24 +46,40 @@ export class ExecService {
     command: string,
     { envPath, cwd }: ResolveExecutableOptions,
   ): Result<ResolvedExecutable, ExecError> {
-    const found = this.fs.findInEnvPath(command, envPath, { cwd })
-    if (found.isErr) {
-      if (found.err.type === FOp.T.NOT_FOUND) return Err({ type: ExecErrorT.NOT_FOUND })
-      if (found.err.type === FOp.T.NOT_ALLOWED_TYPE) {
-        return Err({ type: ExecErrorT.NOT_EXECUTABLE, path: command })
+    const candidates = Path.hasSlash(command)
+      ? [command]
+      : envPath.split(':').filter(Boolean).map(path => `${path}/${command}`)
+    let nonExecutablePath: string | undefined
+
+    for (const candidate of candidates) {
+      const found = this.fs.findInode(candidate, { cwd })
+      if (found.isErr) {
+        if (found.err.type === FOp.T.NOT_FOUND) continue
+        return Err({ type: ExecErrorT.FILE_SYSTEM_ERROR, error: found.err })
       }
-      return Err({ type: ExecErrorT.FILE_SYSTEM_ERROR, error: found.err })
+
+      const { inode, path } = found.val
+      if (! this.isExecutable(inode)) {
+        nonExecutablePath ??= path
+        continue
+      }
+      const program = this.nativePrograms[inode.executable.programId]
+      if (! program) {
+        return Err({
+          type: ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED,
+          programId: inode.executable.programId,
+        })
+      }
+      return Ok({ path, inode, program })
     }
 
-    const { path, file } = found.val
-    const program = this.nativePrograms[file.programName]
-    if (! program) {
-      return Err({
-        type: ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED,
-        programId: file.programName,
-      })
-    }
-    return Ok({ path, file, program })
+    return nonExecutablePath
+      ? Err({ type: ExecErrorT.NOT_EXECUTABLE, path: nonExecutablePath })
+      : Err({ type: ExecErrorT.NOT_FOUND })
+  }
+
+  isExecutable(inode: Inode): inode is Inode<NormalFile> & { executable: NativeExecutableDescriptor } {
+    return inode.file.type === FileT.NORMAL && inode.executable?.format === 'native'
   }
 
   listInPath(envPath: string, cwd: string): string[] {
@@ -63,8 +87,8 @@ export class ExecService {
     for (const path of envPath.split(':').filter(Boolean)) {
       const directory = this.fs.find(path, { allowedTypes: [FileT.DIR], cwd })
       if (directory.isErr) continue
-      this.fs.getChildren(directory.val.file).forEach(({ name, file }) => {
-        if (file?.type === FileT.JSEXE) names.add(name)
+      this.fs.getChildren(directory.val.file).forEach(({ name, inode }) => {
+        if (inode && this.isExecutable(inode)) names.add(name)
       })
     }
     return [...names]

@@ -1,5 +1,5 @@
 import { Bitmap } from '@/utils/bitmap'
-import { Awaitable, Pred, StrictOmit } from '@/utils/types'
+import { Awaitable, Pred } from '@/utils/types'
 import { Err, Ok, Result } from 'fk-result'
 import { UserError } from '@/utils/errors'
 
@@ -11,13 +11,11 @@ import { Path } from './path'
 export const enum FileT {
   DIR,
   NORMAL,
-  JSEXE,
 }
 
 export const FileTNames: Record<FileT, string> = {
   [FileT.DIR]: 'directory',
   [FileT.NORMAL]: 'normal file',
-  [FileT.JSEXE]: 'JS executable',
 }
 
 export const displayFileT = (type: FileT) => {
@@ -28,13 +26,13 @@ export type InodeId = number
 export interface Inode<F extends File = File> {
   iid: InodeId
   file: F
+  executable?: ExecutableDescriptor
 }
 export type Inodes = Map<InodeId, Inode>
 
 export type File =
   | DirFile
   | NormalFile
-  | JsExeFile
 
 export interface FileLoc<F extends File = File> {
   path: string
@@ -55,16 +53,17 @@ export interface NormalFile {
   content: string
 }
 
-export interface JsExeFile {
-  type: FileT.JSEXE
-  programName: string
+export interface NativeExecutableDescriptor {
+  format: 'native'
+  programId: string
 }
+
+export type ExecutableDescriptor = NativeExecutableDescriptor
 
 export type FileFromT<FT extends FileT> =
   FT extends FileT.DIR ? DirFile :
     FT extends FileT.NORMAL ? NormalFile :
-      FT extends FileT.JSEXE ? JsExeFile :
-        never
+      never
 
 export interface FReadKeyOptions {
   signal?: AbortSignal
@@ -335,9 +334,9 @@ export class Fs {
 
   find<FT extends FileT = FileT>(
     path: string,
-    { allowedTypes }: FOp.FindOptions<FT> = {},
+    { allowedTypes, cwd }: FOp.FindOptions<FT> = {},
   ): FOp.FindResult<FileFromT<FT>> {
-    const res = this.findInode(path, { allowedTypes })
+    const res = this.findInode(path, { allowedTypes, cwd })
     if (res.isErr) return res
     return FOp.ok({
       file: res.val.inode.file,
@@ -371,21 +370,6 @@ export class Fs {
 
   isEmptyDir(dir: DirFile) {
     return ! Object.keys(dir.entries).length
-  }
-
-  findInEnvPath(
-    path: string,
-    envPath: string,
-    options?: StrictOmit<FOp.FindOptions, 'allowedTypes'>,
-  ): FOp.FindResult<JsExeFile> {
-    if (Path.hasSlash(path)) return this.find(path, { ...options, allowedTypes: [FileT.JSEXE] })
-
-    const envPathList = envPath.split(':').filter(Boolean)
-    for (const envPath of envPathList) {
-      const entry = this.find(`${envPath}/${path}`, { ...options, allowedTypes: [FileT.JSEXE] })
-      if (entry.isOk) return entry
-    }
-    return FOp.err({ type: FOp.T.NOT_FOUND })
   }
 
   mkdir(path: string): FOp.MkdirResult {

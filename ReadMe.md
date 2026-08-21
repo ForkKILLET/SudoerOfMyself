@@ -45,3 +45,17 @@ the headers directly when possible:
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
+
+## Executable model
+
+Native commands have two independent parts:
+
+- `NATIVE_PROGRAMS` contains the JavaScript implementations available in the build.
+- Executable regular files installed in directories such as `/bin` select an
+  implementation through their inode's `executable` metadata.
+
+`ExecService` is the only component that resolves commands through `PATH` and joins
+these two parts. Shell completion also reads the installed executable files rather
+than the native registry. Adding a native command to a later release therefore
+requires both registering its implementation and installing its executable file,
+normally through a file-system migration for existing saves.

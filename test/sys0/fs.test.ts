@@ -96,7 +96,7 @@ describe('Fs mutation consistency', () => {
       migrate: (fs) => {
         migrationRuns ++
         const bin = fs.findInodeU('/bin', { allowedTypes: [FileT.DIR] }).inode
-        const created = fs.createAt(bin, 'new-command', Vfs.jsExe('new-command'))
+        const created = fs.createAt(bin, 'new-command', Vfs.nativeExe('new-command'))
         return created.isErr ? created : FOp.ok(undefined)
       },
     }]
@@ -104,8 +104,14 @@ describe('Fs mutation consistency', () => {
     const migratedBoot = new Fs(image, { persistence, migrations })
     const followingBoot = new Fs(image, { persistence, migrations })
 
-    expect(migratedBoot.find('/bin/new-command', { allowedTypes: [FileT.JSEXE] }).isOk).toBe(true)
-    expect(followingBoot.find('/bin/new-command', { allowedTypes: [FileT.JSEXE] }).isOk).toBe(true)
+    expect(migratedBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
+      format: 'native',
+      programId: 'new-command',
+    })
+    expect(followingBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
+      format: 'native',
+      programId: 'new-command',
+    })
     expect(migrationRuns).toBe(1)
     expect(persistence.schemaVersion).toBe(1)
   })

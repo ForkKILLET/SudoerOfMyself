@@ -158,16 +158,16 @@ export const getCompProvider = (
       .keys(dir.entries)
       .sort()
       .map((name) => {
-        const child = ctx.fs.getChild(dir, name)
+        const child = ctx.fs.getChildInode(dir, name)
         let display = name, value = name
         if (! child) {
           display = chalk.redBright(display)
         }
-        else if (child.type === FileT.DIR) {
+        else if (child.file.type === FileT.DIR) {
           display = chalk.blueBright(display) + '/'
           value += '/'
         }
-        else if (child.type === FileT.JSEXE) {
+        else if (ctx.exec.isExecutable(child)) {
           display = chalk.greenBright(display) + '*'
         }
         return { value, display }

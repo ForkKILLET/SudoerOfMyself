@@ -1,4 +1,13 @@
-import { File, FileT, DirEntries, InodeMaintainer, Inode, FileFromT, FOp } from '.'
+import {
+  ExecutableDescriptor,
+  File,
+  FileT,
+  DirEntries,
+  InodeMaintainer,
+  Inode,
+  FileFromT,
+  FOp,
+} from '.'
 
 export namespace Vfs {
   export interface DirVfile {
@@ -8,15 +17,11 @@ export namespace Vfs {
   export interface NormalVfile {
     type: FileT.NORMAL
     content: string
-  }
-  export interface JsExeVfile {
-    type: FileT.JSEXE
-    programName: string
+    executable?: ExecutableDescriptor
   }
   export type Vfile =
     | DirVfile
     | NormalVfile
-    | JsExeVfile
 
   export const dir = (children: Record<string, Vfile> = {}): DirVfile => {
     return {
@@ -30,9 +35,10 @@ export namespace Vfs {
     content,
   })
 
-  export const jsExe = (programName: string): JsExeVfile => ({
-    type: FileT.JSEXE,
-    programName,
+  export const nativeExe = (programId: string): NormalVfile => ({
+    type: FileT.NORMAL,
+    content: '',
+    executable: { format: 'native', programId },
   })
 
   interface FsBuildStep {
@@ -55,6 +61,7 @@ export namespace Vfs {
       const { vfile: tree, entries, name } = step
 
       let file: File
+      let executable: ExecutableDescriptor | undefined
       if (tree.type === FileT.DIR) {
         file = {
           type: FileT.DIR,
@@ -65,7 +72,11 @@ export namespace Vfs {
         }
       }
       else {
-        file = tree
+        file = {
+          type: FileT.NORMAL,
+          content: tree.content,
+        }
+        executable = tree.executable
       }
 
       // TODO: optimize
@@ -78,7 +89,11 @@ export namespace Vfs {
         return FOp.err({ type: FOp.T.OUT_OF_INODES })
       }
 
-      const inode: Inode = { iid, file }
+      const inode: Inode = {
+        iid,
+        file,
+        ...(executable ? { executable } : {}),
+      }
       allocatedIids.push(iid)
       fs.inodes.set(iid, inode)
       if (! rootInode) rootInode = inode

@@ -47,15 +47,15 @@ export const ls = createCommand('ls', '<path...>', 'List directory contents')
           .filter(name => options.all || ! name.startsWith('.'))
           .map((name) => {
             if (! options.color) return name
-            const child = ctx.fs.getChild(dir, name)
+            const child = ctx.fs.getChildInode(dir, name)
             let display = name
             if (! child) {
               display = chalk.redBright(display)
             }
-            else if (child.type === FileT.DIR) {
+            else if (child.file.type === FileT.DIR) {
               display = chalk.blueBright(display) + '/'
             }
-            else if (child.type === FileT.JSEXE) {
+            else if (ctx.exec.isExecutable(child)) {
               display = chalk.greenBright(display) + '*'
             }
             return display
