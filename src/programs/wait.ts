@@ -1,10 +1,6 @@
 import { createCommand } from '@/sys0/program'
 import { signalExit } from '@/sys0/process_exit'
-
-const parseJobId = (value: string) => {
-  const id = Number(value.startsWith('%') ? value.slice(1) : value)
-  return Number.isSafeInteger(id) && id > 0 ? id : null
-}
+import { parseJobId } from './job_ref'
 
 export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs to complete.')
   .help('help')
@@ -14,7 +10,7 @@ export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs 
 
     const selected = jobRefs.length
       ? jobRefs.map((ref) => {
-          const id = parseJobId(ref)
+          const id = parseJobId(ref, true)
           const job = id === null ? undefined : table.get(id)
           if (! job) proc.error(`${ref}: no such job`)
           return job

@@ -18,12 +18,14 @@ import { tee } from './tee'
 import { ps } from './ps'
 import { jobs } from './jobs'
 import { wait } from './wait'
+import { kill } from './kill'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
   echo,
   hsh_tokenize,
   jobs,
+  kill,
   pwd,
   wait,
 }

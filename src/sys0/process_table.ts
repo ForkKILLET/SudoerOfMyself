@@ -1,4 +1,5 @@
 import type { Process } from './proc'
+import type { ProcessSignal } from './process_exit'
 
 export type Pid = number
 
@@ -24,6 +25,13 @@ export class ProcessTable {
 
   has(pid: Pid) {
     return this.processes.has(pid)
+  }
+
+  sendSignal(pid: Pid, signal: ProcessSignal) {
+    const process = this.processes.get(pid)
+    if (! process) return false
+    process.sendSignal(signal)
+    return true
   }
 
   values() {
