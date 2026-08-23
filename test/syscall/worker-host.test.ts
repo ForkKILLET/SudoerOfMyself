@@ -5,6 +5,7 @@ import { Process } from '@/sys0/proc'
 import { Stdio } from '@/sys0/stdio'
 import { WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protocol'
+import { normalExit, signalExit } from '@/sys0/process_exit'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -95,7 +96,7 @@ describe('Worker process host', () => {
     const running = root.spawnWorker(definitionFor(worker), { name: 'worker-program' })
     const child = root.subProcesses[0]
 
-    await expect(running).resolves.toBe(5)
+    await expect(running).resolves.toEqual(normalExit(5))
     expect(child.state).toBe('exited')
     expect(child.exitCode).toBe(5)
     expect(root.subProcesses).toEqual([])
@@ -109,7 +110,7 @@ describe('Worker process host', () => {
 
     root.interrupt()
 
-    await expect(running).resolves.toBe(130)
+    await expect(running).resolves.toEqual(signalExit('SIGINT'))
     expect(worker.terminated).toBe(true)
     expect(root.subProcesses).toEqual([])
   })

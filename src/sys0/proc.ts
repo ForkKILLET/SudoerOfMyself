@@ -6,10 +6,11 @@ import { createEnv, Env } from './env'
 import { liftArray } from '@/utils'
 import { errorMessage } from '@/utils/errors'
 import { runWorkerProgram, WorkerProgramDefinition } from '@/syscall/worker/host'
+import { normalizeExit, normalExit, ProcessExit } from './process_exit'
 
 export interface ProcessEvents extends Events {
   interrupt: []
-  exit: [number]
+  exit: [ProcessExit]
 }
 
 export type ProcessState = 'running' | 'exited'
@@ -28,6 +29,7 @@ export class Process extends Emitter<ProcessEvents> {
   stdio: Stdio
   state: ProcessState = 'running'
   exitCode: number | null = null
+  exitStatus: ProcessExit | null = null
 
   private _cwd = '/'
   get cwd() {
@@ -71,11 +73,12 @@ export class Process extends Emitter<ProcessEvents> {
     else this.emit('interrupt')
   }
 
-  private finish(exitCode: number) {
+  private finish(exitStatus: ProcessExit) {
     if (this.state === 'exited') return
     this.state = 'exited'
-    this.exitCode = exitCode
-    this.emit('exit', exitCode)
+    this.exitCode = exitStatus.code
+    this.exitStatus = exitStatus
+    this.emit('exit', exitStatus)
   }
 
   private removeChild(child: Process) {
@@ -99,38 +102,38 @@ export class Process extends Emitter<ProcessEvents> {
   async spawn(program: Program, options: CreateProcOptions, ...args: string[]) {
     const { name } = options
     const proc = this.fork(options)
-    let exitCode: number
+    let exitStatus: ProcessExit
     try {
-      exitCode = await program(proc, name, ...args)
+      exitStatus = normalizeExit(await program(proc, name, ...args))
     }
     catch (err) {
       console.error(err)
       proc.stdio.writeLn(`${name}: ${errorMessage(err)}`)
-      exitCode = 128
+      exitStatus = normalExit(128)
     }
     finally {
       this.removeChild(proc)
     }
-    proc.finish(exitCode)
-    return exitCode
+    proc.finish(exitStatus)
+    return exitStatus
   }
 
   async spawnWorker(definition: WorkerProgramDefinition, options: CreateProcOptions, ...args: string[]) {
     const { name } = options
     const proc = this.fork(options)
-    let exitCode: number
+    let exitStatus: ProcessExit
     try {
-      exitCode = await runWorkerProgram(proc, definition, name, args)
+      exitStatus = await runWorkerProgram(proc, definition, name, args)
     }
     catch (error) {
       console.error(error)
       proc.error(error)
-      exitCode = 128
+      exitStatus = normalExit(128)
     }
     finally {
       this.removeChild(proc)
     }
-    proc.finish(exitCode)
-    return exitCode
+    proc.finish(exitStatus)
+    return exitStatus
   }
 }

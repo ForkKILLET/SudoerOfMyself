@@ -3,6 +3,7 @@ import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
 import { Stdio } from '@/sys0/stdio'
+import { normalExit, signalExit } from '@/sys0/process_exit'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -48,14 +49,14 @@ describe('Process lifecycle', () => {
 
     expect(root.subProcesses.map(process => process.name)).toEqual(['second', 'first'])
     firstExit.resolve(3)
-    await expect(firstRun).resolves.toBe(3)
+    await expect(firstRun).resolves.toEqual(normalExit(3))
 
     expect(root.subProcesses).toEqual([second])
     expect(first.state).toBe('exited')
     expect(first.exitCode).toBe(3)
 
     secondExit.resolve(4)
-    await expect(secondRun).resolves.toBe(4)
+    await expect(secondRun).resolves.toEqual(normalExit(4))
     expect(root.subProcesses).toEqual([])
   })
 
@@ -87,8 +88,19 @@ describe('Process lifecycle', () => {
       return 7
     }, { name: 'program' })
 
-    await expect(run).resolves.toBe(7)
+    await expect(run).resolves.toEqual(normalExit(7))
     expect(onExit).toHaveBeenCalledOnce()
-    expect(onExit).toHaveBeenCalledWith(7)
+    expect(onExit).toHaveBeenCalledWith(normalExit(7))
+  })
+
+  it('preserves a signal exit through nested processes', async () => {
+    const root = createRootProcess()
+
+    const run = root.spawn(
+      process => process.spawn(() => signalExit('SIGINT'), { name: 'inner' }),
+      { name: 'outer' },
+    )
+
+    await expect(run).resolves.toEqual(signalExit('SIGINT'))
   })
 })

@@ -1,10 +1,11 @@
 import { chalk } from '@/utils/color'
-import { Process } from './proc'
+import type { Process } from './proc'
 import { mapOrNull } from '@/utils'
 import { Awaitable } from '@/utils/types'
 import { UserError } from '@/utils/errors'
+import { ProgramResult } from './process_exit'
 
-export type Program = (proc: Process, ...argv: string[]) => Awaitable<number>
+export type Program = (proc: Process, ...argv: string[]) => Awaitable<ProgramResult>
 
 export const wrapProgram = (program: Program): Program => {
   const wrapped: Program = async (proc, name, ...args) => {
@@ -128,7 +129,7 @@ export class Command<O = Record<never, never>> {
     return 0
   }
 
-  program(handler: (argv: Argv<O>, ...args: string[]) => Awaitable<number>): Program {
+  program(handler: (argv: Argv<O>, ...args: string[]) => Awaitable<ProgramResult>): Program {
     return wrapProgram(async (proc, name, ...rawArgs) => {
       const options: Record<string, OptionValue> = {}
       const args: string[] = []

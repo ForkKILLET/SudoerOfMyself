@@ -12,6 +12,7 @@ import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
 import { ExecErrorT } from '@/sys0/exec'
+import { normalizeExit, ProgramResult } from '@/sys0/process_exit'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -26,6 +27,15 @@ export const execute = async (
 ): Promise<number> => {
   const { name, args } = command
   const { ctx, env } = proc
+  const shellStdio = proc.stdio
+
+  const consumeResult = (result: ProgramResult) => {
+    const exitStatus = normalizeExit(result)
+    if (exitStatus.reason === 'signal' && exitStatus.signal === 'SIGINT') {
+      shellStdio.writeLn('')
+    }
+    return exitStatus.code
+  }
 
   const getStdio = () => {
     const { input: inputDesc } = command
@@ -49,7 +59,7 @@ export const execute = async (
     proc.stdio = getStdio()
     proc.name = name
     try {
-      return await builtins[name](proc, name, ...args)
+      return consumeResult(await builtins[name](proc, name, ...args))
     }
     catch (err) {
       proc.error(err)
@@ -78,7 +88,7 @@ export const execute = async (
           return 126
       }
     }
-    return await proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args)
+    return consumeResult(await proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args))
   }
 }
 

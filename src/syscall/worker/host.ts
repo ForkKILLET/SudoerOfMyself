@@ -3,6 +3,7 @@ import { errorMessage } from '@/utils/errors'
 import { createGameSyscallHandlers } from '../game'
 import { createSyscallChannel, SyscallServer } from '../ipc'
 import { isWorkerStatusMessage, WorkerInitMessage } from './protocol'
+import { normalExit, ProcessExit, signalExit } from '@/sys0/process_exit'
 
 export interface WorkerLike {
   postMessage(message: WorkerInitMessage): void
@@ -22,7 +23,7 @@ export const runWorkerProgram = (
   definition: WorkerProgramDefinition,
   name: string,
   args: string[],
-): Promise<number> => {
+): Promise<ProcessExit> => {
   const channel = createSyscallChannel().unwrapBy((error) => {
     throw new Error(error.message)
   })
@@ -35,9 +36,9 @@ export const runWorkerProgram = (
   )
   const serverSubscription = server.attach(worker)
 
-  return new Promise<number>((resolve) => {
+  return new Promise<ProcessExit>((resolve) => {
     let hasFinished = false
-    const finish = (exitCode: number) => {
+    const finish = (exitStatus: ProcessExit) => {
       if (hasFinished) return
       hasFinished = true
       abortController.abort()
@@ -47,21 +48,21 @@ export const runWorkerProgram = (
       worker.removeEventListener('error', onError)
       server.close()
       worker.terminate()
-      resolve(exitCode)
+      resolve(exitStatus)
     }
     const onMessage = (event: MessageEvent<unknown>) => {
       if (! isWorkerStatusMessage(event.data)) return
-      if (event.data.type === 'sudoer:worker-exit') finish(event.data.exitCode)
+      if (event.data.type === 'sudoer:worker-exit') finish(normalExit(event.data.exitCode))
       else {
         process.error(event.data.stack ?? event.data.message)
-        finish(128)
+        finish(normalExit(128))
       }
     }
     const onError = (event: ErrorEvent) => {
       process.error(errorMessage(event.error ?? event.message))
-      finish(128)
+      finish(normalExit(128))
     }
-    const interruptSubscription = process.on('interrupt', () => finish(130))
+    const interruptSubscription = process.on('interrupt', () => finish(signalExit('SIGINT')))
 
     worker.addEventListener('message', onMessage)
     worker.addEventListener('error', onError)
@@ -75,7 +76,7 @@ export const runWorkerProgram = (
     }
     catch (error) {
       process.error(error)
-      finish(128)
+      finish(normalExit(128))
     }
   })
 }
