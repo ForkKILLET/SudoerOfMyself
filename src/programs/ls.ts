@@ -43,7 +43,8 @@ export const ls = createCommand('ls', '<path...>', 'List directory contents')
     outputs.push(...dirEntries.map(({ file: dir, path }) => (
       (paths.length > 1 ? `${path}:\n` : '') + new GridDisplay(
         ctx.term,
-        Object.keys(dir.entries)
+        ctx.fs.getChildren(dir)
+          .map(({ name }) => name)
           .filter(name => options.all || ! name.startsWith('.'))
           .map((name) => {
             if (! options.color) return name

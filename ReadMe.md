@@ -58,6 +58,7 @@ Native commands have two independent parts:
 
 `ExecService` is the only component that resolves commands through `PATH` and joins
 these two parts. Shell completion also reads the installed executable files rather
-than the native registry. Adding a native command to a later release therefore
-requires both registering its implementation and installing its executable file,
-normally through a file-system migration for existing saves.
+than the native registry. `/bin` is a read-only in-memory file system mounted fresh
+on every boot, so adding a native command only requires registering its implementation;
+the executable image is generated from the registry. `fs_format` resets only the
+persistent root file system.

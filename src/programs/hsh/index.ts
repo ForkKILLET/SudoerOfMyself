@@ -265,8 +265,9 @@ export const getCompProvider = (
 
   const { file: dir } = dirRes.val
   return getCandidates(
-    Object
-      .keys(dir.entries)
+    ctx.fs
+      .getChildren(dir)
+      .map(({ name }) => name)
       .sort()
       .map((name) => {
         const child = ctx.fs.getChildInode(dir, name)

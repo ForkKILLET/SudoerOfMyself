@@ -4,12 +4,16 @@ import '@xterm/xterm/css/xterm.css'
 import { Context } from '@/sys0/context'
 import { game0 } from '@/programs/game0'
 import { NATIVE_PROGRAMS } from '@/programs'
-import { getSysImage, SYSTEM_FS_MIGRATIONS } from '@/data/sys_image'
+import { getBinImage, getRootImage } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
 
 const start = () => {
-  const ctx = new Context(getSysImage(Object.keys(NATIVE_PROGRAMS)), {
-    migrations: SYSTEM_FS_MIGRATIONS,
+  const ctx = new Context(getRootImage(), {
+    mounts: [{
+      path: '/bin',
+      image: getBinImage(Object.keys(NATIVE_PROGRAMS)),
+      readOnly: true,
+    }],
     nativePrograms: NATIVE_PROGRAMS,
   })
 

@@ -26,7 +26,7 @@ const _rmX = async (
 
   $isDir: if (ctx.fs.isInodeOfType(inode, [FileT.DIR])) {
     const { file } = inode
-    const childnames = Object.keys(file.entries)
+    const childnames = ctx.fs.getChildren(file).map(({ name }) => name)
     if (! childnames.length && options.dir) break $isDir
     if (! options.recursive)
       return fail({ type: FOp.T.IS_A_DIR }, path)
@@ -50,7 +50,8 @@ const _rmX = async (
 
   if (options.onPromptRm && ! await options.onPromptRm(inode.file.type, path)) return
 
-  ctx.fs.rmWhere(parentInode, filename)
+  const result = ctx.fs.rmWhere(parentInode, filename)
+  if (result.isErr) return fail(result.err, path)
   options.onOk?.(path)
 }
 

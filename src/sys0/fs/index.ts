@@ -4,7 +4,7 @@ import { Err, Ok, Result } from 'fk-result'
 import { UserError } from '@/utils/errors'
 
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
-import { FsPersistence, LocalStorageFsPersistence } from './persistence'
+import { FsPersistence, LocalStorageFsPersistence, MemoryFsPersistence } from './persistence'
 import { Vfs } from './vfs'
 import { Path } from './path'
 
@@ -46,6 +46,13 @@ export interface DirEntries {
 export interface DirFile {
   type: FileT.DIR
   entries: DirEntries
+}
+
+export interface FsChild {
+  name: string
+  iid: InodeId
+  inode: Inode | undefined
+  file: File | null
 }
 
 export interface NormalFile {
@@ -101,6 +108,7 @@ export namespace FOp {
     NOT_ALLOWED_TYPE,
     ALREADY_EXISTS,
     OUT_OF_INODES,
+    READ_ONLY_FILE_SYSTEM,
     AGGREGATED_ERROR,
   }
 
@@ -114,6 +122,7 @@ export namespace FOp {
     | { type: T.NOT_ALLOWED_TYPE, allowedTypes: readonly FileT[] }
     | { type: T.ALREADY_EXISTS }
     | { type: T.OUT_OF_INODES }
+    | { type: T.READ_ONLY_FILE_SYSTEM }
     | { type: T.AGGREGATED_ERROR, errors: Error[] }
 
   export type OperationResult<T> = Result<T, Error>
@@ -141,6 +150,8 @@ export namespace FOp {
         return `File already exists`
       case T.OUT_OF_INODES:
         return `Out of Inodes`
+      case T.READ_ONLY_FILE_SYSTEM:
+        return `Read-only file system`
       case T.AGGREGATED_ERROR:
         return `Got multiple errors:\n${err.errors.map(err => '  ' + displayError(err)).join('\n')}`
     }
@@ -170,41 +181,57 @@ export namespace FOp {
   }
 }
 
-export interface FsMigration {
-  version: number
-  migrate(fs: Fs): FOp.OperationResult<void>
+export interface FsMount {
+  path: string
+  image: Vfs.DirVfile
+  readOnly?: boolean
 }
+
+interface MountedFs extends FsMount {
+  fs: Fs
+  name: string
+  parent: Inode<DirFile>
+}
+
+const FILE_SYSTEM_OWNER = new WeakMap<File, Fs>()
 
 export class Fs {
   inodes: Inodes = new Map()
   inodeBitmap: Bitmap = new Bitmap(MAX_INODE_COUNT)
   rootIid = 1
-  get root() {
+  get root(): Inode<DirFile> {
     const root = this.inodes.get(this.rootIid)
     if (! root) throw new Error('File system root inode is missing')
-    return root
+    if (root.file.type !== FileT.DIR) throw new Error('File system root inode is not a directory')
+    return root as Inode<DirFile>
   }
 
   readonly persistence: FsPersistence
+  readonly isReadOnly: boolean
   private readonly getCwd: () => string
-  private readonly migrations: readonly FsMigration[]
+  private readonly mounts: MountedFs[] = []
+  private readonly mountsByParent = new WeakMap<DirFile, Map<string, MountedFs>>()
 
   constructor(
     private readonly initialImage: Vfs.DirVfile,
     {
       persistence = new LocalStorageFsPersistence(),
       getCwd = () => '/',
-      migrations = [],
+      mounts = [],
+      readOnly = false,
     }: {
       persistence?: FsPersistence
       getCwd?: () => string
-      migrations?: readonly FsMigration[]
+      mounts?: readonly FsMount[]
+      readOnly?: boolean
     } = {},
   ) {
     this.persistence = persistence
     this.getCwd = getCwd
-    this.migrations = [...migrations].sort((left, right) => left.version - right.version)
+    this.isReadOnly = readOnly
     this.load()
+    mounts.forEach(mount => this.mount(mount))
+    if (this.isReadOnly) this.freezeFiles()
   }
 
   reset() {
@@ -212,32 +239,84 @@ export class Fs {
     this.inodes.clear()
     this.inodeBitmap.clear()
     this.load()
+    this.mounts.forEach(mount => this.attachMount(mount))
+    if (this.isReadOnly) this.freezeFiles()
   }
 
   load() {
     if (! this.persistence.isInitialized) {
-      this.create(this.initialImage)
+      this.createUnchecked(this.initialImage)
       this.inodes.forEach((inode, iid) => {
         this.persistence.set(iid, inode)
       })
       this.persistence.isInitialized = true
-      this.persistence.schemaVersion = this.migrations.at(- 1)?.version ?? 0
     }
     else {
       this.persistence.getAll().forEach(([iid, inode]) => {
         this.inodes.set(iid, inode)
         this.inodeBitmap.set(iid, 1)
+        FILE_SYSTEM_OWNER.set(inode.file, this)
       })
-      this.runMigrations()
     }
   }
 
-  private runMigrations() {
-    for (const migration of this.migrations) {
-      if (migration.version <= this.persistence.schemaVersion) continue
-      this.unwrap(migration.migrate(this), `File system migration ${migration.version} failed`)
-      this.persistence.schemaVersion = migration.version
+  private mount({ path, image, readOnly = false }: FsMount) {
+    const normalizedPath = Path.normalize(path)
+    if (! Path.isAbs(normalizedPath) || normalizedPath === '/') {
+      throw new Error(`Invalid mount point: ${path}`)
     }
+
+    const { dirname, filename: name } = Path.getDirAndName(normalizedPath)
+    const parentResult = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd: '/' })
+    const parent = this.unwrap(parentResult, `Cannot mount '${normalizedPath}'`).inode
+    const fs = new Fs(image, {
+      persistence: new MemoryFsPersistence(),
+      readOnly,
+    })
+    const mounted: MountedFs = { path: normalizedPath, image, readOnly, fs, name, parent }
+    this.mounts.push(mounted)
+    this.mounts.sort((left, right) => right.path.length - left.path.length)
+    this.attachMount(mounted)
+  }
+
+  private attachMount(mount: MountedFs) {
+    const { dirname } = Path.getDirAndName(mount.path)
+    mount.parent = this.findInodeU(dirname, { allowedTypes: [FileT.DIR], cwd: '/' }).inode
+    const children = this.mountsByParent.get(mount.parent.file) ?? new Map()
+    children.set(mount.name, mount)
+    this.mountsByParent.set(mount.parent.file, children)
+  }
+
+  private freezeFiles() {
+    this.inodes.forEach((inode) => {
+      const { file, executable } = inode
+      if (file.type === FileT.DIR) Object.freeze(file.entries)
+      Object.freeze(file)
+      if (executable) Object.freeze(executable)
+      Object.freeze(inode)
+    })
+  }
+
+  private absolutePath(path: string, cwd = this.cwd) {
+    let resolved = path
+    if (! Path.isAbsOrRel(resolved)) resolved = `./${resolved}`
+    if (! Path.isAbs(resolved)) resolved = Path.join(cwd, resolved)
+    return Path.normalize(resolved)
+  }
+
+  private resolveMountedPath(path: string, cwd = this.cwd) {
+    const absolute = this.absolutePath(path, cwd)
+    const mount = this.mounts.find(({ path: mountPath }) => (
+      absolute === mountPath || absolute.startsWith(`${mountPath}/`)
+    ))
+    const mountedPath = mount
+      ? absolute.slice(mount.path.length) || '/'
+      : absolute
+    return { absolute, mount, mountedPath }
+  }
+
+  private readOnlyError<T>(): FOp.OperationResult<T> {
+    return FOp.err({ type: FOp.T.READ_ONLY_FILE_SYSTEM })
   }
 
   get cwd() {
@@ -253,17 +332,28 @@ export class Fs {
   }
 
   create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
+    if (this.isReadOnly) return this.readOnlyError()
+    return this.createUnchecked(tree)
+  }
+
+  private createUnchecked<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
     const existingIids = new Set(this.inodes.keys())
     const result = Vfs.create(this, tree)
     if (result.isOk) {
       this.inodes.forEach((inode, iid) => {
-        if (! existingIids.has(iid)) this.persistence.set(iid, inode)
+        if (existingIids.has(iid)) return
+        FILE_SYSTEM_OWNER.set(inode.file, this)
+        this.persistence.set(iid, inode)
       })
     }
     return result
   }
 
   createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
+    const owner = FILE_SYSTEM_OWNER.get(parent.file)
+    if (owner && owner !== this) return owner.createAt(parent, name, tree)
+    if (this.isReadOnly) return this.readOnlyError()
+    if (this.getChildInode(parent.file, name)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
     const createRes = this.create(tree)
     if (createRes.isErr) return createRes
 
@@ -282,13 +372,18 @@ export class Fs {
     path: string,
     { allowedTypes, cwd = this.cwd }: FOp.FindOptions<FT> = {},
   ): FOp.FindInodeResult<FileFromT<FT>> {
-    let path1 = path
-    if (! Path.isAbsOrRel(path1)) path1 = `./${path1}`
-    const parts = Path.split(path1)
-
-    if (parts[0] === '.' || parts[0] === '..') {
-      parts.unshift(...Path.split(cwd))
+    const { absolute, mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) {
+      const result = mount.fs.findInode(mountedPath, { allowedTypes, cwd: '/' })
+      if (result.isErr) return result
+      return FOp.ok({
+        ...result.val,
+        path: absolute,
+        filename: absolute === mount.path ? mount.name : result.val.filename,
+        parentInode: absolute === mount.path ? mount.parent : result.val.parentInode,
+      })
     }
+    const parts = Path.split(absolute)
     if (! parts[0]) parts.shift()
 
     const inodeStack: Inode[] = [this.root]
@@ -354,32 +449,54 @@ export class Fs {
     return this.getChildInode(dir, childName)?.file ?? null
   }
 
-  getChildInode(dir: DirFile, childName: string) {
+  getChildInode(dir: DirFile, childName: string): Inode | null {
+    const mounted = this.mountsByParent.get(dir)?.get(childName)
+    if (mounted) return mounted.fs.root
+    const owner = FILE_SYSTEM_OWNER.get(dir)
+    if (owner && owner !== this) return owner.getChildInode(dir, childName)
     if (! (childName in dir.entries)) return null
-    return this.inodes.get(dir.entries[childName])
+    return this.inodes.get(dir.entries[childName]) ?? null
   }
 
-  getChildren(dir: DirFile) {
-    return Object
-      .entries(dir.entries)
-      .map(([name, iid]) => {
-        const inode = this.inodes.get(iid)
-        return { name, iid, inode, file: inode?.file ?? null }
-      })
+  getChildren(dir: DirFile): FsChild[] {
+    const owner = FILE_SYSTEM_OWNER.get(dir)
+    const children: FsChild[] = owner && owner !== this
+      ? owner.getChildren(dir)
+      : Object
+          .entries(dir.entries)
+          .map(([name, iid]) => {
+            const inode = this.inodes.get(iid)
+            return { name, iid, inode, file: inode?.file ?? null }
+          })
+    const mounted = this.mountsByParent.get(dir)
+    if (! mounted) return children
+    const mountedNames = new Set(mounted.keys())
+    return [
+      ...children.filter(({ name }) => ! mountedNames.has(name)),
+      ...[...mounted].map(([name, { fs }]) => ({
+        name,
+        iid: fs.root.iid,
+        inode: fs.root,
+        file: fs.root.file,
+      })),
+    ]
   }
 
   isEmptyDir(dir: DirFile) {
-    return ! Object.keys(dir.entries).length
+    return ! this.getChildren(dir).length
   }
 
   mkdir(path: string): FOp.MkdirResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path)
+    if (mount) return mount.fs.mkdir(mountedPath)
+    if (this.isReadOnly) return this.readOnlyError()
     const { dirname, filename } = Path.getDirAndName(path)
     if (! Path.isLegalFilename(filename)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
 
     const dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
     if (dirRes.isErr) return dirRes
     const { inode: parentInode } = dirRes.val
-    if (parentInode.file.entries[filename]) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
+    if (this.getChildInode(parentInode.file, filename)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
 
     const createRes = this.createAt(parentInode, filename, Vfs.dir())
     if (createRes.isErr) return createRes
@@ -395,6 +512,13 @@ export class Fs {
   }
 
   rmWhere(parentInode: Inode<DirFile>, filename: string): FOp.OperationResult<void> {
+    const mounted = this.mountsByParent.get(parentInode.file)?.get(filename)
+    if (mounted) return mounted.fs.isReadOnly
+      ? this.readOnlyError()
+      : FOp.err({ type: FOp.T.IS_ROOT })
+    const owner = FILE_SYSTEM_OWNER.get(parentInode.file)
+    if (owner && owner !== this) return owner.rmWhere(parentInode, filename)
+    if (this.isReadOnly) return this.readOnlyError()
     const inode = this.getChildInode(parentInode.file, filename)
     if (! inode) return FOp.err({ type: FOp.T.NOT_FOUND })
     const { file, iid } = inode
@@ -416,6 +540,9 @@ export class Fs {
   }
 
   rm(path: string): FOp.RmResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path)
+    if (mount) return mount.fs.rm(mountedPath)
+    if (this.isReadOnly) return this.readOnlyError()
     const res = this.findInode(path)
     if (res.isErr) return res
 
@@ -440,6 +567,9 @@ export class Fs {
   }
 
   open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {
+    const { mount, mountedPath } = this.resolveMountedPath(path)
+    if (mount) return mount.fs.open(mountedPath, mode)
+    if (this.isReadOnly && mode !== 'r') return this.readOnlyError()
     const res = this.findInode(path, { allowedTypes: [FileT.NORMAL] })
 
     let inode: Inode<NormalFile>

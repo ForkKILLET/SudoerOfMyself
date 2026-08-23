@@ -1,12 +1,12 @@
 import { Process } from './proc'
 import { Term } from './term'
-import { Fs, FsMigration } from './fs'
+import { Fs, FsMount } from './fs'
 import { Vfs } from './fs/vfs'
 import { ExecService, NativeProgramRegistry } from './exec'
 import { ProcessTable } from './process_table'
 
 export interface ContextOptions {
-  migrations?: readonly FsMigration[]
+  mounts?: readonly FsMount[]
   nativePrograms: NativeProgramRegistry
 }
 
@@ -24,14 +24,14 @@ export class Context {
   }
 
   constructor(initialImage: Vfs.DirVfile, {
-    migrations = [],
+    mounts = [],
     nativePrograms,
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
     this.fs = new Fs(initialImage, {
       getCwd: () => this.fgProc.cwd,
-      migrations,
+      mounts,
     })
     this.exec = new ExecService(this.fs, nativePrograms)
     this.init = new Process(this, null, {

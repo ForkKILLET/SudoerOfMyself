@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FileT, FOp, Fs, FsMigration, Inode } from '@/sys0/fs'
+import { FileT, FOp, Fs, Inode } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import { Bitmap } from '@/utils/bitmap'
@@ -86,34 +86,38 @@ describe('Fs mutation consistency', () => {
     expect(secondBoot.openU('/save', 'r').handle.read()).toBe('progress')
   })
 
-  it('applies each persisted file-system migration once', () => {
+  it('mounts a fresh read-only image over a persisted path', () => {
     const persistence = new MemoryFsPersistence()
-    const image = Vfs.dir({ bin: Vfs.dir() })
-    new Fs(image, { persistence })
-    let migrationRuns = 0
-    const migrations: FsMigration[] = [{
-      version: 1,
-      migrate: (fs) => {
-        migrationRuns ++
-        const bin = fs.findInodeU('/bin', { allowedTypes: [FileT.DIR] }).inode
-        const created = fs.createAt(bin, 'new-command', Vfs.nativeExe('new-command'))
-        return created.isErr ? created : FOp.ok(undefined)
-      },
-    }]
+    const image = Vfs.dir({ bin: Vfs.dir({ old: Vfs.normal('persisted') }) })
+    const firstBoot = new Fs(image, { persistence })
+    firstBoot.openU('/save', 'w').handle.write('progress')
+    const mountedBoot = new Fs(image, {
+      persistence,
+      mounts: [{
+        path: '/bin',
+        image: Vfs.dir({ 'new-command': Vfs.nativeExe('new-command') }),
+        readOnly: true,
+      }],
+    })
 
-    const migratedBoot = new Fs(image, { persistence, migrations })
-    const followingBoot = new Fs(image, { persistence, migrations })
-
-    expect(migratedBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
+    expect(mountedBoot.find('/bin/old').isErr).toBe(true)
+    expect(mountedBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
       format: 'native',
       programId: 'new-command',
     })
-    expect(followingBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
-      format: 'native',
-      programId: 'new-command',
-    })
-    expect(migrationRuns).toBe(1)
-    expect(persistence.schemaVersion).toBe(1)
+    expect(mountedBoot.openU('/save', 'r').handle.read()).toBe('progress')
+    expect(mountedBoot.getChildren(mountedBoot.root.file).map(({ name }) => name)).toContain('bin')
+
+    const writeResult = mountedBoot.open('/bin/new-command', 'w')
+    const createResult = mountedBoot.mkdir('/bin/new-dir')
+    const removeResult = mountedBoot.rm('/bin/new-command')
+    expect(writeResult.isErr && writeResult.err.type).toBe(FOp.T.READ_ONLY_FILE_SYSTEM)
+    expect(createResult.isErr && createResult.err.type).toBe(FOp.T.READ_ONLY_FILE_SYSTEM)
+    expect(removeResult.isErr && removeResult.err.type).toBe(FOp.T.READ_ONLY_FILE_SYSTEM)
+
+    mountedBoot.reset()
+    expect(mountedBoot.findInodeU('/bin/new-command').inode.executable?.programId).toBe('new-command')
+    expect(mountedBoot.find('/save').isErr).toBe(true)
   })
 
   it('rolls back partially allocated VFS images', () => {
