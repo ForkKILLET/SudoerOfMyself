@@ -8,6 +8,7 @@ import { errorMessage } from '@/utils/errors'
 import { runWorkerProgram, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { normalizeExit, normalExit, ProcessExit } from './process_exit'
 import { Pid } from './process_table'
+import type { ProcessGroup } from './job'
 
 export interface ProcessEvents extends Events {
   interrupt: []
@@ -21,10 +22,14 @@ export interface CreateProcOptions {
   cwd?: string
   env?: Env
   stdio?: Stdio
+  processGroup?: ProcessGroup | null
+  foreground?: boolean
 }
 
 export class Process extends Emitter<ProcessEvents> {
   readonly pid: Pid
+  readonly processGroup: ProcessGroup | null
+  readonly isForeground: boolean
   name: string
   staticName?: string
   env: Env
@@ -57,13 +62,18 @@ export class Process extends Emitter<ProcessEvents> {
     this.env = createEnv({ ...parent?.env, ...options.env })
     this.cwd = options.cwd ?? parent?.cwd ?? '/'
     this.stdio = options.stdio ?? parent?.stdio ?? Stdio.fromTerm(ctx.term)
+    this.processGroup = options.processGroup === undefined
+      ? parent?.processGroup ?? null
+      : options.processGroup
+    this.isForeground = options.foreground ?? true
     this.pid = ctx.processes.register(this)
+    this.processGroup?.add(this)
   }
 
   subProcesses: Process[] = []
 
   get fgProcess(): Process | undefined {
-    return this.subProcesses.at(0)
+    return this.subProcesses.find(process => process.isForeground)
   }
 
   fork(options: CreateProcOptions) {
@@ -75,7 +85,7 @@ export class Process extends Emitter<ProcessEvents> {
 
   interrupt() {
     if (this.state === 'exited') return
-    const foregroundChildren = [...this.subProcesses]
+    const foregroundChildren = this.subProcesses.filter(process => process.isForeground)
     if (foregroundChildren.length) {
       foregroundChildren.forEach(child => child.interrupt())
     }
@@ -88,6 +98,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.exitCode = exitStatus.code
     this.exitStatus = exitStatus
     this.emit('exit', exitStatus)
+    this.processGroup?.remove(this)
     this.ctx.processes.unregister(this)
   }
 
