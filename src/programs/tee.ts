@@ -1,5 +1,5 @@
 import { createCommand } from '@/sys0/program'
-import { signalExit } from '@/sys0/process_exit'
+import { ProcessSignal, signalExit } from '@/sys0/process_exit'
 
 export const tee = createCommand('tee', '[FILE...]', 'Copy standard input to each FILE, and also to standard output.')
   .help('help')
@@ -8,14 +8,16 @@ export const tee = createCommand('tee', '[FILE...]', 'Copy standard input to eac
     const mode = options.append ? 'a' : 'w'
     const outputs = paths.map(path => proc.ctx.fs.openU(path, mode).handle)
     const abortController = new AbortController()
+    let receivedSignal: ProcessSignal | undefined
     const signalSubscription = proc.on('signal', (signal) => {
-      if (signal === 'SIGINT') abortController.abort()
+      receivedSignal = signal
+      abortController.abort()
     })
 
     try {
       while (true) {
         const data = await proc.stdio.readKey({ signal: abortController.signal })
-        if (abortController.signal.aborted) return signalExit('SIGINT')
+        if (receivedSignal) return signalExit(receivedSignal)
         if (data === '\x04') return 0
 
         proc.stdio.write(data)

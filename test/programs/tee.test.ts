@@ -56,12 +56,12 @@ describe('tee', () => {
     expect(fs.openU('/copy.txt', 'r').handle.read()).toBe('before\nafter\n')
   })
 
-  it('exits with SIGINT while blocked on input', async () => {
+  it('exits with the received signal while blocked on input', async () => {
     const { root } = createRoot()
     const running = root.spawn(tee, { name: 'tee' })
 
-    root.signalForeground('SIGINT')
+    root.signalForeground('SIGTERM')
 
-    await expect(running).resolves.toEqual(signalExit('SIGINT'))
+    await expect(running).resolves.toEqual(signalExit('SIGTERM'))
   })
 })

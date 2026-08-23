@@ -1,5 +1,5 @@
 import { createCommand } from '@/sys0/program'
-import { signalExit } from '@/sys0/process_exit'
+import { ProcessSignal, signalExit } from '@/sys0/process_exit'
 import { parseJobId } from './job_ref'
 
 export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs to complete.')
@@ -19,17 +19,15 @@ export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs 
     if (selected.length !== jobRefs.length && jobRefs.length) return 1
     if (! selected.length) return 0
 
-    let resolveInterrupt = () => {}
-    const interrupted = new Promise<'interrupted'>((resolve) => {
-      resolveInterrupt = () => resolve('interrupted')
+    let resolveSignal: (signal: ProcessSignal) => void = () => {}
+    const signalled = new Promise<ProcessSignal>((resolve) => {
+      resolveSignal = resolve
     })
-    const signalSubscription = proc.on('signal', (signal) => {
-      if (signal === 'SIGINT') resolveInterrupt()
-    })
+    const signalSubscription = proc.on('signal', resolveSignal)
     try {
       const completed = Promise.all(selected.map(job => job.completion))
-      const result = await Promise.race([completed, interrupted])
-      if (result === 'interrupted') return signalExit('SIGINT')
+      const result = await Promise.race([completed, signalled])
+      if (typeof result === 'string') return signalExit(result)
 
       selected.forEach(job => table.delete(job.id))
       return result.at(- 1)?.code ?? 0
