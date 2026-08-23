@@ -6,6 +6,7 @@ import { Stdio } from '@/sys0/stdio'
 import { WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protocol'
 import { normalExit, signalExit } from '@/sys0/process_exit'
+import { ProcessTable } from '@/sys0/process_table'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -72,7 +73,8 @@ class FakeWorker implements WorkerLike {
 
 const createRootProcess = () => {
   const output = new MemoryOutput()
-  const root = new Process({} as Context, null, {
+  const context = { processes: new ProcessTable() } as Context
+  const root = new Process(context, null, {
     name: 'init',
     env: { HOME: '/', PATH: '/bin', PWD: '/' },
     stdio: new Stdio(new EmptyInput(), output),

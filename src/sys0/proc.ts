@@ -7,6 +7,7 @@ import { liftArray } from '@/utils'
 import { errorMessage } from '@/utils/errors'
 import { runWorkerProgram, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { normalizeExit, normalExit, ProcessExit } from './process_exit'
+import { Pid } from './process_table'
 
 export interface ProcessEvents extends Events {
   interrupt: []
@@ -23,6 +24,7 @@ export interface CreateProcOptions {
 }
 
 export class Process extends Emitter<ProcessEvents> {
+  readonly pid: Pid
   name: string
   staticName?: string
   env: Env
@@ -34,6 +36,10 @@ export class Process extends Emitter<ProcessEvents> {
   private _cwd = '/'
   get cwd() {
     return this._cwd
+  }
+
+  get ppid(): Pid | 0 {
+    return this.parent?.pid ?? 0
   }
 
   set cwd(cwd: string) {
@@ -51,6 +57,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.env = createEnv({ ...parent?.env, ...options.env })
     this.cwd = options.cwd ?? parent?.cwd ?? '/'
     this.stdio = options.stdio ?? parent?.stdio ?? Stdio.fromTerm(ctx.term)
+    this.pid = ctx.processes.register(this)
   }
 
   subProcesses: Process[] = []
@@ -79,6 +86,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.exitCode = exitStatus.code
     this.exitStatus = exitStatus
     this.emit('exit', exitStatus)
+    this.ctx.processes.unregister(this)
   }
 
   private removeChild(child: Process) {

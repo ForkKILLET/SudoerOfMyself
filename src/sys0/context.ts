@@ -3,6 +3,7 @@ import { Term } from './term'
 import { Fs, FsMigration } from './fs'
 import { Vfs } from './fs/vfs'
 import { ExecService, NativeProgramRegistry } from './exec'
+import { ProcessTable } from './process_table'
 
 export interface ContextOptions {
   migrations?: readonly FsMigration[]
@@ -14,6 +15,7 @@ export class Context {
   init: Process
   fs: Fs
   exec: ExecService
+  processes: ProcessTable
 
   get fgProc(): Process {
     let process = this.init
@@ -26,6 +28,7 @@ export class Context {
     nativePrograms,
   }: ContextOptions) {
     this.term = new Term()
+    this.processes = new ProcessTable()
     this.fs = new Fs(initialImage, {
       getCwd: () => this.fgProc.cwd,
       migrations,

@@ -8,6 +8,7 @@ import { Vfs } from '@/sys0/fs/vfs'
 import { Process } from '@/sys0/proc'
 import { Program } from '@/sys0/program'
 import { signalExit } from '@/sys0/process_exit'
+import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
 
 class EmptyInput implements FRead {
@@ -29,6 +30,7 @@ const createShellProcess = (program: Program) => {
   const fs = new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() })
   const context = {
     fs,
+    processes: new ProcessTable(),
     exec: {
       resolve: () => Ok({ program }),
     },

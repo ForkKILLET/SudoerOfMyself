@@ -4,6 +4,7 @@ import { FRead, FWrite } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
 import { Stdio } from '@/sys0/stdio'
 import { normalExit, signalExit } from '@/sys0/process_exit'
+import { ProcessTable } from '@/sys0/process_table'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -27,18 +28,20 @@ const deferred = <T>() => {
 }
 
 const createRootProcess = () => {
-  const context = {} as Context
+  const processes = new ProcessTable()
+  const context = { processes } as Context
   const stdio = new Stdio(new EmptyInput(), new MemoryOutput())
-  return new Process(context, null, {
+  const root = new Process(context, null, {
     name: 'init',
     env: { HOME: '/', PATH: '/bin', PWD: '/' },
     stdio,
   })
+  return { processes, root }
 }
 
 describe('Process lifecycle', () => {
   it('removes the child that exited instead of the newest child', async () => {
-    const root = createRootProcess()
+    const { root } = createRootProcess()
     const firstExit = deferred<number>()
     const secondExit = deferred<number>()
 
@@ -61,7 +64,7 @@ describe('Process lifecycle', () => {
   })
 
   it('inherits stdio and directs interrupts to the deepest foreground child', () => {
-    const root = createRootProcess()
+    const { root } = createRootProcess()
     const child = root.fork({ name: 'child' })
     const grandchild = child.fork({ name: 'grandchild' })
     const rootInterrupt = vi.fn()
@@ -81,7 +84,7 @@ describe('Process lifecycle', () => {
   })
 
   it('publishes the exit status exactly once', async () => {
-    const root = createRootProcess()
+    const { root } = createRootProcess()
     const onExit = vi.fn()
     const run = root.spawn((process) => {
       process.on('exit', onExit)
@@ -94,7 +97,7 @@ describe('Process lifecycle', () => {
   })
 
   it('preserves a signal exit through nested processes', async () => {
-    const root = createRootProcess()
+    const { root } = createRootProcess()
 
     const run = root.spawn(
       process => process.spawn(() => signalExit('SIGINT'), { name: 'inner' }),
@@ -102,5 +105,24 @@ describe('Process lifecycle', () => {
     )
 
     await expect(run).resolves.toEqual(signalExit('SIGINT'))
+  })
+
+  it('assigns stable PIDs and removes exited processes from the active table', async () => {
+    const { processes, root } = createRootProcess()
+    const childExit = deferred<number>()
+    const running = root.spawn(() => childExit.promise, { name: 'child' })
+    const child = root.subProcesses[0]
+
+    expect(root.pid).toBe(1)
+    expect(root.ppid).toBe(0)
+    expect(child.pid).toBe(2)
+    expect(child.ppid).toBe(root.pid)
+    expect(processes.get(child.pid)).toBe(child)
+
+    childExit.resolve(0)
+    await running
+
+    expect(processes.has(child.pid)).toBe(false)
+    expect(processes.values()).toEqual([root])
   })
 })
