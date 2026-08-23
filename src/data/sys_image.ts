@@ -51,4 +51,8 @@ export const SYSTEM_FS_MIGRATIONS: readonly FsMigration[] = [
     version: 3,
     migrate: installNativeProgram('tee'),
   },
+  {
+    version: 4,
+    migrate: installNativeProgram('ps'),
+  },
 ]

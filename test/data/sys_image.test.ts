@@ -34,6 +34,10 @@ describe('system file-system migrations', () => {
       format: 'native',
       programId: 'tee',
     })
-    expect(persistence.schemaVersion).toBe(3)
+    expect(fs.findInodeU('/bin/ps').inode.executable).toEqual({
+      format: 'native',
+      programId: 'ps',
+    })
+    expect(persistence.schemaVersion).toBe(4)
   })
 })

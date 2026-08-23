@@ -15,6 +15,7 @@ import { createHsh } from './hsh'
 import { createHelp } from './help'
 import { cpu_burn } from './cpu_burn'
 import { tee } from './tee'
+import { ps } from './ps'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
@@ -36,6 +37,7 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   fs_format,
   ls,
   mkdir,
+  ps,
   rm,
   tee,
   hsh,
