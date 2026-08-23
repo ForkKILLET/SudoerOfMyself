@@ -1,4 +1,5 @@
-export type ProcessSignal = 'SIGINT'
+export const PROCESS_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGKILL'] as const
+export type ProcessSignal = typeof PROCESS_SIGNALS[number]
 
 export type ProcessExit =
   | { reason: 'exit', code: number }
@@ -8,6 +9,8 @@ export type ProgramResult = number | ProcessExit
 
 const SIGNAL_EXIT_CODES: Record<ProcessSignal, number> = {
   SIGINT: 130,
+  SIGTERM: 143,
+  SIGKILL: 137,
 }
 
 export const normalExit = (code: number): ProcessExit => ({

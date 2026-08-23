@@ -41,10 +41,10 @@ describe('ProcessGroup', () => {
     const root = createRoot()
     const group = new ProcessGroup()
     const childExit = deferred<number>()
-    const childInterrupt = vi.fn()
-    const rootInterrupt = vi.fn()
+    const childSignal = vi.fn()
+    const rootSignal = vi.fn()
     const running = root.spawn((child) => {
-      child.on('interrupt', childInterrupt)
+      child.on('signal', childSignal)
       return childExit.promise
     }, {
       name: 'background',
@@ -56,13 +56,13 @@ describe('ProcessGroup', () => {
     expect(group.pgid).toBe(child.pid)
     expect(group.values()).toEqual([child])
 
-    root.on('interrupt', rootInterrupt)
-    root.interrupt()
-    expect(rootInterrupt).toHaveBeenCalledOnce()
-    expect(childInterrupt).not.toHaveBeenCalled()
+    root.on('signal', rootSignal)
+    root.signalForeground('SIGINT')
+    expect(rootSignal).toHaveBeenCalledWith('SIGINT')
+    expect(childSignal).not.toHaveBeenCalled()
 
-    group.interrupt()
-    expect(childInterrupt).toHaveBeenCalledOnce()
+    group.sendSignal('SIGTERM')
+    expect(childSignal).toHaveBeenCalledWith('SIGTERM')
 
     childExit.resolve(0)
     await running

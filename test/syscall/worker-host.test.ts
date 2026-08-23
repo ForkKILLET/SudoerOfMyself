@@ -5,7 +5,7 @@ import { Process } from '@/sys0/proc'
 import { Stdio } from '@/sys0/stdio'
 import { createWorkerProgram, WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protocol'
-import { normalExit, signalExit } from '@/sys0/process_exit'
+import { normalExit, PROCESS_SIGNALS, signalExit } from '@/sys0/process_exit'
 import { ProcessTable } from '@/sys0/process_table'
 import { ProcessGroup } from '@/sys0/job'
 
@@ -118,16 +118,17 @@ describe('Worker process host', () => {
     expect(worker.terminated).toBe(true)
   })
 
-  it('force-terminates a CPU-bound Worker on interrupt', async () => {
+  it.each(PROCESS_SIGNALS)('force-terminates a CPU-bound Worker on %s', async (signal) => {
     const { root } = createRootProcess()
     const worker = new FakeWorker()
     const running = root.spawn(createWorkerProgram(definitionFor(worker)), { name: 'cpu-bound' })
+    const child = root.subProcesses[0]
 
     expect(root.ctx.processes.size).toBe(2)
 
-    root.interrupt()
+    child.sendSignal(signal)
 
-    await expect(running).resolves.toEqual(signalExit('SIGINT'))
+    await expect(running).resolves.toEqual(signalExit(signal))
     expect(worker.terminated).toBe(true)
     expect(root.subProcesses).toEqual([])
     expect(root.ctx.processes.size).toBe(1)

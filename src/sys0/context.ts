@@ -44,7 +44,7 @@ export class Context {
     })
 
     this.term.on('interrupt', () => {
-      this.init.interrupt()
+      this.init.signalForeground('SIGINT')
     })
   }
 

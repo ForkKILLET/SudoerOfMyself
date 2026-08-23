@@ -27,7 +27,9 @@ export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs 
     const interrupted = new Promise<'interrupted'>((resolve) => {
       resolveInterrupt = () => resolve('interrupted')
     })
-    const interruptSubscription = proc.on('interrupt', resolveInterrupt)
+    const signalSubscription = proc.on('signal', (signal) => {
+      if (signal === 'SIGINT') resolveInterrupt()
+    })
     try {
       const completed = Promise.all(selected.map(job => job.completion))
       const result = await Promise.race([completed, interrupted])
@@ -37,6 +39,6 @@ export const wait = createCommand('wait', '[JOB...]', 'Wait for background jobs 
       return result.at(- 1)?.code ?? 0
     }
     finally {
-      interruptSubscription.dispose()
+      signalSubscription.dispose()
     }
   })

@@ -5,12 +5,12 @@ import { Program } from './program'
 import { createEnv, Env } from './env'
 import { liftArray } from '@/utils'
 import { errorMessage } from '@/utils/errors'
-import { normalizeExit, normalExit, ProcessExit } from './process_exit'
+import { normalizeExit, normalExit, ProcessExit, ProcessSignal } from './process_exit'
 import { Pid } from './process_table'
 import type { JobTable, ProcessGroup } from './job'
 
 export interface ProcessEvents extends Events {
-  interrupt: []
+  signal: [ProcessSignal]
   exit: [ProcessExit]
 }
 
@@ -84,13 +84,18 @@ export class Process extends Emitter<ProcessEvents> {
     return proc
   }
 
-  interrupt() {
+  sendSignal(signal: ProcessSignal) {
+    if (this.state === 'exited') return
+    this.emit('signal', signal)
+  }
+
+  signalForeground(signal: ProcessSignal) {
     if (this.state === 'exited') return
     const foregroundChildren = this.subProcesses.filter(process => process.isForeground)
     if (foregroundChildren.length) {
-      foregroundChildren.forEach(child => child.interrupt())
+      foregroundChildren.forEach(child => child.signalForeground(signal))
     }
-    else this.emit('interrupt')
+    else this.sendSignal(signal)
   }
 
   private finish(exitStatus: ProcessExit) {

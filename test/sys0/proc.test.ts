@@ -63,39 +63,56 @@ describe('Process lifecycle', () => {
     expect(root.subProcesses).toEqual([])
   })
 
-  it('inherits stdio and directs interrupts to the deepest foreground child', () => {
+  it('inherits stdio and directs terminal signals to the deepest foreground child', () => {
     const { root } = createRootProcess()
     const child = root.fork({ name: 'child' })
     const grandchild = child.fork({ name: 'grandchild' })
-    const rootInterrupt = vi.fn()
-    const childInterrupt = vi.fn()
-    const grandchildInterrupt = vi.fn()
+    const rootSignal = vi.fn()
+    const childSignal = vi.fn()
+    const grandchildSignal = vi.fn()
 
-    root.on('interrupt', rootInterrupt)
-    child.on('interrupt', childInterrupt)
-    grandchild.on('interrupt', grandchildInterrupt)
-    root.interrupt()
+    root.on('signal', rootSignal)
+    child.on('signal', childSignal)
+    grandchild.on('signal', grandchildSignal)
+    root.signalForeground('SIGINT')
 
     expect(child.stdio).toBe(root.stdio)
     expect(grandchild.stdio).toBe(root.stdio)
-    expect(rootInterrupt).not.toHaveBeenCalled()
-    expect(childInterrupt).not.toHaveBeenCalled()
-    expect(grandchildInterrupt).toHaveBeenCalledOnce()
+    expect(rootSignal).not.toHaveBeenCalled()
+    expect(childSignal).not.toHaveBeenCalled()
+    expect(grandchildSignal).toHaveBeenCalledOnce()
+    expect(grandchildSignal).toHaveBeenCalledWith('SIGINT')
   })
 
-  it('broadcasts interrupts to sibling foreground processes', () => {
+  it('broadcasts terminal signals to sibling foreground processes', () => {
     const { root } = createRootProcess()
     const first = root.fork({ name: 'first' })
     const second = root.fork({ name: 'second' })
-    const firstInterrupt = vi.fn()
-    const secondInterrupt = vi.fn()
-    first.on('interrupt', firstInterrupt)
-    second.on('interrupt', secondInterrupt)
+    const firstSignal = vi.fn()
+    const secondSignal = vi.fn()
+    first.on('signal', firstSignal)
+    second.on('signal', secondSignal)
 
-    root.interrupt()
+    root.signalForeground('SIGINT')
 
-    expect(firstInterrupt).toHaveBeenCalledOnce()
-    expect(secondInterrupt).toHaveBeenCalledOnce()
+    expect(firstSignal).toHaveBeenCalledWith('SIGINT')
+    expect(secondSignal).toHaveBeenCalledWith('SIGINT')
+  })
+
+  it('delivers an explicit signal only to the addressed process', () => {
+    const { root } = createRootProcess()
+    const child = root.fork({ name: 'child' })
+    const rootSignal = vi.fn()
+    const childSignal = vi.fn()
+    root.on('signal', rootSignal)
+    child.on('signal', childSignal)
+
+    root.sendSignal('SIGTERM')
+
+    expect(rootSignal).toHaveBeenCalledWith('SIGTERM')
+    expect(childSignal).not.toHaveBeenCalled()
+    child.sendSignal('SIGKILL')
+    expect(childSignal).toHaveBeenCalledWith('SIGKILL')
   })
 
   it('publishes the exit status exactly once', async () => {

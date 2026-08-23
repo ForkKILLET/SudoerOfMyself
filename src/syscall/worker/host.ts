@@ -43,7 +43,7 @@ export const runWorkerProgram = (
       if (hasFinished) return
       hasFinished = true
       abortController.abort()
-      interruptSubscription.dispose()
+      signalSubscription.dispose()
       serverSubscription.dispose()
       worker.removeEventListener('message', onMessage)
       worker.removeEventListener('error', onError)
@@ -63,7 +63,7 @@ export const runWorkerProgram = (
       process.error(errorMessage(event.error ?? event.message))
       finish(normalExit(128))
     }
-    const interruptSubscription = process.on('interrupt', () => finish(signalExit('SIGINT')))
+    const signalSubscription = process.on('signal', signal => finish(signalExit(signal)))
 
     worker.addEventListener('message', onMessage)
     worker.addEventListener('error', onError)

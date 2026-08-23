@@ -8,7 +8,9 @@ export const tee = createCommand('tee', '[FILE...]', 'Copy standard input to eac
     const mode = options.append ? 'a' : 'w'
     const outputs = paths.map(path => proc.ctx.fs.openU(path, mode).handle)
     const abortController = new AbortController()
-    const interruptSubscription = proc.on('interrupt', () => abortController.abort())
+    const signalSubscription = proc.on('signal', (signal) => {
+      if (signal === 'SIGINT') abortController.abort()
+    })
 
     try {
       while (true) {
@@ -21,6 +23,6 @@ export const tee = createCommand('tee', '[FILE...]', 'Copy standard input to eac
       }
     }
     finally {
-      interruptSubscription.dispose()
+      signalSubscription.dispose()
     }
   })

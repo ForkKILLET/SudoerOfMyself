@@ -1,5 +1,5 @@
 import type { Process } from './proc'
-import type { ProcessExit } from './process_exit'
+import type { ProcessExit, ProcessSignal } from './process_exit'
 import type { Pid } from './process_table'
 
 export type JobId = number
@@ -32,10 +32,8 @@ export class ProcessGroup {
     return [...this.members.values()]
   }
 
-  interrupt() {
-    this.values()
-      .filter(process => process.parent?.processGroup !== this)
-      .forEach(process => process.interrupt())
+  sendSignal(signal: ProcessSignal) {
+    this.values().forEach(process => process.sendSignal(signal))
   }
 }
 

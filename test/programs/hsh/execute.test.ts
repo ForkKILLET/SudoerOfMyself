@@ -176,7 +176,7 @@ describe('hsh execution', () => {
         { name: 'consume', args: [] },
       ],
     }, {})
-    process.interrupt()
+    process.signalForeground('SIGINT')
     await running
 
     expect(output.content).toBe('\n')
@@ -209,13 +209,13 @@ describe('hsh execution', () => {
 
   it('starts a background job without making it a foreground child', async () => {
     const finished = deferred<number>()
-    const backgroundInterrupt = vi.fn()
-    const shellInterrupt = vi.fn()
+    const backgroundSignal = vi.fn()
+    const shellSignal = vi.fn()
     const { output, process } = createShellProcess((child) => {
-      child.on('interrupt', backgroundInterrupt)
+      child.on('signal', backgroundSignal)
       return finished.promise
     })
-    process.on('interrupt', shellInterrupt)
+    process.on('signal', shellSignal)
 
     await executeScript(process, {
       commands: [{ name: 'long-running', args: [] }],
@@ -230,9 +230,9 @@ describe('hsh execution', () => {
     expect(child.isForeground).toBe(false)
     expect(job?.group.values()).toEqual([child])
 
-    process.interrupt()
-    expect(shellInterrupt).toHaveBeenCalledOnce()
-    expect(backgroundInterrupt).not.toHaveBeenCalled()
+    process.signalForeground('SIGINT')
+    expect(shellSignal).toHaveBeenCalledWith('SIGINT')
+    expect(backgroundSignal).not.toHaveBeenCalled()
 
     finished.resolve(7)
     await job?.completion
@@ -310,9 +310,9 @@ describe('hsh execution', () => {
 
   it('interrupts wait without interrupting the job being waited for', async () => {
     const finished = deferred<number>()
-    const backgroundInterrupt = vi.fn()
+    const backgroundSignal = vi.fn()
     const { output, process } = createShellProcess((child) => {
-      child.on('interrupt', backgroundInterrupt)
+      child.on('signal', backgroundSignal)
       return finished.promise
     })
     await executeScript(process, {
@@ -323,12 +323,12 @@ describe('hsh execution', () => {
     const waiting = executeScript(process, {
       commands: [{ name: 'wait', args: [] }],
     }, { wait })
-    process.interrupt()
+    process.signalForeground('SIGINT')
     await waiting
 
     expect(process.env['?']).toBe('130')
     expect(output.content.endsWith('\n\n')).toBe(true)
-    expect(backgroundInterrupt).not.toHaveBeenCalled()
+    expect(backgroundSignal).not.toHaveBeenCalled()
     expect(process.jobTable?.get(1)?.state).toBe('running')
 
     finished.resolve(0)

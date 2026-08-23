@@ -281,9 +281,11 @@ export class Readline {
     }
 
     const abortController = new AbortController()
-    const interruptSubscription = this.proc.on('interrupt', () => abortController.abort())
+    const signalSubscription = this.proc.on('signal', (signal) => {
+      if (signal === 'SIGINT') abortController.abort()
+    })
     const finish = <T>(value: T) => {
-      interruptSubscription.dispose()
+      signalSubscription.dispose()
       return value
     }
 

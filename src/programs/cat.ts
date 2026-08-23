@@ -20,13 +20,15 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
     for (const path of paths) {
       if (path === '-') {
         const abortController = new AbortController()
-        const interruptSubscription = proc.on('interrupt', () => abortController.abort())
+        const signalSubscription = proc.on('signal', (signal) => {
+          if (signal === 'SIGINT') abortController.abort()
+        })
         let data: string
         try {
           data = await stdio.read({ signal: abortController.signal })
         }
         finally {
-          interruptSubscription.dispose()
+          signalSubscription.dispose()
         }
         if (abortController.signal.aborted) return signalExit('SIGINT')
         stdio.write(data)

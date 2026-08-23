@@ -60,7 +60,7 @@ describe('tee', () => {
     const { root } = createRoot()
     const running = root.spawn(tee, { name: 'tee' })
 
-    root.interrupt()
+    root.signalForeground('SIGINT')
 
     await expect(running).resolves.toEqual(signalExit('SIGINT'))
   })
