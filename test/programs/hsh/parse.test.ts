@@ -98,6 +98,41 @@ describe('hsh parser', () => {
     expect(script.commands).toEqual([{ name: 'echo', args: ['42'] }])
   })
 
+  it('tokenizes and expands special shell parameters', () => {
+    const env = {
+      '$': '42',
+      '#': '2',
+      '0': 'script.hsh',
+      '1': 'first',
+      '*': 'first second',
+      '@': 'first second',
+      '-': '',
+      '_': 'previous',
+      '?': '7',
+      '!': '99',
+    }
+    const script = parse(expand(
+      tokenize('echo $$ $# $0 $1 $* $@ "$-" $_ $? $!'),
+      env,
+    ))
+
+    expect(script.commands).toEqual([{
+      name: 'echo',
+      args: [
+        '42',
+        '2',
+        'script.hsh',
+        'first',
+        'first second',
+        'first second',
+        '',
+        'previous',
+        '7',
+        '99',
+      ],
+    }])
+  })
+
   it('requires the background marker to terminate the command', () => {
     expect(() => parse(expand(tokenize('echo one & echo two'), {})))
       .toThrow('Background marker must end the command')

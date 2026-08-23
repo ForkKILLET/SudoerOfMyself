@@ -15,7 +15,7 @@ export namespace HSH_CHARS {
   export const d10 = [...d8, ...'89']
   export const d16 = [...d10, ...'abcdefABCDEF']
   export const letter = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ']
-  export const senv = [...d10, '?', '!']
+  export const senv = [...d10, '?', '!', '$', '#', '*', '@', '-']
   export const env = [...letter, ...d10, '_']
 }
 

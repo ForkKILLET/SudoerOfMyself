@@ -16,6 +16,7 @@ import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
 import { JobTable, ProcessGroup } from '@/sys0/job'
 import { getShellExitRequest } from './control'
+import { initializeShellParameters, updateLastArgument } from './parameters'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -187,6 +188,8 @@ export const executeScript = async (
       const job = proc.jobTable.create(processGroup, command, completion)
       proc.env['!'] = processGroup.pgid?.toString() ?? ''
       proc.env['?'] = '0'
+      const lastCommand = pipeline.at(- 1)
+      if (lastCommand) updateLastArgument(proc, lastCommand)
       proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
       return
     }
@@ -199,6 +202,8 @@ export const executeScript = async (
       proc.stdio.writeLn('')
     }
     proc.env['?'] = exitStatuses.at(- 1)?.code.toString() ?? '0'
+    const lastCommand = pipeline.at(- 1)
+    if (lastCommand) updateLastArgument(proc, lastCommand)
     if (getShellExitRequest(proc)) return
   }
 }
@@ -245,7 +250,8 @@ export const getCompProvider = (
   }
 
   if (token.type === 'variable' || (token.type === 'text' && token.content === '$' && ! token.isSq)) {
-    return getCandidates([...Object.keys(env).sort(), ...HSH_CHARS.senv].map(name => ({ value: '$' + name })))
+    const names = [...new Set([...Object.keys(env), ...HSH_CHARS.senv])].sort()
+    return getCandidates(names.map(name => ({ value: '$' + name })))
   }
 
   const isExplicitPath = Path.isAbsOrRel(token.content)
@@ -295,10 +301,11 @@ export const createHsh = ({
 }: HshConfig): Program => createCommand('hsh', '[FILE]', 'Human SHell')
   .help('help')
   .option('command', '-c', 'string', 'Execute command')
-  .program(async ({ proc, options }, path) => {
+  .program(async ({ proc, name, options }, path, ...scriptArgs) => {
     const { ctx, env, stdio } = proc
     proc.cwd = env.HOME
     proc.jobTable = new JobTable()
+    initializeShellParameters(proc, path ?? name, scriptArgs)
 
     const executeLine = async (proc: Process, line: string) => {
       const parseResult = Result.wrap<HshAstScript, unknown>(() => {
