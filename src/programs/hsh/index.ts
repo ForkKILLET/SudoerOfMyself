@@ -40,16 +40,21 @@ export const execute = async (
   const getStdio = () => {
     const { input: inputDesc } = command
     const { output: outputDesc } = command
+    const { error: errorDesc } = command
     const input = inputDesc
       ? ctx.fs.openU(inputDesc.path, 'r').handle
       : proc.stdio.input
     const output = outputDesc
       ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
       : proc.stdio.output
+    const error = errorDesc
+      ? ctx.fs.openU(errorDesc.path, errorDesc.type[0] as 'a' | 'w').handle
+      : proc.stdio.error
 
-    const stdio = new Stdio(input, output)
+    const stdio = new Stdio(input, output, error)
     stdio.stdin = inputDesc ? undefined : proc.stdio.stdin
     stdio.stdout = outputDesc ? undefined : proc.stdio.stdout
+    stdio.stderr = errorDesc ? undefined : proc.stdio.stderr
     return stdio
   }
 
@@ -75,7 +80,7 @@ export const execute = async (
     if (exeRes.isErr) {
       switch (exeRes.err.type) {
         case ExecErrorT.NOT_FOUND:
-          proc.stdio.writeLn(`${name}: Command not found`)
+          proc.stdio.writeErrorLn(`${name}: Command not found`)
           return 127
         case ExecErrorT.NOT_EXECUTABLE:
           proc.error(`${name}: Not an executable`)

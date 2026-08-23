@@ -71,8 +71,6 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
   }
 }
 
-// TODO: Stderr
-
 export interface StdoutEvents extends Events {
   'start-writing': []
   'stop-writing': []
@@ -124,10 +122,12 @@ export class Stdio implements FReadWrite {
 
   stdin?: Stdin
   stdout?: Stdout
+  stderr?: Stdout
 
   constructor(
     public input: FRead,
     public output: FWrite,
+    public error: FWrite = output,
   ) {}
 
   static fromTerm(term: Term) {
@@ -136,6 +136,7 @@ export class Stdio implements FReadWrite {
     const stdio = new Stdio(input, output)
     stdio.stdin = input
     stdio.stdout = output
+    stdio.stderr = output
 
     output.on('start-writing', () => {
       if (stdio.isTied) input.isDisabled = true
@@ -154,6 +155,8 @@ export class Stdio implements FReadWrite {
   readUntil(pred: Pred<string>) { return this.input.readUntil(pred) }
   write(data: string) { this.output.write(data) }
   writeLn(data: string) { this.output.writeLn(data) }
+  writeError(data: string) { this.error.write(data) }
+  writeErrorLn(data: string) { this.error.writeLn(data) }
   async prompt(msg: string): Promise<boolean> {
     this.write(`${msg} (y/n) `)
     const line = await this.readLn()

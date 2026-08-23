@@ -95,7 +95,7 @@ export class Process extends Emitter<ProcessEvents> {
   error(err: unknown | unknown[]) {
     liftArray(err).forEach((err) => {
       if (err instanceof Error) console.error(err)
-      this.stdio.writeLn(`${this.staticName ?? this.name}: ${errorMessage(err)}`)
+      this.stdio.writeErrorLn(`${this.staticName ?? this.name}: ${errorMessage(err)}`)
     })
   }
 
@@ -108,7 +108,7 @@ export class Process extends Emitter<ProcessEvents> {
     }
     catch (err) {
       console.error(err)
-      proc.stdio.writeLn(`${name}: ${errorMessage(err)}`)
+      proc.stdio.writeErrorLn(`${name}: ${errorMessage(err)}`)
       exitStatus = normalExit(128)
     }
     finally {

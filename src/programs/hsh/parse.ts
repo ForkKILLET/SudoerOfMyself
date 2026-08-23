@@ -55,6 +55,7 @@ export interface HshTokenHome extends HshTokenBase {
 
 export interface HshTokenRedirect extends HshTokenBase {
   type: 'redirect'
+  fd: 0 | 1 | 2
   mode: 'read' | 'write' | 'append'
 }
 
@@ -167,10 +168,13 @@ export const tokenize = (line: string, isStrict = true) => {
     }
     else isWh = false
     if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
-      consumeNow()
+      const isStderrRedirect = ch === '>' && now === '2' && begin === i - 2
+      if (isStderrRedirect) now = ''
+      else consumeNow()
       if (ch === '>' && line[i] === '>') {
         tokens.push({
           type: 'redirect',
+          fd: isStderrRedirect ? 2 : 1,
           mode: 'append',
           begin,
           end: i,
@@ -181,6 +185,7 @@ export const tokenize = (line: string, isStrict = true) => {
       else {
         tokens.push({
           type: 'redirect',
+          fd: ch === '<' ? 0 : isStderrRedirect ? 2 : 1,
           mode: ch === '<' ? 'read' : 'write',
           begin,
           end: i - 1,
@@ -291,6 +296,9 @@ export interface HshAstCommand {
   output?:
     | { type: 'writeTo', path: string }
     | { type: 'appendTo', path: string }
+  error?:
+    | { type: 'writeTo', path: string }
+    | { type: 'appendTo', path: string }
 }
 
 export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
@@ -317,15 +325,21 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
         if (target.type !== 'text') {
           throw new UserError('Expected redirect target, got ' + target.type)
         }
-        if (token.mode === 'read') {
+        if (token.fd === 0) {
           command.input = {
             type: 'readFrom',
             path: target.content,
           }
         }
-        else {
+        else if (token.fd === 1) {
           command.output = {
-            type: `${token.mode}To`,
+            type: token.mode === 'append' ? 'appendTo' : 'writeTo',
+            path: target.content,
+          }
+        }
+        else {
+          command.error = {
+            type: token.mode === 'append' ? 'appendTo' : 'writeTo',
             path: target.content,
           }
         }

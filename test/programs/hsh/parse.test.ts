@@ -39,6 +39,18 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses stderr redirects without treating the descriptor as an argument', () => {
+    const script = parse(expand(tokenize('echo hello 2>> errors.txt'), {}))
+
+    expect(script).toEqual({
+      commands: [{
+        name: 'echo',
+        args: ['hello'],
+        error: { type: 'appendTo', path: 'errors.txt' },
+      }],
+    })
+  })
+
   it('reports incomplete quoted input', () => {
     expect(() => tokenize('echo \'unfinished')).toThrow('Unmatched single quote')
   })
