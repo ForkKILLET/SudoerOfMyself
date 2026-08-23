@@ -14,6 +14,7 @@ import { hsh_tokenize } from './hsh_tokenize'
 import { createHsh } from './hsh'
 import { createHelp } from './help'
 import { cpu_burn } from './cpu_burn'
+import { tee } from './tee'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
@@ -36,6 +37,7 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   ls,
   mkdir,
   rm,
+  tee,
   hsh,
   help,
 }

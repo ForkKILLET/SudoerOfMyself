@@ -30,6 +30,10 @@ describe('system file-system migrations', () => {
 
     expect(executable.file).toEqual({ type: FileT.NORMAL, content: '' })
     expect(executable.executable).toEqual({ format: 'native', programId: 'legacy' })
-    expect(persistence.schemaVersion).toBe(2)
+    expect(fs.findInodeU('/bin/tee').inode.executable).toEqual({
+      format: 'native',
+      programId: 'tee',
+    })
+    expect(persistence.schemaVersion).toBe(3)
   })
 })
