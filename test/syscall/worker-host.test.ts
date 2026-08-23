@@ -3,10 +3,11 @@ import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
 import { Stdio } from '@/sys0/stdio'
-import { WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
+import { createWorkerProgram, WorkerLike, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protocol'
 import { normalExit, signalExit } from '@/sys0/process_exit'
 import { ProcessTable } from '@/sys0/process_table'
+import { ProcessGroup } from '@/sys0/job'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -94,26 +95,41 @@ describe('Worker process host', () => {
       type: 'sudoer:worker-exit',
       exitCode: 5,
     }))
+    const processGroup = new ProcessGroup()
 
-    const running = root.spawnWorker(definitionFor(worker), { name: 'worker-program' })
+    const running = root.spawn(createWorkerProgram(definitionFor(worker)), {
+      name: 'worker-program',
+      processGroup,
+    })
     const child = root.subProcesses[0]
+
+    expect(root.ctx.processes.size).toBe(2)
+    expect(root.subProcesses).toEqual([child])
+    expect(child.subProcesses).toEqual([])
+    expect(processGroup.pgid).toBe(child.pid)
+    expect(processGroup.size).toBe(1)
 
     await expect(running).resolves.toEqual(normalExit(5))
     expect(child.state).toBe('exited')
     expect(child.exitCode).toBe(5)
     expect(root.subProcesses).toEqual([])
+    expect(root.ctx.processes.size).toBe(1)
+    expect(processGroup.size).toBe(0)
     expect(worker.terminated).toBe(true)
   })
 
   it('force-terminates a CPU-bound Worker on interrupt', async () => {
     const { root } = createRootProcess()
     const worker = new FakeWorker()
-    const running = root.spawnWorker(definitionFor(worker), { name: 'cpu-bound' })
+    const running = root.spawn(createWorkerProgram(definitionFor(worker)), { name: 'cpu-bound' })
+
+    expect(root.ctx.processes.size).toBe(2)
 
     root.interrupt()
 
     await expect(running).resolves.toEqual(signalExit('SIGINT'))
     expect(worker.terminated).toBe(true)
     expect(root.subProcesses).toEqual([])
+    expect(root.ctx.processes.size).toBe(1)
   })
 })

@@ -1,4 +1,5 @@
 import type { Process } from '@/sys0/proc'
+import type { Program } from '@/sys0/program'
 import { errorMessage } from '@/utils/errors'
 import { createGameSyscallHandlers } from '../game'
 import { createSyscallChannel, SyscallServer } from '../ipc'
@@ -80,3 +81,6 @@ export const runWorkerProgram = (
     }
   })
 }
+
+export const createWorkerProgram = (definition: WorkerProgramDefinition): Program =>
+  (process, name, ...args) => runWorkerProgram(process, definition, name, args)

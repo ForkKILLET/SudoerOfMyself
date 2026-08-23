@@ -5,7 +5,6 @@ import { Program } from './program'
 import { createEnv, Env } from './env'
 import { liftArray } from '@/utils'
 import { errorMessage } from '@/utils/errors'
-import { runWorkerProgram, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { normalizeExit, normalExit, ProcessExit } from './process_exit'
 import { Pid } from './process_table'
 import type { JobTable, ProcessGroup } from './job'
@@ -132,25 +131,6 @@ export class Process extends Emitter<ProcessEvents> {
     catch (err) {
       console.error(err)
       proc.stdio.writeErrorLn(`${name}: ${errorMessage(err)}`)
-      exitStatus = normalExit(128)
-    }
-    finally {
-      this.removeChild(proc)
-    }
-    proc.finish(exitStatus)
-    return exitStatus
-  }
-
-  async spawnWorker(definition: WorkerProgramDefinition, options: CreateProcOptions, ...args: string[]) {
-    const { name } = options
-    const proc = this.fork(options)
-    let exitStatus: ProcessExit
-    try {
-      exitStatus = await runWorkerProgram(proc, definition, name, args)
-    }
-    catch (error) {
-      console.error(error)
-      proc.error(error)
       exitStatus = normalExit(128)
     }
     finally {
