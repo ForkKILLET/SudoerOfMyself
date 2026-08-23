@@ -15,7 +15,7 @@ export namespace HSH_CHARS {
   export const d10 = [...d8, ...'89']
   export const d16 = [...d10, ...'abcdefABCDEF']
   export const letter = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ']
-  export const senv = [...d10, '?']
+  export const senv = [...d10, '?', '!']
   export const env = [...letter, ...d10, '_']
 }
 
@@ -25,6 +25,7 @@ export type HshToken =
   | HshTokenText
   | HshTokenVariable
   | HshTokenHome
+  | HshTokenBackground
   | HshTokenPipe
   | HshTokenRedirect
 
@@ -32,6 +33,7 @@ export type HshExpandedTokenText = Omit<HshTokenText, 'isDq' | 'isSq'>
 
 export type HshExpandedToken =
   | HshExpandedTokenText
+  | HshTokenBackground
   | HshTokenPipe
   | HshTokenRedirect
 
@@ -63,6 +65,10 @@ export interface HshTokenRedirect extends HshTokenBase {
 
 export interface HshTokenPipe extends HshTokenBase {
   type: 'pipe'
+}
+
+export interface HshTokenBackground extends HshTokenBase {
+  type: 'background'
 }
 
 export const tokenize = (line: string, isStrict = true) => {
@@ -182,7 +188,17 @@ export const tokenize = (line: string, isStrict = true) => {
       continue
     }
     else isWh = false
-    if (! isDq && ! isSq && ch === '|') {
+    if (! isDq && ! isSq && ch === '&') {
+      consumeNow()
+      tokens.push({
+        type: 'background',
+        begin: i - 1,
+        end: i - 1,
+        content: ch,
+      })
+      begin = i
+    }
+    else if (! isDq && ! isSq && ch === '|') {
       consumeNow()
       tokens.push({
         type: 'pipe',
@@ -268,7 +284,7 @@ export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
 
   let text: HshExpandedTokenText | null = null
   for (const token of tokens) {
-    if (token.type === 'redirect' || token.type === 'pipe') {
+    if (token.type === 'redirect' || token.type === 'pipe' || token.type === 'background') {
       if (text) {
         expanded.push(text)
         text = null
@@ -311,6 +327,7 @@ export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
 
 export interface HshAstScript {
   commands: HshAstCommand[]
+  background?: true
 }
 
 export interface HshAstCommand {
@@ -335,6 +352,7 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
   while (tokens.length) {
     const firstToken = tokens[0]
     if (firstToken.type === 'pipe') throw new UserError('Expected command before pipe')
+    if (firstToken.type === 'background') throw new UserError('Expected command before background marker')
     const name = firstToken.type === 'redirect' ? 'cat' : firstToken.content
     if (firstToken.type !== 'redirect') tokens.shift()
 
@@ -346,7 +364,12 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
     while (tokens.length) {
       const token = tokens.shift()
       if (! token) break
-      if (token.type === 'pipe') {
+      if (token.type === 'background') {
+        if (tokens.length) throw new UserError('Background marker must end the command')
+        script.background = true
+        break
+      }
+      else if (token.type === 'pipe') {
         if (! tokens.length) throw new UserError('Expected command after pipe')
         command.pipeToNext = true
         break

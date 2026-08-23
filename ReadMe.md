@@ -13,6 +13,7 @@
     - [x] History file
     - [x] Tab completion
     - [x] Pipe
+    - [x] Background jobs (`&`, `jobs`, `wait`)
     - [x] Input redirecting
     - [ ] Env setting
     - [ ] Control flow syntax

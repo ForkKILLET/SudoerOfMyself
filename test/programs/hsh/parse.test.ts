@@ -80,6 +80,29 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses a background pipeline', () => {
+    const script = parse(expand(tokenize('echo hello | tee output.txt &'), {}))
+
+    expect(script).toEqual({
+      commands: [
+        { name: 'echo', args: ['hello'], pipeToNext: true },
+        { name: 'tee', args: ['output.txt'] },
+      ],
+      background: true,
+    })
+  })
+
+  it('expands the most recent background PID', () => {
+    const script = parse(expand(tokenize('echo $!'), { '!': '42' }))
+
+    expect(script.commands).toEqual([{ name: 'echo', args: ['42'] }])
+  })
+
+  it('requires the background marker to terminate the command', () => {
+    expect(() => parse(expand(tokenize('echo one & echo two'), {})))
+      .toThrow('Background marker must end the command')
+  })
+
   it('reports incomplete quoted input', () => {
     expect(() => tokenize('echo \'unfinished')).toThrow('Unmatched single quote')
   })

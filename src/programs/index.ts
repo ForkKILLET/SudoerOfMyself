@@ -16,12 +16,16 @@ import { createHelp } from './help'
 import { cpu_burn } from './cpu_burn'
 import { tee } from './tee'
 import { ps } from './ps'
+import { jobs } from './jobs'
+import { wait } from './wait'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
   echo,
   hsh_tokenize,
+  jobs,
   pwd,
+  wait,
 }
 
 export const hsh = createHsh({

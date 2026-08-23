@@ -8,7 +8,7 @@ import { errorMessage } from '@/utils/errors'
 import { runWorkerProgram, WorkerProgramDefinition } from '@/syscall/worker/host'
 import { normalizeExit, normalExit, ProcessExit } from './process_exit'
 import { Pid } from './process_table'
-import type { ProcessGroup } from './job'
+import type { JobTable, ProcessGroup } from './job'
 
 export interface ProcessEvents extends Events {
   interrupt: []
@@ -37,6 +37,7 @@ export class Process extends Emitter<ProcessEvents> {
   state: ProcessState = 'running'
   exitCode: number | null = null
   exitStatus: ProcessExit | null = null
+  jobTable: JobTable | null
 
   private _cwd = '/'
   get cwd() {
@@ -66,6 +67,7 @@ export class Process extends Emitter<ProcessEvents> {
       ? parent?.processGroup ?? null
       : options.processGroup
     this.isForeground = options.foreground ?? true
+    this.jobTable = parent?.jobTable ?? null
     this.pid = ctx.processes.register(this)
     this.processGroup?.add(this)
   }

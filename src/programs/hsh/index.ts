@@ -14,6 +14,7 @@ import { Result } from 'fk-result'
 import { ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
+import { JobTable, ProcessGroup } from '@/sys0/job'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -25,6 +26,8 @@ export interface ExecuteOptions {
   input?: FRead
   output?: FWrite
   pipelineStage?: boolean
+  processGroup?: ProcessGroup
+  foreground?: boolean
 }
 
 export const execute = async (
@@ -59,7 +62,12 @@ export const execute = async (
 
   if (name in builtins) {
     if (options.pipelineStage) {
-      return proc.spawn(builtins[name], { name, stdio: getStdio() }, ...args)
+      return proc.spawn(builtins[name], {
+        name,
+        stdio: getStdio(),
+        processGroup: options.processGroup,
+        foreground: options.foreground,
+      }, ...args)
     }
 
     const originalStdio = proc.stdio
@@ -96,24 +104,46 @@ export const execute = async (
           return normalExit(126)
       }
     }
-    return proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args)
+    return proc.spawn(exeRes.val.program, {
+      name,
+      stdio: getStdio(),
+      processGroup: options.processGroup,
+      foreground: options.foreground,
+    }, ...args)
   }
+}
+
+export interface ExecutePipelineOptions {
+  input?: FRead
+  processGroup?: ProcessGroup
+  foreground?: boolean
+  forceChild?: boolean
 }
 
 export const executePipeline = async (
   proc: Process,
   commands: HshAstCommand[],
   builtins: ProgramRegistry,
+  options: ExecutePipelineOptions = {},
 ): Promise<ProcessExit[]> => {
-  if (commands.length === 1) return [await execute(proc, commands[0], builtins)]
+  if (commands.length === 1) {
+    return [await execute(proc, commands[0], builtins, {
+      input: options.input,
+      pipelineStage: options.forceChild,
+      processGroup: options.processGroup,
+      foreground: options.foreground,
+    })]
+  }
 
   const pipes = commands.slice(1).map(() => createPipe())
   const runs = commands.map((command, index) => {
     const output = pipes[index]?.writer
     return execute(proc, command, builtins, {
-      input: pipes[index - 1]?.reader,
+      input: pipes[index - 1]?.reader ?? options.input,
       output,
       pipelineStage: true,
+      processGroup: options.processGroup,
+      foreground: options.foreground,
     }).finally(() => output?.close())
   })
   return Promise.all(runs)
@@ -123,6 +153,7 @@ export const executeScript = async (
   proc: Process,
   script: HshAstScript,
   builtins: ProgramRegistry,
+  { source }: { source?: string } = {},
 ): Promise<void> => {
   let commandIndex = 0
   while (commandIndex < script.commands.length) {
@@ -133,7 +164,36 @@ export const executeScript = async (
       if (! command.pipeToNext) break
     } while (commandIndex < script.commands.length)
 
-    const exitStatuses = await executePipeline(proc, pipeline, builtins)
+    const processGroup = new ProcessGroup()
+    if (script.background) {
+      const eofInput = createPipe()
+      eofInput.writer.close()
+      const completion = executePipeline(proc, pipeline, builtins, {
+        input: eofInput.reader,
+        processGroup,
+        foreground: false,
+        forceChild: true,
+      })
+        .then(statuses => statuses.at(- 1) ?? normalExit(0))
+        .catch((error) => {
+          proc.error(error)
+          return normalExit(1)
+        })
+      proc.jobTable ??= new JobTable()
+      const command = source?.trim() || pipeline
+        .map(({ name, args }) => [name, ...args].join(' '))
+        .join(' | ') + ' &'
+      const job = proc.jobTable.create(processGroup, command, completion)
+      proc.env['!'] = processGroup.pgid?.toString() ?? ''
+      proc.env['?'] = '0'
+      proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
+      return
+    }
+
+    const exitStatuses = await executePipeline(proc, pipeline, builtins, {
+      processGroup,
+      foreground: true,
+    })
     if (exitStatuses.some(status => status.reason === 'signal' && status.signal === 'SIGINT')) {
       proc.stdio.writeLn('')
     }
@@ -235,6 +295,7 @@ export const createHsh = ({
   .program(async ({ proc, options }, path) => {
     const { ctx, env, stdio } = proc
     proc.cwd = env.HOME
+    proc.jobTable = new JobTable()
 
     const executeLine = async (proc: Process, line: string) => {
       const parseResult = Result.wrap<HshAstScript, unknown>(() => {
@@ -247,7 +308,7 @@ export const createHsh = ({
         proc.env['?'] = '130'
         return
       }
-      await executeScript(proc, parseResult.val, builtins)
+      await executeScript(proc, parseResult.val, builtins, { source: line })
     }
 
     if (options.command) {

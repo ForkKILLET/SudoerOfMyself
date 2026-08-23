@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Ok } from 'fk-result'
 import { execute, executeScript } from '@/programs/hsh'
 import { Context } from '@/sys0/context'
@@ -12,6 +12,8 @@ import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
 import { createPipe } from '@/sys0/pipe'
 import { cat } from '@/programs/cat'
+import { jobs } from '@/programs/jobs'
+import { wait } from '@/programs/wait'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -24,6 +26,14 @@ class MemoryOutput implements FWrite {
   content = ''
   write(data: string) { this.content += data }
   writeLn(data: string) { this.write(data + '\n') }
+}
+
+const deferred = <T>() => {
+  let resolve: (value: T) => void = value => void value
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 const createShellProcess = (programs: Program | Record<string, Program>) => {
@@ -195,5 +205,133 @@ describe('hsh execution', () => {
 
     expect(output.content).toBe('from builtin')
     expect(process.env.PIPE_CHILD).toBeUndefined()
+  })
+
+  it('starts a background job without making it a foreground child', async () => {
+    const finished = deferred<number>()
+    const backgroundInterrupt = vi.fn()
+    const shellInterrupt = vi.fn()
+    const { output, process } = createShellProcess((child) => {
+      child.on('interrupt', backgroundInterrupt)
+      return finished.promise
+    })
+    process.on('interrupt', shellInterrupt)
+
+    await executeScript(process, {
+      commands: [{ name: 'long-running', args: [] }],
+      background: true,
+    }, {}, { source: 'long-running &' })
+
+    const job = process.jobTable?.get(1)
+    const child = process.subProcesses[0]
+    expect(output.content).toBe(`[1] ${child.pid}\n`)
+    expect(process.env['!']).toBe(child.pid.toString())
+    expect(process.env['?']).toBe('0')
+    expect(child.isForeground).toBe(false)
+    expect(job?.group.values()).toEqual([child])
+
+    process.interrupt()
+    expect(shellInterrupt).toHaveBeenCalledOnce()
+    expect(backgroundInterrupt).not.toHaveBeenCalled()
+
+    finished.resolve(7)
+    await job?.completion
+    expect(job?.state).toBe('completed')
+    expect(job?.exitStatus?.code).toBe(7)
+    expect(job?.group.size).toBe(0)
+  })
+
+  it('reports completed jobs and wait removes them', async () => {
+    const finished = deferred<number>()
+    const { output, process } = createShellProcess(() => finished.promise)
+
+    await executeScript(process, {
+      commands: [{ name: 'long-running', args: [] }],
+      background: true,
+    }, {}, { source: 'long-running &' })
+    finished.resolve(9)
+    await process.jobTable?.get(1)?.completion
+
+    await executeScript(process, {
+      commands: [{ name: 'jobs', args: [] }],
+    }, { jobs })
+    expect(output.content).toContain('[1] Done (9)')
+
+    await executeScript(process, {
+      commands: [{ name: 'wait', args: ['%1'] }],
+    }, { wait })
+    expect(process.env['?']).toBe('9')
+    expect(process.jobTable?.values()).toEqual([])
+  })
+
+  it('gives a background command EOF instead of the interactive stdin', async () => {
+    const { process } = createShellProcess(async (child) => {
+      expect(await child.stdio.read()).toBe('')
+      return 0
+    })
+
+    await executeScript(process, {
+      commands: [{ name: 'reader', args: [] }],
+      background: true,
+    }, {})
+
+    await process.jobTable?.get(1)?.completion
+    expect(process.jobTable?.get(1)?.state).toBe('completed')
+  })
+
+  it('puts every background pipeline stage in the same process group', async () => {
+    const releaseProducer = deferred<number>()
+    const { output, process } = createShellProcess({
+      producer: (child) => {
+        child.stdio.write('streamed')
+        return releaseProducer.promise
+      },
+      consumer: async (child) => {
+        child.stdio.write(await child.stdio.read())
+        return 0
+      },
+    })
+
+    await executeScript(process, {
+      commands: [
+        { name: 'producer', args: [], pipeToNext: true },
+        { name: 'consumer', args: [] },
+      ],
+      background: true,
+    }, {})
+
+    const job = process.jobTable?.get(1)
+    expect(job?.group.values().map(member => member.name).sort()).toEqual(['consumer', 'producer'])
+
+    releaseProducer.resolve(0)
+    await job?.completion
+    expect(output.content).toContain('streamed')
+  })
+
+  it('interrupts wait without interrupting the job being waited for', async () => {
+    const finished = deferred<number>()
+    const backgroundInterrupt = vi.fn()
+    const { output, process } = createShellProcess((child) => {
+      child.on('interrupt', backgroundInterrupt)
+      return finished.promise
+    })
+    await executeScript(process, {
+      commands: [{ name: 'long-running', args: [] }],
+      background: true,
+    }, {})
+
+    const waiting = executeScript(process, {
+      commands: [{ name: 'wait', args: [] }],
+    }, { wait })
+    process.interrupt()
+    await waiting
+
+    expect(process.env['?']).toBe('130')
+    expect(output.content.endsWith('\n\n')).toBe(true)
+    expect(backgroundInterrupt).not.toHaveBeenCalled()
+    expect(process.jobTable?.get(1)?.state).toBe('running')
+
+    finished.resolve(0)
+    await process.jobTable?.get(1)?.completion
   })
 })
