@@ -24,9 +24,12 @@ import { exit } from './exit'
 import { exportEnv } from './export'
 import { read } from './read'
 import { unset } from './unset'
+import { createTypeCommand } from './type'
+import { createCommandBuiltin } from './command'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
+  command: createCommandBuiltin(() => BUILTINS),
   echo,
   exit,
   export: exportEnv,
@@ -35,6 +38,7 @@ export const BUILTINS: Record<string, Program> = {
   kill,
   pwd,
   read,
+  type: createTypeCommand(() => BUILTINS),
   unset,
   wait,
 }
