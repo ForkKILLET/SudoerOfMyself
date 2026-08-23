@@ -21,15 +21,21 @@ import { wait } from './wait'
 import { kill } from './kill'
 import { sleep } from './sleep'
 import { exit } from './exit'
+import { exportEnv } from './export'
+import { read } from './read'
+import { unset } from './unset'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
   echo,
   exit,
+  export: exportEnv,
   hsh_tokenize,
   jobs,
   kill,
   pwd,
+  read,
+  unset,
   wait,
 }
 
