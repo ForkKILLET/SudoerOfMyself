@@ -9,6 +9,20 @@
   <body>
     <div id="app">
       <div id="xterm-container"></div>
+      <main id="recovery" class="recovery" hidden>
+        <p class="recovery__eyebrow">RECOVERY MODE</p>
+        <h1>HumanOS could not start</h1>
+        <p>
+          The local save may be damaged. Export it for inspection before resetting,
+          or reload the page to try again without changing it.
+        </p>
+        <pre id="recovery-error" class="recovery__error"></pre>
+        <div class="recovery__actions">
+          <button id="recovery-export" type="button">Export save</button>
+          <button id="recovery-reset" class="recovery__reset" type="button">Reset save and reload</button>
+        </div>
+        <p id="recovery-status" class="recovery__status" aria-live="polite"></p>
+      </main>
     </div>
     <script type="module" src="./src/index.ts"></script>
   </body>

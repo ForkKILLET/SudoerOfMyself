@@ -6,6 +6,7 @@ import { game0 } from '@/programs/game0'
 import { NATIVE_PROGRAMS } from '@/programs'
 import { getBinImage, getRootImage } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
+import { showRecoveryMode } from '@/recovery'
 
 const start = () => {
   const ctx = new Context(getRootImage(), {
@@ -24,6 +25,8 @@ const start = () => {
   ctx.init.spawn(game0, { name: 'game0' })
 }
 
-void prepareCrossOriginIsolation().then((isReady) => {
-  if (isReady) start()
-})
+const boot = async () => {
+  if (await prepareCrossOriginIsolation()) start()
+}
+
+void boot().catch(showRecoveryMode)

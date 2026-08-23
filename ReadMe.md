@@ -62,3 +62,10 @@ than the native registry. `/bin` is a read-only in-memory file system mounted fr
 on every boot, so adding a native command only requires registering its implementation;
 the executable image is generated from the registry. `fs_format` resets only the
 persistent root file system.
+
+## Save recovery
+
+If startup throws, the game replaces the terminal with a recovery screen. The save
+can be exported as a JSON archive containing the original local-storage strings,
+including malformed inode data, before the file-system save is reset and the page
+is reloaded.
