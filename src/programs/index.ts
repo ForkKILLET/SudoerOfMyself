@@ -19,6 +19,7 @@ import { ps } from './ps'
 import { jobs } from './jobs'
 import { wait } from './wait'
 import { kill } from './kill'
+import { sleep } from './sleep'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
@@ -45,6 +46,7 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   mkdir,
   ps,
   rm,
+  sleep,
   tee,
   hsh,
   help,
