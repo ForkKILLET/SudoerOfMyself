@@ -15,6 +15,7 @@ import { ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
 import { JobTable, ProcessGroup } from '@/sys0/job'
+import { getShellExitRequest } from './control'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -198,6 +199,7 @@ export const executeScript = async (
       proc.stdio.writeLn('')
     }
     proc.env['?'] = exitStatuses.at(- 1)?.code.toString() ?? '0'
+    if (getShellExitRequest(proc)) return
   }
 }
 
@@ -310,12 +312,14 @@ export const createHsh = ({
         return
       }
       await executeScript(proc, parseResult.val, builtins, { source: line })
+      return getShellExitRequest(proc)
     }
 
     if (options.command) {
       const lines = options.command.split('\n')
       for (const line of lines) {
         await executeLine(proc, line)
+        if (getShellExitRequest(proc)) break
       }
     }
 
@@ -336,6 +340,7 @@ export const createHsh = ({
           }
           await executeLine(proc, line)
           historyFile.appendLn(line)
+          if (getShellExitRequest(proc)) loop.stop()
         },
         onInterrupt: () => true,
         onEnd: () => stdio.writeLn('[Process exited]'),
@@ -348,8 +353,9 @@ export const createHsh = ({
       const lines = fh.read().split('\n')
       for (const line of lines) {
         await executeLine(proc, line)
+        if (getShellExitRequest(proc)) break
       }
     }
 
-    return 0
+    return getShellExitRequest(proc) ?? 0
   })

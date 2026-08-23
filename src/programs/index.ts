@@ -20,10 +20,12 @@ import { jobs } from './jobs'
 import { wait } from './wait'
 import { kill } from './kill'
 import { sleep } from './sleep'
+import { exit } from './exit'
 
 export const BUILTINS: Record<string, Program> = {
   cd,
   echo,
+  exit,
   hsh_tokenize,
   jobs,
   kill,
