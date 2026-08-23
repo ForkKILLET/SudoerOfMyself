@@ -2,7 +2,7 @@ import { chalk } from '@/utils/color'
 
 import { Process } from '@/sys0/proc'
 import { createCommand, Program } from '@/sys0/program'
-import { FileT, FOp } from '@/sys0/fs'
+import { FileT, FOp, FRead, FWrite } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdio } from '@/sys0/stdio'
@@ -12,7 +12,8 @@ import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
 import { ExecErrorT } from '@/sys0/exec'
-import { normalizeExit, ProgramResult } from '@/sys0/process_exit'
+import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
+import { createPipe } from '@/sys0/pipe'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -20,22 +21,20 @@ export interface HshConfig {
   builtins: ProgramRegistry
 }
 
+export interface ExecuteOptions {
+  input?: FRead
+  output?: FWrite
+  pipelineStage?: boolean
+}
+
 export const execute = async (
   proc: Process,
   command: HshAstCommand,
   builtins: ProgramRegistry,
-): Promise<number> => {
+  options: ExecuteOptions = {},
+): Promise<ProcessExit> => {
   const { name, args } = command
   const { ctx, env } = proc
-  const shellStdio = proc.stdio
-
-  const consumeResult = (result: ProgramResult) => {
-    const exitStatus = normalizeExit(result)
-    if (exitStatus.reason === 'signal' && exitStatus.signal === 'SIGINT') {
-      shellStdio.writeLn('')
-    }
-    return exitStatus.code
-  }
 
   const getStdio = () => {
     const { input: inputDesc } = command
@@ -43,32 +42,36 @@ export const execute = async (
     const { error: errorDesc } = command
     const input = inputDesc
       ? ctx.fs.openU(inputDesc.path, 'r').handle
-      : proc.stdio.input
+      : options.input ?? proc.stdio.input
     const output = outputDesc
       ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
-      : proc.stdio.output
+      : options.output ?? proc.stdio.output
     const error = errorDesc
       ? ctx.fs.openU(errorDesc.path, errorDesc.type[0] as 'a' | 'w').handle
       : proc.stdio.error
 
     const stdio = new Stdio(input, output, error)
-    stdio.stdin = inputDesc ? undefined : proc.stdio.stdin
-    stdio.stdout = outputDesc ? undefined : proc.stdio.stdout
+    stdio.stdin = inputDesc || options.input ? undefined : proc.stdio.stdin
+    stdio.stdout = outputDesc || options.output ? undefined : proc.stdio.stdout
     stdio.stderr = errorDesc ? undefined : proc.stdio.stderr
     return stdio
   }
 
   if (name in builtins) {
+    if (options.pipelineStage) {
+      return proc.spawn(builtins[name], { name, stdio: getStdio() }, ...args)
+    }
+
     const originalStdio = proc.stdio
     const originalName = proc.name
     proc.stdio = getStdio()
     proc.name = name
     try {
-      return consumeResult(await builtins[name](proc, name, ...args))
+      return normalizeExit(await builtins[name](proc, name, ...args))
     }
     catch (err) {
       proc.error(err)
-      return 1
+      return normalExit(1)
     }
     finally {
       proc.stdio = originalStdio
@@ -81,20 +84,39 @@ export const execute = async (
       switch (exeRes.err.type) {
         case ExecErrorT.NOT_FOUND:
           proc.stdio.writeErrorLn(`${name}: Command not found`)
-          return 127
+          return normalExit(127)
         case ExecErrorT.NOT_EXECUTABLE:
           proc.error(`${name}: Not an executable`)
-          return 126
+          return normalExit(126)
         case ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED:
           proc.error(`${name}: Native program '${exeRes.err.programId}' is not registered`)
-          return 126
+          return normalExit(126)
         case ExecErrorT.FILE_SYSTEM_ERROR:
           proc.error(`${name}: ${FOp.displayError(exeRes.err.error)}`)
-          return 126
+          return normalExit(126)
       }
     }
-    return consumeResult(await proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args))
+    return proc.spawn(exeRes.val.program, { name, stdio: getStdio() }, ...args)
   }
+}
+
+export const executePipeline = async (
+  proc: Process,
+  commands: HshAstCommand[],
+  builtins: ProgramRegistry,
+): Promise<ProcessExit[]> => {
+  if (commands.length === 1) return [await execute(proc, commands[0], builtins)]
+
+  const pipes = commands.slice(1).map(() => createPipe())
+  const runs = commands.map((command, index) => {
+    const output = pipes[index]?.writer
+    return execute(proc, command, builtins, {
+      input: pipes[index - 1]?.reader,
+      output,
+      pipelineStage: true,
+    }).finally(() => output?.close())
+  })
+  return Promise.all(runs)
 }
 
 export const executeScript = async (
@@ -102,9 +124,20 @@ export const executeScript = async (
   script: HshAstScript,
   builtins: ProgramRegistry,
 ): Promise<void> => {
-  for (const command of script.commands) {
-    const ret = await execute(proc, command, builtins)
-    proc.env['?'] = ret.toString()
+  let commandIndex = 0
+  while (commandIndex < script.commands.length) {
+    const pipeline: HshAstCommand[] = []
+    do {
+      const command = script.commands[commandIndex ++]
+      pipeline.push(command)
+      if (! command.pipeToNext) break
+    } while (commandIndex < script.commands.length)
+
+    const exitStatuses = await executePipeline(proc, pipeline, builtins)
+    if (exitStatuses.some(status => status.reason === 'signal' && status.signal === 'SIGINT')) {
+      proc.stdio.writeLn('')
+    }
+    proc.env['?'] = exitStatuses.at(- 1)?.code.toString() ?? '0'
   }
 }
 
@@ -155,7 +188,10 @@ export const getCompProvider = (
 
   const isExplicitPath = Path.isAbsOrRel(token.content)
 
-  if (tokenIndex === 0 && ! isExplicitPath) {
+  const isCommandToken = tokenIndex === 0 || (
+    tokenIndex !== null && tokens[tokenIndex - 1]?.type === 'pipe'
+  )
+  if (isCommandToken && ! isExplicitPath) {
     const installedPrograms = ctx.exec.listInPath(env.PATH, env.PWD)
     return getCandidates([...installedPrograms, ...Object.keys(builtins)].map(name => ({ value: name })))
   }

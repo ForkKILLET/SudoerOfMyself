@@ -75,8 +75,10 @@ export class Process extends Emitter<ProcessEvents> {
 
   interrupt() {
     if (this.state === 'exited') return
-    const foregroundChild = this.fgProcess
-    if (foregroundChild) foregroundChild.interrupt()
+    const foregroundChildren = [...this.subProcesses]
+    if (foregroundChildren.length) {
+      foregroundChildren.forEach(child => child.interrupt())
+    }
     else this.emit('interrupt')
   }
 

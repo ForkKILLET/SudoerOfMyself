@@ -1,5 +1,6 @@
 import { createCommand } from '@/sys0/program'
 import { chalk } from '@/utils/color'
+import { signalExit } from '@/sys0/process_exit'
 
 export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to standard output.')
   .help('help')
@@ -18,7 +19,16 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
     if (! paths.length) paths.push('-')
     for (const path of paths) {
       if (path === '-') {
-        const data = await stdio.read()
+        const abortController = new AbortController()
+        const interruptSubscription = proc.on('interrupt', () => abortController.abort())
+        let data: string
+        try {
+          data = await stdio.read({ signal: abortController.signal })
+        }
+        finally {
+          interruptSubscription.dispose()
+        }
+        if (abortController.signal.aborted) return signalExit('SIGINT')
         stdio.write(data)
         writeEolBy(data)
         return 0

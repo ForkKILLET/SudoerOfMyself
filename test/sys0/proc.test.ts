@@ -83,6 +83,21 @@ describe('Process lifecycle', () => {
     expect(grandchildInterrupt).toHaveBeenCalledOnce()
   })
 
+  it('broadcasts interrupts to sibling foreground processes', () => {
+    const { root } = createRootProcess()
+    const first = root.fork({ name: 'first' })
+    const second = root.fork({ name: 'second' })
+    const firstInterrupt = vi.fn()
+    const secondInterrupt = vi.fn()
+    first.on('interrupt', firstInterrupt)
+    second.on('interrupt', secondInterrupt)
+
+    root.interrupt()
+
+    expect(firstInterrupt).toHaveBeenCalledOnce()
+    expect(secondInterrupt).toHaveBeenCalledOnce()
+  })
+
   it('publishes the exit status exactly once', async () => {
     const { root } = createRootProcess()
     const onExit = vi.fn()

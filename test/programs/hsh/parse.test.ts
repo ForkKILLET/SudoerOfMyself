@@ -51,6 +51,35 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses a pipeline as linked commands', () => {
+    const script = parse(expand(tokenize('echo hello | cat | cat > output.txt'), {}))
+
+    expect(script).toEqual({
+      commands: [
+        { name: 'echo', args: ['hello'], pipeToNext: true },
+        { name: 'cat', args: [], pipeToNext: true },
+        {
+          name: 'cat',
+          args: [],
+          output: { type: 'writeTo', path: 'output.txt' },
+        },
+      ],
+    })
+  })
+
+  it('rejects an incomplete pipeline', () => {
+    expect(() => parse(expand(tokenize('echo hello |'), {})))
+      .toThrow('Expected command after pipe')
+  })
+
+  it('keeps quoted and escaped pipe characters as ordinary arguments', () => {
+    const script = parse(expand(tokenize('echo "left|right" a\\|b'), {}))
+
+    expect(script).toEqual({
+      commands: [{ name: 'echo', args: ['left|right', 'a|b'] }],
+    })
+  })
+
   it('reports incomplete quoted input', () => {
     expect(() => tokenize('echo \'unfinished')).toThrow('Unmatched single quote')
   })

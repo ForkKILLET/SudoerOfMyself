@@ -25,12 +25,14 @@ export type HshToken =
   | HshTokenText
   | HshTokenVariable
   | HshTokenHome
+  | HshTokenPipe
   | HshTokenRedirect
 
 export type HshExpandedTokenText = Omit<HshTokenText, 'isDq' | 'isSq'>
 
 export type HshExpandedToken =
   | HshExpandedTokenText
+  | HshTokenPipe
   | HshTokenRedirect
 
 export interface HshTokenBase {
@@ -57,6 +59,10 @@ export interface HshTokenRedirect extends HshTokenBase {
   type: 'redirect'
   fd: 0 | 1 | 2
   mode: 'read' | 'write' | 'append'
+}
+
+export interface HshTokenPipe extends HshTokenBase {
+  type: 'pipe'
 }
 
 export const tokenize = (line: string, isStrict = true) => {
@@ -101,6 +107,15 @@ export const tokenize = (line: string, isStrict = true) => {
       if (ch === 'x' || ch === 'u' || ch === '0') isNesc = ch === '0' ? 'o' : ch
       else now += ESCAPES[ch] ?? ch
       isEsc = false
+      continue
+    }
+    if (isEsc) {
+      isEsc = false
+      if (ch === '\0') {
+        now += '\\'
+        break
+      }
+      now += ch
       continue
     }
     if (isNesc) {
@@ -167,7 +182,17 @@ export const tokenize = (line: string, isStrict = true) => {
       continue
     }
     else isWh = false
-    if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
+    if (! isDq && ! isSq && ch === '|') {
+      consumeNow()
+      tokens.push({
+        type: 'pipe',
+        begin: i - 1,
+        end: i - 1,
+        content: ch,
+      })
+      begin = i
+    }
+    else if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
       const isStderrRedirect = ch === '>' && now === '2' && begin === i - 2
       if (isStderrRedirect) now = ''
       else consumeNow()
@@ -243,7 +268,7 @@ export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
 
   let text: HshExpandedTokenText | null = null
   for (const token of tokens) {
-    if (token.type === 'redirect') {
+    if (token.type === 'redirect' || token.type === 'pipe') {
       if (text) {
         expanded.push(text)
         text = null
@@ -291,6 +316,7 @@ export interface HshAstScript {
 export interface HshAstCommand {
   name: string
   args: string[]
+  pipeToNext?: true
   input?:
     | { type: 'readFrom', path: string }
   output?:
@@ -308,6 +334,7 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
 
   while (tokens.length) {
     const firstToken = tokens[0]
+    if (firstToken.type === 'pipe') throw new UserError('Expected command before pipe')
     const name = firstToken.type === 'redirect' ? 'cat' : firstToken.content
     if (firstToken.type !== 'redirect') tokens.shift()
 
@@ -319,7 +346,12 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
     while (tokens.length) {
       const token = tokens.shift()
       if (! token) break
-      if (token.type === 'redirect') {
+      if (token.type === 'pipe') {
+        if (! tokens.length) throw new UserError('Expected command after pipe')
+        command.pipeToNext = true
+        break
+      }
+      else if (token.type === 'redirect') {
         const target = tokens.shift()
         if (! target) throw new UserError('Expected redirect target, got end of input')
         if (target.type !== 'text') {

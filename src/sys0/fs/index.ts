@@ -71,9 +71,9 @@ export interface FReadKeyOptions {
 
 export interface FRead {
   readKey(options?: FReadKeyOptions): Awaitable<string>
-  read(): Awaitable<string>
-  readUntil(pred: Pred<string>): Awaitable<string>
-  readLn(): Awaitable<string>
+  read(options?: FReadKeyOptions): Awaitable<string>
+  readUntil(pred: Pred<string>, options?: FReadKeyOptions): Awaitable<string>
+  readLn(options?: FReadKeyOptions): Awaitable<string>
 }
 
 export interface FWrite {

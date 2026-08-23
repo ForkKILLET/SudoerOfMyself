@@ -44,17 +44,18 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
     })
   }
 
-  async* readChar() {
+  async* readChar(options?: FReadKeyOptions) {
     while (true) {
-      const key = await this.readKey()
+      const key = await this.readKey(options)
       if (! key) return '\0'
       yield* [...key].map(char => char === '\r' ? '\n' : char)
     }
   }
 
-  async readUntil(pred: Pred<string>) {
+  async readUntil(pred: Pred<string>, options?: FReadKeyOptions) {
     let data = ''
-    for await (const char of this.readChar()) {
+    for await (const char of this.readChar(options)) {
+      if (options?.signal?.aborted) break
       if (char === '\0' || char === '\x04' || pred(char)) break
       if (char === '\x7F') data = data.slice(0, - 1)
       else data += char
@@ -62,12 +63,12 @@ export class Stdin extends Emitter<StdinEvents> implements FRead {
     return data
   }
 
-  async read(): Promise<string> {
-    return this.readUntil(() => false)
+  async read(options?: FReadKeyOptions): Promise<string> {
+    return this.readUntil(() => false, options)
   }
 
-  async readLn(): Promise<string> {
-    return this.readUntil(char => char === '\n')
+  async readLn(options?: FReadKeyOptions): Promise<string> {
+    return this.readUntil(char => char === '\n', options)
   }
 }
 
@@ -150,9 +151,9 @@ export class Stdio implements FReadWrite {
   }
 
   readKey(options?: FReadKeyOptions) { return this.input.readKey(options) }
-  read() { return this.input.read() }
-  readLn() { return this.input.readLn() }
-  readUntil(pred: Pred<string>) { return this.input.readUntil(pred) }
+  read(options?: FReadKeyOptions) { return this.input.read(options) }
+  readLn(options?: FReadKeyOptions) { return this.input.readLn(options) }
+  readUntil(pred: Pred<string>, options?: FReadKeyOptions) { return this.input.readUntil(pred, options) }
   write(data: string) { this.output.write(data) }
   writeLn(data: string) { this.output.writeLn(data) }
   writeError(data: string) { this.error.write(data) }

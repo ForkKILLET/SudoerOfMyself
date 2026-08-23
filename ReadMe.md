@@ -5,13 +5,14 @@
 - [ ] Sys0 infrastructure
 
   - [ ] Process
-    - [ ] PID
+    - [x] PID
     - [ ] Schedule (possible in JS?)
 
   - [ ] Shell
+    - [x] Stderr
     - [x] History file
     - [x] Tab completion
-    - [ ] Pipe
+    - [x] Pipe
     - [x] Input redirecting
     - [ ] Env setting
     - [ ] Control flow syntax
