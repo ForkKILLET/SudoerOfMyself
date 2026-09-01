@@ -14,7 +14,7 @@ import { Result } from 'fk-result'
 import { ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
-import { JobTable, ProcessGroup } from '@/sys0/job'
+import { formatJobCompletion, JobTable, ProcessGroup } from '@/sys0/job'
 import {
   consumeLoopControlAtBoundary,
   enterShellLoop,
@@ -615,7 +615,16 @@ export const createHsh = ({
         },
         onEnd: () => stdio.writeLn('[Process exited]'),
       })
-      await loop.start()
+      const jobTable = proc.jobTable
+      const jobCompletionSubscription = jobTable.on('completed', (job) => {
+        readline.writeAbove(formatJobCompletion(job, jobTable.markerFor(job)))
+      })
+      try {
+        await loop.start()
+      }
+      finally {
+        jobCompletionSubscription.dispose()
+      }
     }
 
     else {

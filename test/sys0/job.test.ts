@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
-import { JobTable, ProcessGroup } from '@/sys0/job'
+import { formatJobCompletion, JobTable, ProcessGroup } from '@/sys0/job'
 import { Process } from '@/sys0/proc'
-import { normalExit, ProcessExit } from '@/sys0/process_exit'
+import { normalExit, ProcessExit, signalExit } from '@/sys0/process_exit'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
 
@@ -74,6 +74,8 @@ describe('ProcessGroup', () => {
 describe('JobTable', () => {
   it('retains completion state independently from active processes', async () => {
     const table = new JobTable()
+    const onCompleted = vi.fn()
+    table.on('completed', onCompleted)
     const completion = deferred<ProcessExit>()
     const job = table.create(new ProcessGroup(), 'example &', completion.promise)
 
@@ -86,5 +88,24 @@ describe('JobTable', () => {
     expect(job.state).toBe('completed')
     expect(job.exitStatus).toEqual(normalExit(7))
     expect(table.values()).toEqual([job])
+    expect(onCompleted).toHaveBeenCalledWith(job)
+    expect(formatJobCompletion(job, table.markerFor(job)))
+      .toBe('[1]  + - exit 7     example &')
+  })
+
+  it.each([
+    [normalExit(0), 'done      '],
+    [normalExit(3), 'exit 3    '],
+    [signalExit('SIGTERM'), 'terminated'],
+    [signalExit('SIGKILL'), 'killed    '],
+    [signalExit('SIGINT'), 'interrupted'],
+  ])('formats completion status for %j', async (exitStatus, label) => {
+    const table = new JobTable()
+    const job = table.create(new ProcessGroup(), 'example &', Promise.resolve(exitStatus))
+
+    await job.completion
+
+    expect(formatJobCompletion(job, table.markerFor(job)))
+      .toBe(`[1]  + - ${label} example &`)
   })
 })

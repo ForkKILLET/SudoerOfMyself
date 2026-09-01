@@ -135,6 +135,12 @@ export class Readline {
   ) {}
 
   private isReadingLn = false
+  private activeWriteAbove: ((message: string) => void) | null = null
+
+  writeAbove(message: string) {
+    if (this.activeWriteAbove) this.activeWriteAbove(message)
+    else this.stdio.writeLn(message)
+  }
 
   private async _readLn({
     history,
@@ -285,7 +291,16 @@ export class Readline {
     const signalSubscription = this.proc.on('signal', (signal) => {
       if (signal === 'SIGINT') abortController.abort()
     })
+    const writeAbove = (message: string) => {
+      if (line.compState) discardComp()
+      write('\x1B[2K\r')
+      this.stdio.writeLn(message)
+      this.loopHandle?.writePrompt(false)
+      write(line.content + back(w(line.after)))
+    }
+    this.activeWriteAbove = writeAbove
     const finish = <T>(value: T) => {
+      if (this.activeWriteAbove === writeAbove) this.activeWriteAbove = null
       signalSubscription.dispose()
       return value
     }

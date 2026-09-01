@@ -22,7 +22,33 @@ class KeyInput implements FRead {
   readLn() { return '' }
 }
 
-const createReadline = (keys: string[]) => {
+class PushInput implements FRead {
+  private keys: string[] = []
+  private resolveKey: ((key: string) => void) | null = null
+
+  push(key: string) {
+    if (this.resolveKey) {
+      const resolve = this.resolveKey
+      this.resolveKey = null
+      resolve(key)
+    }
+    else this.keys.push(key)
+  }
+
+  readKey() {
+    const key = this.keys.shift()
+    if (key !== undefined) return key
+    return new Promise<string>((resolve) => {
+      this.resolveKey = resolve
+    })
+  }
+
+  read() { return '' }
+  readUntil() { return '' }
+  readLn() { return '' }
+}
+
+const createReadline = (source: string[] | FRead) => {
   const terminalWrites: string[] = []
   const term = {
     buffer: { active: { cursorX: 0 } },
@@ -32,7 +58,7 @@ const createReadline = (keys: string[]) => {
     write: (value: string) => terminalWrites.push(value),
   } as unknown as Term
   const output = new Stdout(term)
-  const stdio = new Stdio(new KeyInput(keys), output)
+  const stdio = new Stdio(Array.isArray(source) ? new KeyInput(source) : source, output)
   const context = {
     processes: new ProcessTable(),
     term,
@@ -76,5 +102,20 @@ describe('readline completion editing', () => {
     readline.createLoop({ prompt: '> ' }).writePrompt()
 
     expect(stripAnsi(terminalWrites.join(''))).toBe('partial output%\r\n> ')
+  })
+
+  it('writes a notification above and restores the active input line', async () => {
+    const input = new PushInput()
+    const { readline, terminalWrites } = createReadline(input)
+    const reading = readline.readLn()
+
+    input.push('partially typed')
+    await Promise.resolve()
+    readline.writeAbove('[1]  + 42 done       example &')
+    input.push('\r')
+
+    await expect(reading).resolves.toBe('partially typed')
+    expect(stripAnsi(terminalWrites.join('')))
+      .toContain('[1]  + 42 done       example &\r\npartially typed')
   })
 })

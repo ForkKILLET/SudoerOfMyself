@@ -1,6 +1,7 @@
 import type { Process } from './proc'
 import type { ProcessExit, ProcessSignal } from './process_exit'
 import type { Pid } from './process_table'
+import { Emitter, type Events } from '@/utils/emitter'
 
 export type JobId = number
 export type JobState = 'running' | 'completed'
@@ -56,14 +57,41 @@ export class Job {
   }
 }
 
-export class JobTable {
+export interface JobTableEvents extends Events {
+  completed: [Job]
+}
+
+const COMPLETION_LABELS: Partial<Record<ProcessSignal, string>> = {
+  SIGINT: 'interrupted',
+  SIGKILL: 'killed',
+  SIGTERM: 'terminated',
+}
+
+export const formatJobCompletion = (job: Job, marker = ' ') => {
+  const exitStatus = job.exitStatus
+  const status = ! exitStatus || exitStatus.reason === 'exit'
+    ? exitStatus?.code ? `exit ${exitStatus.code}` : 'done'
+    : COMPLETION_LABELS[exitStatus.signal] ?? `killed (${exitStatus.signal})`
+  return `[${job.id}]  ${marker} ${job.group.pgid ?? '-'} ${status.padEnd(10)} ${job.command}`
+}
+
+export class JobTable extends Emitter<JobTableEvents> {
   private nextJobId: JobId = 1
   private readonly jobs = new Map<JobId, Job>()
 
   create(group: ProcessGroup, command: string, completion: Promise<ProcessExit>) {
     const job = new Job(this.nextJobId ++, group, command, completion)
     this.jobs.set(job.id, job)
+    void job.completion.then(() => this.emit('completed', job))
     return job
+  }
+
+  markerFor(job: Job) {
+    const jobs = this.values()
+    const index = jobs.indexOf(job)
+    if (index === jobs.length - 1) return '+'
+    if (index === jobs.length - 2) return '-'
+    return ' '
   }
 
   get(id: JobId) {
