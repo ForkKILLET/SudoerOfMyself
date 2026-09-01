@@ -2,7 +2,6 @@ import {
   type AsyncFileSystemStore,
   FileSystemRevisionConflictError,
 } from './persistence'
-import type { FileSystemSnapshot } from './save'
 import {
   type FileSystemImage,
   FILE_SYSTEM_IMAGE_FORMAT,
@@ -11,13 +10,11 @@ import {
 } from './image'
 
 export const FILE_SYSTEM_DATABASE_NAME = 'sudoer-of-myself'
-export const FILE_SYSTEM_DATABASE_VERSION = 2
-export const FILE_SYSTEM_OBJECT_STORE = 'file-system'
+export const FILE_SYSTEM_DATABASE_VERSION = 3
 export const FILE_SYSTEM_META_OBJECT_STORE = 'meta'
 export const FILE_SYSTEM_INODES_OBJECT_STORE = 'inodes'
-export const FILE_SYSTEM_SNAPSHOT_KEY = 'current'
-export const FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY = 'previous'
 export const FILE_SYSTEM_META_KEY = 'file-system'
+const LEGACY_FILE_SYSTEM_OBJECT_STORE = 'file-system'
 
 interface StoredFileSystemMetadata {
   format: FileSystemImage['format']
@@ -71,14 +68,14 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
       : indexedDB.open(databaseName, databaseVersion)
     request.addEventListener('upgradeneeded', () => {
       const database = request.result
-      if (! database.objectStoreNames.contains(FILE_SYSTEM_OBJECT_STORE)) {
-        database.createObjectStore(FILE_SYSTEM_OBJECT_STORE)
-      }
       if (! database.objectStoreNames.contains(FILE_SYSTEM_META_OBJECT_STORE)) {
         database.createObjectStore(FILE_SYSTEM_META_OBJECT_STORE)
       }
       if (! database.objectStoreNames.contains(FILE_SYSTEM_INODES_OBJECT_STORE)) {
         database.createObjectStore(FILE_SYSTEM_INODES_OBJECT_STORE, { keyPath: 'iid' })
+      }
+      if (database.objectStoreNames.contains(LEGACY_FILE_SYSTEM_OBJECT_STORE)) {
+        database.deleteObjectStore(LEGACY_FILE_SYSTEM_OBJECT_STORE)
       }
     })
     const database = await requestResult(request)
@@ -111,34 +108,6 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
     ])
     await completion
     return { metadata, inodes }
-  }
-
-  async loadPrevious() {
-    return this.loadLegacyKey(FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
-  }
-
-  private async loadLegacyKey(key: string) {
-    const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readonly')
-    const completion = transactionCompletion(transaction)
-    const snapshot = await requestResult(
-      transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).get(key),
-    ) as unknown
-    await completion
-    return snapshot
-  }
-
-  async save(snapshot: FileSystemSnapshot) {
-    const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
-    const completion = transactionCompletion(transaction)
-    const store = transaction.objectStore(FILE_SYSTEM_OBJECT_STORE)
-    const currentRequest = store.get(FILE_SYSTEM_SNAPSHOT_KEY)
-    currentRequest.addEventListener('success', () => {
-      if (currentRequest.result !== undefined) {
-        store.put(currentRequest.result, FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
-      }
-      store.put(snapshot, FILE_SYSTEM_SNAPSHOT_KEY)
-    }, { once: true })
-    await completion
   }
 
   async commit(delta: FsDelta, expectedRevision: number) {
@@ -196,21 +165,12 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
     return expectedRevision + 1
   }
 
-  async restore(snapshot: FileSystemSnapshot) {
-    const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
-    const completion = transactionCompletion(transaction)
-    transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).put(snapshot, FILE_SYSTEM_SNAPSHOT_KEY)
-    await completion
-  }
-
   async clear() {
     const transaction = this.database.transaction([
-      FILE_SYSTEM_OBJECT_STORE,
       FILE_SYSTEM_META_OBJECT_STORE,
       FILE_SYSTEM_INODES_OBJECT_STORE,
     ], 'readwrite')
     const completion = transactionCompletion(transaction)
-    transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).clear()
     transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).clear()
     transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).clear()
     await completion

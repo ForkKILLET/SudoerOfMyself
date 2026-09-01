@@ -45,9 +45,39 @@ describe('IndexedDbFileSystemStore', () => {
       FILE_SYSTEM_META_OBJECT_STORE,
       FILE_SYSTEM_INODES_OBJECT_STORE,
     ]))
+    expect([...database.objectStoreNames]).not.toContain('file-system')
     const transaction = database.transaction(FILE_SYSTEM_INODES_OBJECT_STORE, 'readonly')
     expect(transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).keyPath).toBe('iid')
     database.close()
+  })
+
+  it('removes the legacy snapshot store during schema upgrade', async () => {
+    const indexedDB = new IDBFactory()
+    const databaseName = 'fs-indexed-db-upgrade-test'
+    const legacyRequest = indexedDB.open(databaseName, 2)
+    legacyRequest.addEventListener('upgradeneeded', () => {
+      legacyRequest.result.createObjectStore('file-system')
+    }, { once: true })
+    const legacyDatabase = await new Promise<IDBDatabase>((resolve, reject) => {
+      legacyRequest.addEventListener('success', () => resolve(legacyRequest.result), { once: true })
+      legacyRequest.addEventListener('error', () => reject(legacyRequest.error), { once: true })
+    })
+    legacyDatabase.close()
+
+    const store = await IndexedDbFileSystemStore.open({ indexedDB, databaseName })
+    store.close()
+    const currentRequest = indexedDB.open(databaseName)
+    const currentDatabase = await new Promise<IDBDatabase>((resolve, reject) => {
+      currentRequest.addEventListener('success', () => resolve(currentRequest.result), { once: true })
+      currentRequest.addEventListener('error', () => reject(currentRequest.error), { once: true })
+    })
+
+    expect([...currentDatabase.objectStoreNames]).not.toContain('file-system')
+    expect([...currentDatabase.objectStoreNames]).toEqual(expect.arrayContaining([
+      FILE_SYSTEM_META_OBJECT_STORE,
+      FILE_SYSTEM_INODES_OBJECT_STORE,
+    ]))
+    currentDatabase.close()
   })
 
   it('atomically commits deltas at an expected revision', async () => {

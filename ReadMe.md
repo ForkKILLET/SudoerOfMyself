@@ -66,6 +66,11 @@ persistent root file system.
 ## Save recovery
 
 If startup throws, the game replaces the terminal with a recovery screen. The save
-can be exported as a JSON archive containing the original local-storage strings,
-including malformed inode data, before the file-system save is reset and the page
-is reloaded.
+can be exported as a JSON archive containing the raw IndexedDB metadata and inode
+records, including malformed data, before the file-system database is reset and
+the page is reloaded.
+
+The writable root file system is held synchronously in memory and persisted as
+inode-level deltas. IndexedDB stores metadata and inodes separately, but applies
+each delta and its revision update in one transaction. A Web Lock prevents two
+tabs from writing the same origin concurrently.
