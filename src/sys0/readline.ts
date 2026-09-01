@@ -36,7 +36,8 @@ export class ReadlineHistory {
   index: number
 
   constructor(public hist: string[] = []) {
-    this.index = hist.length - 1
+    if (! hist.length) this.hist = ['']
+    this.index = this.hist.length - 1
   }
 
   get size() {
@@ -177,7 +178,7 @@ export class Readline {
     }
 
     const kill = (length: number) => {
-      markDirty()
+      prepareEdit()
       const erased = line.content.slice(line.cursor - length, line.cursor)
       const erasedWidth = w(erased)
       const { after } = line
@@ -186,17 +187,17 @@ export class Readline {
       line.cursor -= length
     }
     const moveLeft = (length: number) => {
-      markDirty()
+      prepareEdit()
       write(m.left(w(line.content.slice(line.cursor - length, line.cursor))))
       line.cursor -= length
     }
     const moveRight = (length: number) => {
-      markDirty()
+      prepareEdit()
       write(m.right(w(line.content.slice(line.cursor, line.cursor + length))))
       line.cursor += length
     }
     const insert = (str: string) => {
-      markDirty()
+      prepareEdit()
       const { after } = line
       line.content = line.before + str + after
       line.cursor += str.length
@@ -273,11 +274,11 @@ export class Readline {
       replaceCandidate('')
       clearComp()
     }
-    const markDirty = () => {
+    const prepareEdit = () => {
       line.isDirty = true
-      if (line.compState && line.compState.index !== null) {
-        acceptComp()
-      }
+      if (! line.compState) return
+      if (line.compState.index === null) clearComp()
+      else acceptComp()
     }
 
     const abortController = new AbortController()
@@ -327,6 +328,7 @@ export class Readline {
         }
       }
       else if (data === '\x7F' || data === '\x08') { // Backspace / Ctrl + H
+        prepareEdit()
         if (line.cursor) kill(1)
       }
       else if (data === '\t' || data === '\x1B[Z') { // Tab / Shift + Tab
@@ -424,6 +426,7 @@ export class Readline {
         moveRight(1)
       }
       else if (data === '\x1B[1;5C') { // Ctrl + Right
+        prepareEdit()
         if (line.cursor === line.content.length) continue
         moveRight(wordEnd() - line.cursor)
       }
@@ -446,10 +449,13 @@ export class Readline {
         moveLeft(1)
       }
       else if (data === '\x1B[1;5D') { // Ctrl + Left
+        prepareEdit()
         if (! line.cursor) continue
         moveLeft(line.cursor - wordBegin())
       }
-      else if (data === '\x1B\x7F') { // Alt + Backspace
+      else if (data === '\x1B\x7F' || data === '\x1Bw' || data === '\x17') {
+        // Alt + Backspace / Alt + W / Ctrl + W
+        prepareEdit()
         if (! line.cursor) continue
         kill(line.cursor - wordBegin())
       }
@@ -460,7 +466,7 @@ export class Readline {
         if (line.compState) {
           continue
         }
-        if (line.before) markDirty()
+        if (line.before) prepareEdit()
         write(m.left(w(line.before)))
         line.cursor = 0
       }
@@ -468,7 +474,7 @@ export class Readline {
         if (line.compState) {
           continue
         }
-        if (line.after) markDirty()
+        if (line.after) prepareEdit()
         write(m.right(w(line.after)))
         line.cursor = line.content.length
       }
@@ -483,7 +489,7 @@ export class Readline {
         }
       }
       else if (data === '\x15') { // Ctrl + U
-        markDirty()
+        prepareEdit()
         write(rewrite(''))
         line.content = ''
         line.cursor = 0
