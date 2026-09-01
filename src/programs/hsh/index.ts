@@ -150,7 +150,7 @@ export const executePipeline = async (
       pipelineStage: true,
       processGroup: options.processGroup,
       foreground: options.foreground,
-    }).finally(() => output?.close())
+    })
   })
   return Promise.all(runs)
 }

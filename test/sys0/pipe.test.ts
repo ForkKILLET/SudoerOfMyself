@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createPipe } from '@/sys0/pipe'
+import { FdTable, OpenFileDescription } from '@/sys0/fd'
 
 describe('anonymous pipe', () => {
   it('blocks reads until data is written', async () => {
@@ -44,5 +45,42 @@ describe('anonymous pipe', () => {
     abortController.abort()
 
     await expect(reading).resolves.toBe('')
+  })
+
+  it('delays EOF until the last duplicated writer descriptor closes', async () => {
+    const pipe = createPipe()
+    const table = new FdTable()
+    const description = new OpenFileDescription({
+      writable: pipe.writer,
+      close: () => pipe.writer.close(),
+    })
+    table.set(1, description).unwrap()
+    table.duplicate(1, 4).unwrap()
+
+    table.close(1).unwrap()
+    table.getWritable(4).unwrap().writeLn('still open')
+    expect(await pipe.reader.readLn()).toBe('still open')
+
+    const eof = pipe.reader.readKey()
+    table.close(4).unwrap()
+    await expect(eof).resolves.toBe('\x04')
+  })
+
+  it('keeps a pipe writer open while an inherited descriptor remains', async () => {
+    const pipe = createPipe()
+    const parent = new FdTable()
+    parent.open({
+      writable: pipe.writer,
+      close: () => pipe.writer.close(),
+    }).unwrap()
+    const child = parent.fork()
+
+    parent.closeAll()
+    child.getWritable(0).unwrap().writeLn('child')
+    expect(await pipe.reader.readLn()).toBe('child')
+
+    const eof = pipe.reader.readKey()
+    child.closeAll()
+    await expect(eof).resolves.toBe('\x04')
   })
 })
