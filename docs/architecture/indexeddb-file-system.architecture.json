@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SudoerOfMyself 持久化文件系统",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 700],
+    "repository": {
+      "url": "https://github.com/ForkKILLET/SudoerOfMyself",
+      "revision": "14d09302fbc2715736311c42f3e9c127728bdb89"
+    }
+  },
+  "components": [
+    {
+      "id": "terminal",
+      "type": "frontend",
+      "label": "终端界面",
+      "sublabel": "xterm + readline",
+      "pos": [30, 300],
+      "size": [130, 68],
+      "sources": [{ "path": "src/sys0/term.ts" }, { "path": "src/sys0/readline.ts" }]
+    },
+    {
+      "id": "shell",
+      "type": "backend",
+      "label": "Shell 与程序",
+      "sublabel": "hsh / pipes / redirects",
+      "pos": [205, 300],
+      "size": [140, 68],
+      "sources": [{ "path": "src/programs/hsh/index.ts" }]
+    },
+    {
+      "id": "vfs",
+      "type": "backend",
+      "label": "内存 VFS",
+      "sublabel": "同步 inode 操作",
+      "tag": "运行时真相",
+      "pos": [390, 300],
+      "size": [140, 68],
+      "sources": [{ "path": "src/sys0/fs/index.ts" }, { "path": "src/sys0/fs/file_handle.ts" }]
+    },
+    {
+      "id": "scheduler",
+      "type": "messagebus",
+      "label": "保存调度器",
+      "sublabel": "generation + debounce",
+      "tag": "25 ms",
+      "pos": [575, 300],
+      "size": [145, 68],
+      "sources": [{ "path": "src/sys0/fs/index.ts" }]
+    },
+    {
+      "id": "queue",
+      "type": "messagebus",
+      "label": "QueuedFsPersistence",
+      "sublabel": "合并并串行提交",
+      "pos": [765, 300],
+      "size": [165, 68],
+      "sources": [{ "path": "src/sys0/fs/persistence.ts" }]
+    },
+    {
+      "id": "adapter",
+      "type": "backend",
+      "label": "IndexedDB Adapter",
+      "sublabel": "单快照 object store",
+      "pos": [980, 300],
+      "size": [160, 68],
+      "sources": [{ "path": "src/sys0/fs/indexed_db.ts" }]
+    },
+    {
+      "id": "indexeddb",
+      "type": "database",
+      "label": "Browser IndexedDB",
+      "sublabel": "key: current",
+      "tag": "origin scoped",
+      "pos": [1185, 300],
+      "size": [155, 68],
+      "sources": [{ "path": "src/sys0/fs/indexed_db.ts" }]
+    },
+    {
+      "id": "boot",
+      "type": "cloud",
+      "label": "异步启动",
+      "sublabel": "load → validate → Context",
+      "pos": [575, 90],
+      "size": [180, 68],
+      "sources": [{ "path": "src/index.ts" }, { "path": "src/sys0/fs/save.ts" }]
+    },
+    {
+      "id": "readonly_bin",
+      "type": "external",
+      "label": "/bin 镜像",
+      "sublabel": "每次全新只读挂载",
+      "pos": [370, 520],
+      "size": [180, 68],
+      "sources": [{ "path": "src/data/sys_image.ts" }, { "path": "src/index.ts" }]
+    },
+    {
+      "id": "recovery",
+      "type": "security",
+      "label": "恢复模式",
+      "sublabel": "导出原始快照 / 重置",
+      "pos": [970, 520],
+      "size": [180, 68],
+      "sources": [{ "path": "src/recovery.ts" }]
+    },
+    {
+      "id": "storage_policy",
+      "type": "cloud",
+      "label": "StorageManager",
+      "sublabel": "persist() 请求",
+      "pos": [1175, 90],
+      "size": [175, 68],
+      "sources": [{ "path": "src/index.ts" }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "同步运行时 / 主线程",
+      "wraps": ["terminal", "shell", "vfs", "scheduler"],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "异步持久化边界",
+      "wraps": ["queue", "adapter", "indexeddb"],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "terminal",
+      "to": "shell",
+      "label": "命令与输入",
+      "variant": "emphasis",
+      "labelAt": [183, 382]
+    },
+    {
+      "from": "shell",
+      "to": "vfs",
+      "label": "同步 VFS API",
+      "variant": "emphasis",
+      "labelAt": [368, 382]
+    },
+    {
+      "from": "vfs",
+      "to": "scheduler",
+      "label": "markDirty()",
+      "variant": "emphasis",
+      "labelAt": [552, 382]
+    },
+    {
+      "from": "scheduler",
+      "to": "queue",
+      "label": "snapshot / flush()",
+      "variant": "dashed",
+      "labelAt": [742, 382]
+    },
+    {
+      "from": "queue",
+      "to": "adapter",
+      "label": "串行 save(snapshot)",
+      "variant": "dashed",
+      "labelAt": [955, 382]
+    },
+    {
+      "from": "adapter",
+      "to": "indexeddb",
+      "label": "readwrite transaction",
+      "variant": "security",
+      "labelAt": [1162, 296]
+    },
+    {
+      "from": "boot",
+      "to": "vfs",
+      "label": "校验后 hydrate",
+      "variant": "emphasis"
+    },
+    {
+      "from": "adapter",
+      "to": "boot",
+      "label": "load(current) Promise",
+      "variant": "dashed"
+    },
+    {
+      "from": "readonly_bin",
+      "to": "vfs",
+      "label": "read-only mount",
+      "variant": "dashed"
+    },
+    {
+      "from": "recovery",
+      "to": "adapter",
+      "label": "导出原始快照",
+      "variant": "security"
+    },
+    {
+      "from": "recovery",
+      "to": "indexeddb",
+      "label": "deleteDatabase()",
+      "variant": "security"
+    },
+    {
+      "from": "storage_policy",
+      "to": "indexeddb",
+      "label": "请求持久存储",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1263, 172]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "同步语义保持不变",
+      "items": [
+        "程序和 syscall 始终读写内存 VFS",
+        "只有启动、自动保存和 flush() 穿过异步边界"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "一致性边界",
+      "items": [
+        "父目录、inode 和文件内容进入同一个版本化快照",
+        "IndexedDB 用单个事务原子替换 current"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "故障恢复",
+      "items": [
+        "hydrate 前检查格式、版本、root 和悬空引用",
+        "启动失败仍可导出原始值或删除整个数据库"
+      ]
+    }
+  ]
+}
