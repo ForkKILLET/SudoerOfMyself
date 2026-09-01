@@ -19,16 +19,46 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
           receivedSignal = signal
           abortController.abort()
         })
-        let data: string
         try {
-          data = await stdio.read({ signal: abortController.signal })
+          let terminalLine = ''
+          while (true) {
+            const data = await stdio.readKey({ signal: abortController.signal })
+            if (receivedSignal) return signalExit(receivedSignal)
+
+            let reachedEof = false
+            for (const inputChar of data) {
+              if (inputChar === '\x04') {
+                reachedEof = true
+                break
+              }
+
+              if (! stdio.stdin) {
+                stdio.write(inputChar)
+                continue
+              }
+
+              const char = inputChar === '\r' ? '\n' : inputChar
+              if (char === '\n') {
+                stdio.writeLn(terminalLine)
+                terminalLine = ''
+              }
+              else if (char === '\x7F') {
+                terminalLine = [...terminalLine].slice(0, - 1).join('')
+              }
+              else {
+                terminalLine += char
+              }
+            }
+
+            if (! reachedEof) continue
+            if (terminalLine) stdio.write(terminalLine)
+            break
+          }
         }
         finally {
           signalSubscription.dispose()
         }
-        if (receivedSignal) return signalExit(receivedSignal)
-        stdio.write(data)
-        return 0
+        continue
       }
       try {
         const fh = ctx.fs.openU(path, 'r').handle
