@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Emitter, Events } from '@/utils/emitter'
 import { IDisposable } from '@/utils/disposable'
 import { RemoveIndex } from '@/utils/types'
+import { handleTerminalCopyShortcut } from './terminal_shortcuts'
 
 export interface TerminalEvents extends Events {
   data: [ string ]
@@ -35,6 +36,10 @@ export class Term extends Terminal {
       webglAddon.dispose()
     })
     this.loadAddon(webglAddon)
+
+    this.attachCustomKeyEventHandler(event => (
+      handleTerminalCopyShortcut(event, () => this.getSelection())
+    ))
 
     this.onData((data) => {
       if (this.doEcho) {
