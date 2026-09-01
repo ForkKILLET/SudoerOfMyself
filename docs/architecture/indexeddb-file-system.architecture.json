@@ -2,239 +2,244 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "SudoerOfMyself 持久化文件系统",
-    "locale": "zh-CN",
+    "title": "SudoerOfMyself 文件系统：内存语义与 IndexedDB Delta 持久化",
+    "output": "indexeddb-file-system.architecture.html",
     "quality_profile": "showcase",
-    "viewBox": [1380, 700],
+    "locale": "zh-CN",
+    "viewBox": [1380, 760],
     "repository": {
       "url": "https://github.com/ForkKILLET/SudoerOfMyself",
-      "revision": "14d09302fbc2715736311c42f3e9c127728bdb89"
-    }
+      "revision": "1fd7bd8d4948a3e8215b3b76304c3374d7f59de0"
+    },
+    "views": [
+      {
+        "id": "write-path",
+        "label": "写入与提交",
+        "focus": ["programs", "vfs", "delta", "queue", "adapter", "meta", "inodes"],
+        "note": "从同步文件 API 跟随精确 inode delta，直到同一 IndexedDB 事务中的 revision 与 inode 更新。"
+      },
+      {
+        "id": "boot-path",
+        "label": "启动与装载",
+        "focus": ["boot", "writer-lock", "adapter", "vfs", "readonly-bin"],
+        "note": "查看单写者租约、持久化 image 校验，以及每次启动重新挂载的只读 /bin。"
+      },
+      {
+        "id": "failure-path",
+        "label": "冲突与恢复",
+        "focus": ["queue", "adapter", "meta", "inodes", "recovery", "storage-policy"],
+        "note": "隔离 revision 冲突、浏览器存储策略，以及加载失败后的原始导出和重置路径。"
+      }
+    ]
   },
   "components": [
     {
-      "id": "terminal",
-      "type": "frontend",
-      "label": "终端界面",
-      "sublabel": "xterm + readline",
-      "pos": [30, 300],
-      "size": [130, 68],
-      "sources": [{ "path": "src/sys0/term.ts" }, { "path": "src/sys0/readline.ts" }]
-    },
-    {
-      "id": "shell",
-      "type": "backend",
-      "label": "Shell 与程序",
-      "sublabel": "hsh / pipes / redirects",
-      "pos": [205, 300],
-      "size": [140, 68],
-      "sources": [{ "path": "src/programs/hsh/index.ts" }]
+      "id": "programs",
+      "type": "external",
+      "label": "Shell / 程序 / FileHandle",
+      "sublabel": "同步 POSIX 风格调用",
+      "pos": [30, 310],
+      "size": [160, 72],
+      "tag": "同步语义",
+      "sources": [
+        { "path": "src/programs/hsh/index.ts" },
+        { "path": "src/sys0/fs/file_handle.ts" }
+      ]
     },
     {
       "id": "vfs",
       "type": "backend",
       "label": "内存 VFS",
-      "sublabel": "同步 inode 操作",
+      "sublabel": "inode 身份 / fd / 路径解析",
+      "pos": [235, 310],
+      "size": [155, 72],
       "tag": "运行时真相",
-      "pos": [390, 300],
-      "size": [140, 68],
-      "sources": [{ "path": "src/sys0/fs/index.ts" }, { "path": "src/sys0/fs/file_handle.ts" }]
+      "sources": [
+        { "path": "src/sys0/fs/index.ts" },
+        { "path": "src/sys0/fs/vfs.ts" }
+      ]
     },
     {
-      "id": "scheduler",
+      "id": "delta",
       "type": "messagebus",
-      "label": "保存调度器",
-      "sublabel": "generation + debounce",
-      "tag": "25 ms",
-      "pos": [575, 300],
-      "size": [145, 68],
-      "sources": [{ "path": "src/sys0/fs/index.ts" }]
+      "label": "FsDelta 登记器",
+      "sublabel": "put / delete / replaceAll",
+      "pos": [440, 310],
+      "size": [165, 72],
+      "tag": "精确变更",
+      "sources": [
+        { "path": "src/sys0/fs/image.ts" },
+        { "path": "src/sys0/fs/index.ts" }
+      ]
     },
     {
       "id": "queue",
       "type": "messagebus",
       "label": "QueuedFsPersistence",
-      "sublabel": "合并并串行提交",
-      "pos": [765, 300],
-      "size": [165, 68],
-      "sources": [{ "path": "src/sys0/fs/persistence.ts" }]
+      "sublabel": "merge + debounce + 串行提交",
+      "pos": [655, 310],
+      "size": [180, 72],
+      "tag": "expectedRevision",
+      "sources": [
+        { "path": "src/sys0/fs/persistence.ts" }
+      ]
     },
     {
       "id": "adapter",
       "type": "backend",
-      "label": "IndexedDB Adapter",
-      "sublabel": "单快照 object store",
-      "pos": [980, 300],
-      "size": [160, 68],
-      "sources": [{ "path": "src/sys0/fs/indexed_db.ts" }]
+      "label": "IndexedDbFsPersistence",
+      "sublabel": "原子 commit(delta, revision)",
+      "pos": [890, 310],
+      "size": [185, 72],
+      "tag": "readwrite 事务",
+      "sources": [
+        { "path": "src/sys0/fs/indexed_db.ts" }
+      ]
     },
     {
-      "id": "indexeddb",
+      "id": "meta",
       "type": "database",
-      "label": "Browser IndexedDB",
-      "sublabel": "key: current",
-      "tag": "origin scoped",
-      "pos": [1185, 300],
-      "size": [155, 68],
-      "sources": [{ "path": "src/sys0/fs/indexed_db.ts" }]
+      "label": "meta store",
+      "sublabel": "format/version + revision",
+      "pos": [1140, 245],
+      "size": [165, 68],
+      "tag": "CAS guard",
+      "sources": [
+        { "path": "src/sys0/fs/indexed_db.ts" }
+      ]
+    },
+    {
+      "id": "inodes",
+      "type": "database",
+      "label": "inodes store",
+      "sublabel": "inodeId → serialized inode",
+      "pos": [1140, 375],
+      "size": [165, 68],
+      "tag": "durable data",
+      "sources": [
+        { "path": "src/sys0/fs/indexed_db.ts" }
+      ]
     },
     {
       "id": "boot",
       "type": "cloud",
-      "label": "异步启动",
-      "sublabel": "load → validate → Context",
-      "pos": [575, 90],
-      "size": [180, 68],
-      "sources": [{ "path": "src/index.ts" }, { "path": "src/sys0/fs/save.ts" }]
+      "label": "启动 / hydrate",
+      "sublabel": "load → assert image → VFS",
+      "pos": [365, 85],
+      "size": [175, 72],
+      "tag": "fail closed",
+      "sources": [
+        { "path": "src/index.ts" },
+        { "path": "src/sys0/fs/image.ts" }
+      ]
     },
     {
-      "id": "readonly_bin",
+      "id": "writer-lock",
+      "type": "security",
+      "label": "Writer Lock",
+      "sublabel": "Web Locks exclusive lease",
+      "pos": [655, 85],
+      "size": [180, 72],
+      "tag": "单标签页写者",
+      "sources": [
+        { "path": "src/sys0/fs/writer_lock.ts" },
+        { "path": "src/index.ts" }
+      ]
+    },
+    {
+      "id": "readonly-bin",
       "type": "external",
-      "label": "/bin 镜像",
-      "sublabel": "每次全新只读挂载",
-      "pos": [370, 520],
-      "size": [180, 68],
-      "sources": [{ "path": "src/data/sys_image.ts" }, { "path": "src/index.ts" }]
+      "label": "只读 /bin 镜像",
+      "sublabel": "每次启动全新挂载",
+      "pos": [235, 525],
+      "size": [155, 68],
+      "tag": "不持久化",
+      "sources": [
+        { "path": "src/data/sys_image.ts" },
+        { "path": "src/index.ts" }
+      ]
     },
     {
       "id": "recovery",
       "type": "security",
       "label": "恢复模式",
-      "sublabel": "导出原始快照 / 重置",
-      "pos": [970, 520],
-      "size": [180, 68],
-      "sources": [{ "path": "src/recovery.ts" }]
+      "sublabel": "exportRaw / deleteDatabase",
+      "pos": [890, 525],
+      "size": [185, 68],
+      "tag": "加载失败兜底",
+      "sources": [
+        { "path": "src/recovery.ts" },
+        { "path": "src/sys0/fs/indexed_db.ts" }
+      ]
     },
     {
-      "id": "storage_policy",
+      "id": "storage-policy",
       "type": "cloud",
-      "label": "StorageManager",
-      "sublabel": "persist() 请求",
-      "pos": [1175, 90],
-      "size": [175, 68],
-      "sources": [{ "path": "src/index.ts" }]
+      "label": "浏览器存储策略",
+      "sublabel": "navigator.storage.persist()",
+      "pos": [1140, 85],
+      "size": [165, 72],
+      "tag": "best effort",
+      "sources": [
+        { "path": "src/index.ts" }
+      ]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "同步运行时 / 主线程",
-      "wraps": ["terminal", "shell", "vfs", "scheduler"],
-      "pad": 20
+      "label": "同步运行时",
+      "wraps": ["programs", "vfs", "delta"]
+    },
+    {
+      "kind": "region",
+      "label": "异步持久化边界",
+      "wraps": ["queue", "adapter", "meta", "inodes"]
     },
     {
       "kind": "security-group",
-      "label": "异步持久化边界",
-      "wraps": ["queue", "adapter", "indexeddb"],
-      "pad": 20
+      "label": "浏览器协调与耐久性",
+      "wraps": ["writer-lock", "storage-policy"]
     }
   ],
   "connections": [
-    {
-      "from": "terminal",
-      "to": "shell",
-      "label": "命令与输入",
-      "variant": "emphasis",
-      "labelAt": [183, 382]
-    },
-    {
-      "from": "shell",
-      "to": "vfs",
-      "label": "同步 VFS API",
-      "variant": "emphasis",
-      "labelAt": [368, 382]
-    },
-    {
-      "from": "vfs",
-      "to": "scheduler",
-      "label": "markDirty()",
-      "variant": "emphasis",
-      "labelAt": [552, 382]
-    },
-    {
-      "from": "scheduler",
-      "to": "queue",
-      "label": "snapshot / flush()",
-      "variant": "dashed",
-      "labelAt": [742, 382]
-    },
-    {
-      "from": "queue",
-      "to": "adapter",
-      "label": "串行 save(snapshot)",
-      "variant": "dashed",
-      "labelAt": [955, 382]
-    },
-    {
-      "from": "adapter",
-      "to": "indexeddb",
-      "label": "readwrite transaction",
-      "variant": "security",
-      "labelAt": [1162, 296]
-    },
-    {
-      "from": "boot",
-      "to": "vfs",
-      "label": "校验后 hydrate",
-      "variant": "emphasis"
-    },
-    {
-      "from": "adapter",
-      "to": "boot",
-      "label": "load(current) Promise",
-      "variant": "dashed"
-    },
-    {
-      "from": "readonly_bin",
-      "to": "vfs",
-      "label": "read-only mount",
-      "variant": "dashed"
-    },
-    {
-      "from": "recovery",
-      "to": "adapter",
-      "label": "导出原始快照",
-      "variant": "security"
-    },
-    {
-      "from": "recovery",
-      "to": "indexeddb",
-      "label": "deleteDatabase()",
-      "variant": "security"
-    },
-    {
-      "from": "storage_policy",
-      "to": "indexeddb",
-      "label": "请求持久存储",
-      "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelAt": [1263, 172]
-    }
+    { "id": "programs-to-vfs", "from": "programs", "to": "vfs", "label": "同步文件 API", "variant": "emphasis", "labelAt": [213, 306] },
+    { "id": "vfs-to-delta", "from": "vfs", "to": "delta", "label": "变更的 inode", "variant": "emphasis", "labelAt": [415, 396] },
+    { "id": "delta-to-queue", "from": "delta", "to": "queue", "label": "merge delta", "variant": "emphasis", "labelAt": [630, 306] },
+    { "id": "queue-to-adapter", "from": "queue", "to": "adapter", "label": "commit(delta, expectedRevision)", "variant": "emphasis", "labelAt": [863, 396] },
+    { "id": "adapter-to-meta", "from": "adapter", "to": "meta", "label": "校验并 revision + 1", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [1108, 241] },
+    { "id": "adapter-to-inodes", "from": "adapter", "to": "inodes", "label": "clear / put / delete", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [1108, 457] },
+    { "id": "boot-to-lock", "from": "boot", "to": "writer-lock", "label": "请求 exclusive lease", "variant": "security" },
+    { "id": "lock-to-queue", "from": "writer-lock", "to": "queue", "label": "构造队列并 load image", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [745, 171] },
+    { "id": "boot-hydrate", "from": "boot", "to": "vfs", "label": "校验后 hydrate", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "bin-to-vfs", "from": "readonly-bin", "to": "vfs", "label": "启动时覆盖挂载", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "recovery-export", "from": "recovery", "to": "inodes", "label": "原始导出", "variant": "dashed", "fromSide": "right", "toSide": "bottom" },
+    { "id": "recovery-reset", "from": "recovery", "to": "adapter", "label": "重置存档", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "storage-policy-to-idb", "from": "storage-policy", "to": "meta", "label": "origin 存储持久化", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [1322, 201] }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "同步语义保持不变",
+      "title": "同步运行时",
       "items": [
-        "程序和 syscall 始终读写内存 VFS",
-        "只有启动、自动保存和 flush() 穿过异步边界"
+        "Shell、程序和 FileHandle 只面对内存 VFS；IndexedDB 延迟不污染同步调用链",
+        "FileHandle 保留 inode 对象身份；已 detached 的 handle 不会把删除 inode 写回"
       ]
     },
     {
       "dot": "emerald",
-      "title": "一致性边界",
+      "title": "Delta 与一致性",
       "items": [
-        "父目录、inode 和文件内容进入同一个版本化快照",
-        "IndexedDB 用单个事务原子替换 current"
+        "创建路径直接返回新 inode；每次变更登记为 put、delete 或 replaceAll",
+        "meta 与 inodes 在同一事务提交；revision 不匹配时队列终止并 fail closed"
       ]
     },
     {
       "dot": "rose",
-      "title": "故障恢复",
+      "title": "启动与恢复",
       "items": [
-        "hydrate 前检查格式、版本、root 和悬空引用",
-        "启动失败仍可导出原始值或删除整个数据库"
+        "Web Lock 限定单写者；/bin 来自代码镜像并在每次启动时只读挂载",
+        "image 校验或加载失败时进入恢复模式，可导出原始存档后删除数据库重置"
       ]
     }
   ]
