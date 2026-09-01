@@ -1,8 +1,9 @@
 import { assertFileSystemSnapshot, type FileSystemSnapshot } from './save'
+import type { FsDelta } from './image'
 
 export interface FsPersistence {
   load(): FileSystemSnapshot | undefined
-  save(snapshot: FileSystemSnapshot): void
+  save(snapshot: FileSystemSnapshot, delta: FsDelta): void
   flush(): Promise<void>
 }
 

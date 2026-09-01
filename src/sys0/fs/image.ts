@@ -37,6 +37,13 @@ export const createPutDelta = (inode: Inode): FsDelta => ({
   deletes: new Set(),
 })
 
+export const createPutsDelta = (inodes: Iterable<Inode>): FsDelta => ({
+  puts: new Map(
+    [...inodes].map(inode => [inode.iid, structuredClone(inode)]),
+  ),
+  deletes: new Set(),
+})
+
 export const createDeleteDelta = (iid: InodeId): FsDelta => ({
   puts: new Map(),
   deletes: new Set([iid]),

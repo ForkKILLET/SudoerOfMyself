@@ -13,6 +13,18 @@ import {
 } from './save'
 import { Vfs } from './vfs'
 import { Path } from './path'
+import {
+  createDeleteDelta,
+  createFsDelta,
+  createPutsDelta,
+  createPutDelta,
+  createReplaceAllDelta,
+  FILE_SYSTEM_IMAGE_FORMAT,
+  FILE_SYSTEM_IMAGE_VERSION,
+  FileSystemReplacement,
+  FsDelta,
+  mergeFsDelta,
+} from './image'
 
 export const enum FileT {
   DIR,
@@ -220,6 +232,7 @@ export class Fs {
   private readonly mountsByParent = new WeakMap<DirFile, Map<string, MountedFs>>()
   private generation = 0
   private saveTimer: ReturnType<typeof setTimeout> | undefined
+  private pendingDelta = createFsDelta()
 
   constructor(
     private readonly initialImage: Vfs.DirVfile,
@@ -248,6 +261,7 @@ export class Fs {
     this.inodeBitmap.clear()
     this.createInitialImage()
     this.generation ++
+    this.pendingDelta = createReplaceAllDelta(this.createReplacement())
     this.persistNow()
     this.mounts.forEach(mount => this.attachMount(mount))
     if (this.isReadOnly) this.freezeFiles()
@@ -258,6 +272,7 @@ export class Fs {
     if (! snapshot) {
       this.createInitialImage()
       this.generation = 1
+      this.pendingDelta = createReplaceAllDelta(this.createReplacement())
       this.persistNow()
       return
     }
@@ -295,14 +310,26 @@ export class Fs {
     return structuredClone(this.createSnapshot())
   }
 
+  private createReplacement(): FileSystemReplacement {
+    return {
+      format: FILE_SYSTEM_IMAGE_FORMAT,
+      version: FILE_SYSTEM_IMAGE_VERSION,
+      rootIid: this.rootIid,
+      inodes: [...this.inodes.values()],
+    }
+  }
+
   private persistNow() {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = undefined
-    this.persistence.save(this.createSnapshot())
+    const delta = this.pendingDelta
+    this.pendingDelta = createFsDelta()
+    this.persistence.save(this.createSnapshot(), delta)
   }
 
-  private markDirty = () => {
+  private markDirty(delta: FsDelta) {
     this.generation ++
+    this.pendingDelta = mergeFsDelta(this.pendingDelta, delta)
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => this.persistNow(), SAVE_DEBOUNCE_MS)
   }
@@ -385,8 +412,13 @@ export class Fs {
 
   create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
     if (this.isReadOnly) return this.readOnlyError()
+    const existingIids = new Set(this.inodes.keys())
     const result = this.createUnchecked(tree)
-    if (result.isOk) this.markDirty()
+    if (result.isOk) {
+      this.markDirty(createPutsDelta(
+        [...this.inodes].filter(([iid]) => ! existingIids.has(iid)).map(([, inode]) => inode),
+      ))
+    }
     return result
   }
 
@@ -407,11 +439,17 @@ export class Fs {
     if (owner && owner !== this) return owner.createAt(parent, name, tree)
     if (this.isReadOnly) return this.readOnlyError()
     if (this.getChildInode(parent.file, name)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
+    const existingIids = new Set(this.inodes.keys())
     const createRes = this.createUnchecked(tree)
     if (createRes.isErr) return createRes
 
     parent.file.entries[name] = createRes.val.inode.iid
-    this.markDirty()
+    this.markDirty(createPutsDelta([
+      parent,
+      ...[...this.inodes]
+        .filter(([iid]) => ! existingIids.has(iid))
+        .map(([, inode]) => inode),
+    ]))
     return createRes
   }
 
@@ -586,7 +624,10 @@ export class Fs {
     this.inodeBitmap.set(iid, 0)
     delete parentInode.file.entries[filename]
 
-    this.markDirty()
+    this.markDirty(mergeFsDelta(
+      createDeleteDelta(iid),
+      createPutDelta(parentInode),
+    ))
 
     return FOp.ok(undefined)
   }
@@ -615,7 +656,7 @@ export class Fs {
 
   private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
     const Handle = FILE_HANDLE_FROM_MODE[mode]
-    return new Handle(this.markDirty, inode) as FileHandleFromMode<FM>
+    return new Handle(() => this.markDirty(createPutDelta(inode)), inode) as FileHandleFromMode<FM>
   }
 
   open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {
@@ -645,7 +686,7 @@ export class Fs {
 
     if (mode === 'w' || mode === 'rw') {
       inode.file.content = ''
-      this.markDirty()
+      this.markDirty(createPutDelta(inode))
     }
 
     return FOp.ok({

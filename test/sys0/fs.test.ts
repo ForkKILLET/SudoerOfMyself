@@ -3,6 +3,17 @@ import { FileT, FOp, Fs, Inode } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import { Bitmap } from '@/utils/bitmap'
+import { cloneFsDelta, type FsDelta } from '@/sys0/fs/image'
+import type { FileSystemSnapshot } from '@/sys0/fs/save'
+
+class RecordingPersistence extends MemoryFsPersistence {
+  readonly deltas: FsDelta[] = []
+
+  override save(snapshot: FileSystemSnapshot, delta?: FsDelta) {
+    super.save(snapshot)
+    if (delta) this.deltas.push(cloneFsDelta(delta))
+  }
+}
 
 const createFs = () => {
   const persistence = new MemoryFsPersistence()
@@ -46,6 +57,34 @@ describe('Fs file handles', () => {
 })
 
 describe('Fs mutation consistency', () => {
+  it('registers exact inode puts, deletes, and full replacements', async () => {
+    const persistence = new RecordingPersistence()
+    const fs = new Fs(Vfs.dir({ file: Vfs.normal('old') }), { persistence })
+    persistence.deltas.length = 0
+    const rootIid = fs.root.iid
+    const fileIid = fs.findInodeU('/file').inode.iid
+
+    fs.openU('/file', 'a').handle.write(' content')
+    await fs.flush()
+    expect([...persistence.deltas.at(- 1)?.puts.keys() ?? []]).toEqual([fileIid])
+    expect(persistence.deltas.at(- 1)?.deletes.size).toBe(0)
+
+    fs.mkdirU('/created')
+    await fs.flush()
+    const createdIid = fs.findInodeU('/created').inode.iid
+    expect(new Set(persistence.deltas.at(- 1)?.puts.keys())).toEqual(new Set([rootIid, createdIid]))
+
+    fs.rmU('/file')
+    await fs.flush()
+    expect([...persistence.deltas.at(- 1)?.puts.keys() ?? []]).toEqual([rootIid])
+    expect(persistence.deltas.at(- 1)?.deletes).toEqual(new Set([fileIid]))
+
+    fs.reset()
+    expect(persistence.deltas.at(- 1)?.replaceAll?.rootIid).toBe(fs.root.iid)
+    expect(persistence.deltas.at(- 1)?.puts.size).toBe(0)
+    expect(persistence.deltas.at(- 1)?.deletes.size).toBe(0)
+  })
+
   it('removes regular files and empty directories', () => {
     const { fs } = createFs()
 
