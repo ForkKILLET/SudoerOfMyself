@@ -6,7 +6,7 @@ export type FileMode = 'r' | FileModeWritable
 
 export abstract class FileHandle {
   constructor(
-    private readonly didMutate: () => void,
+    private readonly didMutate: (inode: Inode<NormalFile>) => void,
     protected inode: Inode<NormalFile>,
   ) {}
 
@@ -45,20 +45,20 @@ export abstract class FileHandle {
   protected rewrite(data: string) {
     this.inode.file.content = data
     this.cursor = data.length
-    this.didMutate()
+    this.didMutate(this.inode)
   }
 
   protected append(data: string) {
     this.inode.file.content += data
     this.cursor = this.inode.file.content.length
-    this.didMutate()
+    this.didMutate(this.inode)
   }
 
   protected writeAtCursor(data: string) {
     const content = this.inode.file.content
     this.inode.file.content = content.slice(0, this.cursor) + data + content.slice(this.cursor + data.length)
     this.cursor += data.length
-    this.didMutate()
+    this.didMutate(this.inode)
   }
 }
 

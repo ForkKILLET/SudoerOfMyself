@@ -654,9 +654,14 @@ export class Fs {
     return this.unwrap(this.rm(path), `Cannot remove '${path}'`)
   }
 
+  private markInodeDirty = (inode: Inode) => {
+    if (this.inodes.get(inode.iid) !== inode) return
+    this.markDirty(createPutDelta(inode))
+  }
+
   private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
     const Handle = FILE_HANDLE_FROM_MODE[mode]
-    return new Handle(() => this.markDirty(createPutDelta(inode)), inode) as FileHandleFromMode<FM>
+    return new Handle(this.markInodeDirty, inode) as FileHandleFromMode<FM>
   }
 
   open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {

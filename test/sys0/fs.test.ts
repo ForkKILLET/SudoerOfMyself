@@ -54,6 +54,21 @@ describe('Fs file handles', () => {
 
     expect(fs.openU('/notes.txt', 'r').handle.read()).toBe('one\ntwo\nthree four\n')
   })
+
+  it('does not persist writes through a detached handle', async () => {
+    const persistence = new RecordingPersistence()
+    const fs = new Fs(Vfs.dir({ old: Vfs.normal('old') }), { persistence })
+    const detached = fs.openU('/old', 'a').handle
+
+    fs.rmU('/old')
+    await fs.flush()
+    const deltaCountAfterRemove = persistence.deltas.length
+    detached.write(' zombie')
+    await fs.flush()
+
+    expect(persistence.deltas).toHaveLength(deltaCountAfterRemove)
+    expect(fs.find('/old').isErr).toBe(true)
+  })
 })
 
 describe('Fs mutation consistency', () => {
