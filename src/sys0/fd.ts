@@ -1,5 +1,5 @@
 import { Err, Ok, Result } from 'fk-result'
-import type { FRead, FWrite } from './fs'
+import type { FRead, FReadWrite, FWrite } from './fs'
 
 export type Fd = number
 
@@ -43,6 +43,12 @@ export const readableFileTarget = (readable: FRead): OpenFileTarget => ({
 export const writableFileTarget = (writable: FWrite): OpenFileTarget => ({
   writable,
   close: closeOf(writable),
+})
+
+export const readWriteFileTarget = (stream: FReadWrite): OpenFileTarget => ({
+  readable: stream,
+  writable: stream,
+  close: closeOf(stream),
 })
 
 export class OpenFileDescription {

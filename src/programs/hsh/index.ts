@@ -59,14 +59,14 @@ export const execute = async (
       command.redirections?.forEach((redirection) => {
         switch (redirection.type) {
           case 'readFrom': {
-            const handle = ctx.fs.openU(redirection.path, 'r').handle
+            const handle = ctx.fs.openU(redirection.path, 'r', proc.cwd).handle
             unwrapFd(fds.replace(redirection.fd, readableFileTarget(handle)))
             break
           }
           case 'writeTo':
           case 'appendTo': {
             const mode = redirection.type === 'appendTo' ? 'a' : 'w'
-            const handle = ctx.fs.openU(redirection.path, mode).handle
+            const handle = ctx.fs.openU(redirection.path, mode, proc.cwd).handle
             unwrapFd(fds.replace(redirection.fd, writableFileTarget(handle)))
             break
           }

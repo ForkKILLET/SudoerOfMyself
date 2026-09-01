@@ -640,11 +640,11 @@ export class Fs {
     return new Handle(this.markInodeDirty, inode) as FileHandleFromMode<FM>
   }
 
-  open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {
-    const { mount, mountedPath } = this.resolveMountedPath(path)
+  open<FM extends FileMode>(path: string, mode: FM, cwd = this.cwd): FOp.OpenResult<FM> {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
     if (mount) return mount.fs.open(mountedPath, mode)
     if (this.isReadOnly && mode !== 'r') return this.readOnlyError()
-    const res = this.findInode(path, { allowedTypes: [FileT.NORMAL] })
+    const res = this.findInode(path, { allowedTypes: [FileT.NORMAL], cwd })
 
     let inode: Inode<NormalFile>
     if (res.isErr) {
@@ -653,7 +653,7 @@ export class Fs {
 
       if (! filename) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
 
-      const dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+      const dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd })
       if (dirRes.isErr) return dirRes
 
       const { inode: parentInode } = dirRes.val
@@ -675,7 +675,7 @@ export class Fs {
     })
   }
 
-  openU<FM extends FileMode>(path: string, mode: FM) {
-    return this.unwrap(this.open(path, mode), path)
+  openU<FM extends FileMode>(path: string, mode: FM, cwd = this.cwd) {
+    return this.unwrap(this.open(path, mode, cwd), path)
   }
 }
