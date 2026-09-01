@@ -1,7 +1,11 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it } from 'vitest'
 import { FileT, Fs } from '@/sys0/fs'
-import { IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
+import {
+  FILE_SYSTEM_INODES_OBJECT_STORE,
+  FILE_SYSTEM_META_OBJECT_STORE,
+  IndexedDbFileSystemStore,
+} from '@/sys0/fs/indexed_db'
 import { QueuedFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import {
@@ -19,6 +23,26 @@ const snapshot: FileSystemSnapshot = {
 }
 
 describe('IndexedDbFileSystemStore', () => {
+  it('creates separate metadata and inode stores', async () => {
+    const indexedDB = new IDBFactory()
+    const databaseName = 'fs-indexed-db-schema-test'
+    const store = await IndexedDbFileSystemStore.open({ indexedDB, databaseName })
+    store.close()
+
+    const request = indexedDB.open(databaseName)
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.addEventListener('success', () => resolve(request.result), { once: true })
+      request.addEventListener('error', () => reject(request.error), { once: true })
+    })
+    expect([...database.objectStoreNames]).toEqual(expect.arrayContaining([
+      FILE_SYSTEM_META_OBJECT_STORE,
+      FILE_SYSTEM_INODES_OBJECT_STORE,
+    ]))
+    const transaction = database.transaction(FILE_SYSTEM_INODES_OBJECT_STORE, 'readonly')
+    expect(transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).keyPath).toBe('iid')
+    database.close()
+  })
+
   it('atomically rotates current to previous and clears both snapshots', async () => {
     const indexedDB = new IDBFactory()
     const store = await IndexedDbFileSystemStore.open({

@@ -2,8 +2,10 @@ import type { AsyncFileSystemSnapshotStore } from './persistence'
 import type { FileSystemSnapshot } from './save'
 
 export const FILE_SYSTEM_DATABASE_NAME = 'sudoer-of-myself'
-export const FILE_SYSTEM_DATABASE_VERSION = 1
+export const FILE_SYSTEM_DATABASE_VERSION = 2
 export const FILE_SYSTEM_OBJECT_STORE = 'file-system'
+export const FILE_SYSTEM_META_OBJECT_STORE = 'meta'
+export const FILE_SYSTEM_INODES_OBJECT_STORE = 'inodes'
 export const FILE_SYSTEM_SNAPSHOT_KEY = 'current'
 export const FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY = 'previous'
 
@@ -45,6 +47,12 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
       const database = request.result
       if (! database.objectStoreNames.contains(FILE_SYSTEM_OBJECT_STORE)) {
         database.createObjectStore(FILE_SYSTEM_OBJECT_STORE)
+      }
+      if (! database.objectStoreNames.contains(FILE_SYSTEM_META_OBJECT_STORE)) {
+        database.createObjectStore(FILE_SYSTEM_META_OBJECT_STORE)
+      }
+      if (! database.objectStoreNames.contains(FILE_SYSTEM_INODES_OBJECT_STORE)) {
+        database.createObjectStore(FILE_SYSTEM_INODES_OBJECT_STORE, { keyPath: 'iid' })
       }
     })
     const database = await requestResult(request)
