@@ -19,7 +19,7 @@ const snapshot: FileSystemSnapshot = {
 }
 
 describe('IndexedDbFileSystemStore', () => {
-  it('loads, atomically replaces, and clears the current snapshot', async () => {
+  it('atomically rotates current to previous and clears both snapshots', async () => {
     const indexedDB = new IDBFactory()
     const store = await IndexedDbFileSystemStore.open({
       indexedDB,
@@ -29,8 +29,14 @@ describe('IndexedDbFileSystemStore', () => {
     expect(await store.load()).toBeUndefined()
     await store.save(snapshot)
     expect(await store.load()).toEqual(snapshot)
+    expect(await store.loadPrevious()).toBeUndefined()
+    const nextSnapshot = { ...snapshot, generation: snapshot.generation + 1 }
+    await store.save(nextSnapshot)
+    expect(await store.load()).toEqual(nextSnapshot)
+    expect(await store.loadPrevious()).toEqual(snapshot)
     await store.clear()
     expect(await store.load()).toBeUndefined()
+    expect(await store.loadPrevious()).toBeUndefined()
 
     store.close()
   })

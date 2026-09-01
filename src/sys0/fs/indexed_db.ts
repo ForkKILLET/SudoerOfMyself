@@ -5,6 +5,7 @@ export const FILE_SYSTEM_DATABASE_NAME = 'sudoer-of-myself'
 export const FILE_SYSTEM_DATABASE_VERSION = 1
 export const FILE_SYSTEM_OBJECT_STORE = 'file-system'
 export const FILE_SYSTEM_SNAPSHOT_KEY = 'current'
+export const FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY = 'previous'
 
 const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
   request.addEventListener('success', () => resolve(request.result), { once: true })
@@ -51,16 +52,38 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
   }
 
   async load() {
+    return this.loadKey(FILE_SYSTEM_SNAPSHOT_KEY)
+  }
+
+  async loadPrevious() {
+    return this.loadKey(FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
+  }
+
+  private async loadKey(key: string) {
     const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readonly')
     const completion = transactionCompletion(transaction)
     const snapshot = await requestResult(
-      transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).get(FILE_SYSTEM_SNAPSHOT_KEY),
+      transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).get(key),
     ) as unknown
     await completion
     return snapshot
   }
 
   async save(snapshot: FileSystemSnapshot) {
+    const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
+    const completion = transactionCompletion(transaction)
+    const store = transaction.objectStore(FILE_SYSTEM_OBJECT_STORE)
+    const currentRequest = store.get(FILE_SYSTEM_SNAPSHOT_KEY)
+    currentRequest.addEventListener('success', () => {
+      if (currentRequest.result !== undefined) {
+        store.put(currentRequest.result, FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
+      }
+      store.put(snapshot, FILE_SYSTEM_SNAPSHOT_KEY)
+    }, { once: true })
+    await completion
+  }
+
+  async restore(snapshot: FileSystemSnapshot) {
     const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
     const completion = transactionCompletion(transaction)
     transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).put(snapshot, FILE_SYSTEM_SNAPSHOT_KEY)

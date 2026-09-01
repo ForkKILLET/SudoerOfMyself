@@ -22,7 +22,9 @@ export class MemoryFsPersistence implements FsPersistence {
 
 export interface AsyncFileSystemSnapshotStore {
   load(): Promise<unknown | undefined>
+  loadPrevious(): Promise<unknown | undefined>
   save(snapshot: FileSystemSnapshot): Promise<void>
+  restore(snapshot: FileSystemSnapshot): Promise<void>
   clear(): Promise<void>
 }
 
@@ -36,14 +38,34 @@ export class QueuedFsPersistence implements FsPersistence {
   private constructor(
     private readonly store: AsyncFileSystemSnapshotStore,
     initialSnapshot: FileSystemSnapshot | undefined,
+    readonly recoveredFromPrevious: boolean,
   ) {
     this.current = initialSnapshot && structuredClone(initialSnapshot)
   }
 
   static async create(store: AsyncFileSystemSnapshotStore) {
     const snapshot = await store.load()
-    if (snapshot !== undefined) assertFileSystemSnapshot(snapshot)
-    return new QueuedFsPersistence(store, snapshot)
+    if (snapshot === undefined) return new QueuedFsPersistence(store, undefined, false)
+
+    try {
+      assertFileSystemSnapshot(snapshot)
+      return new QueuedFsPersistence(store, snapshot, false)
+    }
+    catch (currentError) {
+      const previous = await store.loadPrevious()
+      if (previous === undefined) throw currentError
+      try {
+        assertFileSystemSnapshot(previous)
+      }
+      catch (previousError) {
+        throw new AggregateError(
+          [currentError, previousError],
+          'Current and previous file-system snapshots are invalid',
+        )
+      }
+      await store.restore(previous)
+      return new QueuedFsPersistence(store, previous, true)
+    }
   }
 
   load() {

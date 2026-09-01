@@ -11,7 +11,11 @@ const getElement = <E extends HTMLElement>(id: string) => {
 const downloadFileSystemSave = async () => {
   const store = await IndexedDbFileSystemStore.open({ databaseVersion: null })
   try {
-    const serialized = serializeFileSystemSave(await store.load())
+    const [snapshot, previousSnapshot] = await Promise.all([
+      store.load(),
+      store.loadPrevious(),
+    ])
+    const serialized = serializeFileSystemSave(snapshot, new Date(), previousSnapshot)
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const url = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }))
     const anchor = document.createElement('a')

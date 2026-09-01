@@ -23,7 +23,9 @@ describe('QueuedFsPersistence', () => {
     const saved: FileSystemSnapshot[] = []
     const store: AsyncFileSystemSnapshotStore = {
       load: async () => undefined,
+      loadPrevious: async () => undefined,
       save: async (snapshot) => { saved.push(structuredClone(snapshot)) },
+      restore: async () => {},
       clear: async () => {},
     }
     const persistence = await QueuedFsPersistence.create(store)
@@ -39,10 +41,12 @@ describe('QueuedFsPersistence', () => {
     let attempts = 0
     const store: AsyncFileSystemSnapshotStore = {
       load: async () => undefined,
+      loadPrevious: async () => undefined,
       save: async () => {
         attempts ++
         if (attempts === 1) throw new Error('disk unavailable')
       },
+      restore: async () => {},
       clear: async () => {},
     }
     const persistence = await QueuedFsPersistence.create(store)
@@ -51,5 +55,37 @@ describe('QueuedFsPersistence', () => {
     await expect(persistence.flush()).rejects.toThrow('disk unavailable')
     await expect(persistence.flush()).resolves.toBeUndefined()
     expect(attempts).toBe(2)
+  })
+
+  it('restores the previous snapshot when the current one is invalid', async () => {
+    const previous = createSnapshot(3)
+    let restored: FileSystemSnapshot | undefined
+    const store: AsyncFileSystemSnapshotStore = {
+      load: async () => ({ broken: true }),
+      loadPrevious: async () => previous,
+      save: async () => {},
+      restore: async (snapshot) => { restored = structuredClone(snapshot) },
+      clear: async () => {},
+    }
+
+    const persistence = await QueuedFsPersistence.create(store)
+
+    expect(persistence.recoveredFromPrevious).toBe(true)
+    expect(persistence.load()).toEqual(previous)
+    expect(restored).toEqual(previous)
+  })
+
+  it('rejects startup when both retained snapshots are invalid', async () => {
+    const store: AsyncFileSystemSnapshotStore = {
+      load: async () => ({ broken: 'current' }),
+      loadPrevious: async () => ({ broken: 'previous' }),
+      save: async () => {},
+      restore: async () => {},
+      clear: async () => {},
+    }
+
+    await expect(QueuedFsPersistence.create(store)).rejects.toThrow(
+      'Current and previous file-system snapshots are invalid',
+    )
   })
 })

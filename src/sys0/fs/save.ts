@@ -16,6 +16,7 @@ export interface FileSystemSaveArchive {
   version: 1
   exportedAt: string
   snapshot: unknown
+  previousSnapshot?: unknown
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -88,13 +89,19 @@ export function assertFileSystemSnapshot(value: unknown): asserts value is FileS
 export const createFileSystemSaveArchive = (
   snapshot: unknown,
   exportedAt = new Date(),
+  previousSnapshot?: unknown,
 ): FileSystemSaveArchive => ({
   format: 'sudoer-of-myself/file-system-save',
   version: 1,
   exportedAt: exportedAt.toISOString(),
   snapshot,
+  ...(previousSnapshot === undefined ? {} : { previousSnapshot }),
 })
 
-export const serializeFileSystemSave = (snapshot: unknown, exportedAt = new Date()) => (
-  JSON.stringify(createFileSystemSaveArchive(snapshot, exportedAt), null, 2)
+export const serializeFileSystemSave = (
+  snapshot: unknown,
+  exportedAt = new Date(),
+  previousSnapshot?: unknown,
+) => (
+  JSON.stringify(createFileSystemSaveArchive(snapshot, exportedAt, previousSnapshot), null, 2)
 )

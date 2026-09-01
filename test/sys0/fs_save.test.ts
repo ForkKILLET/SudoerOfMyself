@@ -33,8 +33,11 @@ describe('file-system save recovery', () => {
 
   it('can export an invalid raw snapshot from recovery mode', () => {
     const invalidSnapshot = { broken: true }
+    const previousSnapshot = { generation: 2 }
 
-    expect(createFileSystemSaveArchive(invalidSnapshot).snapshot).toEqual(invalidSnapshot)
+    const archive = createFileSystemSaveArchive(invalidSnapshot, new Date(), previousSnapshot)
+    expect(archive.snapshot).toEqual(invalidSnapshot)
+    expect(archive.previousSnapshot).toEqual(previousSnapshot)
   })
 
   it('rejects dangling inode references before hydrating the VFS', () => {
