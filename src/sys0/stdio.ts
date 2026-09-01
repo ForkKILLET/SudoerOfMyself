@@ -4,6 +4,12 @@ import { Emitter, Events } from '@/utils/emitter'
 import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
 import { Pred } from '@/utils/types'
 import { Disposable } from '@/utils/disposable'
+import {
+  displayFdError,
+  FdTable,
+  OpenFileDescription,
+  type OpenFileTarget,
+} from './fd'
 
 export interface StdinEvents extends Events {
   data: [ string ]
@@ -121,25 +127,92 @@ export class Stdout extends Emitter<StdoutEvents> implements FWrite {
 
 export class Stdio implements FReadWrite {
   isTied = true
-  doEcho = true
 
-  stdin?: Stdin
-  stdout?: Stdout
-  stderr?: Stdout
+  readonly fds: FdTable
 
-  constructor(
-    public input: FRead,
-    public output: FWrite,
-    public error: FWrite = output,
-  ) {}
+  constructor(input: FRead | FdTable, output?: FWrite, error = output) {
+    if (input instanceof FdTable) {
+      this.fds = input
+      return
+    }
+    if (! output || ! error) throw new Error('Stdio requires input, output, and error streams')
+
+    this.fds = new FdTable()
+    const descriptions = new Map<object, OpenFileDescription>()
+    const descriptionFor = (stream: FRead | FWrite, target: OpenFileTarget) => {
+      const existing = descriptions.get(stream)
+      if (existing) {
+        if (target.readable) existing.target.readable = target.readable
+        if (target.writable) existing.target.writable = target.writable
+        if (target.close) existing.target.close = target.close
+        return existing
+      }
+      const description = new OpenFileDescription(target)
+      descriptions.set(stream, description)
+      return description
+    }
+    this.fds.set(0, descriptionFor(input, { readable: input })).unwrap()
+    this.fds.set(1, descriptionFor(output, { writable: output, close: closeOf(output) })).unwrap()
+    this.fds.set(2, descriptionFor(error, { writable: error, close: closeOf(error) })).unwrap()
+  }
+
+  get input() {
+    return this.fds.getReadable(0).unwrapBy((error) => {
+      throw new Error(displayFdError(error))
+    })
+  }
+
+  set input(input: FRead) {
+    this.fds.replace(0, { readable: input, close: closeOf(input) }).unwrap()
+  }
+
+  get output() {
+    return this.fds.getWritable(1).unwrapBy((error) => {
+      throw new Error(displayFdError(error))
+    })
+  }
+
+  set output(output: FWrite) {
+    this.fds.replace(1, { writable: output, close: closeOf(output) }).unwrap()
+  }
+
+  get error() {
+    return this.fds.getWritable(2).unwrapBy((error) => {
+      throw new Error(displayFdError(error))
+    })
+  }
+
+  set error(error: FWrite) {
+    this.fds.replace(2, { writable: error, close: closeOf(error) }).unwrap()
+  }
+
+  get stdin() {
+    const input = this.fds.getReadable(0)
+    return input.isOk && input.val instanceof Stdin ? input.val : undefined
+  }
+
+  get stdout() {
+    const output = this.fds.getWritable(1)
+    return output.isOk && output.val instanceof Stdout ? output.val : undefined
+  }
+
+  get stderr() {
+    const error = this.fds.getWritable(2)
+    return error.isOk && error.val instanceof Stdout ? error.val : undefined
+  }
+
+  fork() {
+    return new Stdio(this.fds.fork())
+  }
+
+  close() {
+    this.fds.closeAll()
+  }
 
   static fromTerm(term: Term) {
     const input = new Stdin(term)
     const output = new Stdout(term)
     const stdio = new Stdio(input, output)
-    stdio.stdin = input
-    stdio.stdout = output
-    stdio.stderr = output
 
     output.on('start-writing', () => {
       if (stdio.isTied) input.isDisabled = true
@@ -165,4 +238,11 @@ export class Stdio implements FReadWrite {
     const line = await this.readLn()
     return line.trim().toLowerCase() === 'y'
   }
+}
+
+const closeOf = (stream: object) => {
+  const close = (stream as { close?: unknown }).close
+  return typeof close === 'function'
+    ? () => close.call(stream)
+    : undefined
 }

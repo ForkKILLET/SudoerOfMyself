@@ -46,32 +46,22 @@ export const execute = async (
     let input = options.input ?? proc.stdio.input
     let output = options.output ?? proc.stdio.output
     let error = proc.stdio.error
-    let redirectsInput = false
-    let redirectsOutput = false
-    let redirectsError = false
     command.redirections?.forEach((redirection) => {
       if (redirection.fd === 0) {
         input = ctx.fs.openU(redirection.path, 'r').handle
-        redirectsInput = true
       }
       else {
         const handle = ctx.fs.openU(redirection.path, redirection.type[0] as 'a' | 'w').handle
         if (redirection.fd === 1) {
           output = handle
-          redirectsOutput = true
         }
         else {
           error = handle
-          redirectsError = true
         }
       }
     })
 
-    const stdio = new Stdio(input, output, error)
-    stdio.stdin = redirectsInput || options.input ? undefined : proc.stdio.stdin
-    stdio.stdout = redirectsOutput || options.output ? undefined : proc.stdio.stdout
-    stdio.stderr = redirectsError ? undefined : proc.stdio.stderr
-    return stdio
+    return new Stdio(input, output, error)
   }
 
   if (name in builtins) {
@@ -86,7 +76,8 @@ export const execute = async (
 
     const originalStdio = proc.stdio
     const originalName = proc.name
-    proc.stdio = getStdio()
+    const commandStdio = getStdio()
+    proc.stdio = commandStdio
     proc.name = name
     try {
       return normalizeExit(await builtins[name](proc, name, ...args))
@@ -97,6 +88,7 @@ export const execute = async (
     }
     finally {
       proc.stdio = originalStdio
+      commandStdio.close()
       proc.name = originalName
     }
   }

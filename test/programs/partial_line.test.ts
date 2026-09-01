@@ -42,8 +42,6 @@ const runShell = async (keys: string[]) => {
   }), { persistence: new MemoryFsPersistence() })
   const output = new Stdout(term)
   const stdio = new Stdio(new KeyInput(keys), output)
-  stdio.stdout = output
-  stdio.stderr = output
   const context = {
     fs,
     processes: new ProcessTable(),

@@ -19,6 +19,10 @@ class MemoryOutput implements FWrite {
   writeLn(data: string) { this.write(data + '\n') }
 }
 
+class ClosableOutput extends MemoryOutput {
+  close = vi.fn()
+}
+
 const deferred = <T>() => {
   let resolve: (value: T) => void = value => void value
   const promise = new Promise<T>((resolvePromise) => {
@@ -76,8 +80,12 @@ describe('Process lifecycle', () => {
     grandchild.on('signal', grandchildSignal)
     root.signalForeground('SIGINT')
 
-    expect(child.stdio).toBe(root.stdio)
-    expect(grandchild.stdio).toBe(root.stdio)
+    expect(child.stdio).not.toBe(root.stdio)
+    expect(grandchild.stdio).not.toBe(child.stdio)
+    expect(child.stdio.fds.get(0).unwrap().description)
+      .toBe(root.stdio.fds.get(0).unwrap().description)
+    expect(grandchild.stdio.fds.get(1).unwrap().description)
+      .toBe(root.stdio.fds.get(1).unwrap().description)
     expect(rootSignal).not.toHaveBeenCalled()
     expect(childSignal).not.toHaveBeenCalled()
     expect(grandchildSignal).toHaveBeenCalledOnce()
@@ -126,6 +134,22 @@ describe('Process lifecycle', () => {
     await expect(run).resolves.toEqual(normalExit(7))
     expect(onExit).toHaveBeenCalledOnce()
     expect(onExit).toHaveBeenCalledWith(normalExit(7))
+  })
+
+  it('closes inherited descriptors when a process exits', async () => {
+    const processes = new ProcessTable()
+    const context = { processes } as Context
+    const output = new ClosableOutput()
+    const root = new Process(context, null, {
+      name: 'init',
+      stdio: new Stdio(new EmptyInput(), output),
+    })
+
+    await root.spawn(() => 0, { name: 'child' })
+
+    expect(output.close).not.toHaveBeenCalled()
+    root.stdio.close()
+    expect(output.close).toHaveBeenCalledOnce()
   })
 
   it('preserves a signal exit through nested processes', async () => {

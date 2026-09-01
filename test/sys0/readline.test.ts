@@ -33,7 +33,6 @@ const createReadline = (keys: string[]) => {
   } as unknown as Term
   const output = new Stdout(term)
   const stdio = new Stdio(new KeyInput(keys), output)
-  stdio.stdout = output
   const context = {
     processes: new ProcessTable(),
     term,

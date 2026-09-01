@@ -68,7 +68,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.name = options.name
     this.env = createEnv({ ...parent?.env, ...options.env })
     this.cwd = options.cwd ?? parent?.cwd ?? '/'
-    this.stdio = options.stdio ?? parent?.stdio ?? Stdio.fromTerm(ctx.term)
+    this.stdio = options.stdio ?? parent?.stdio.fork() ?? Stdio.fromTerm(ctx.term)
     this.processGroup = options.processGroup === undefined
       ? parent?.processGroup ?? null
       : options.processGroup
@@ -110,6 +110,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.state = 'exited'
     this.exitCode = exitStatus.code
     this.exitStatus = exitStatus
+    this.stdio.close()
     this.emit('exit', exitStatus)
     this.processGroup?.remove(this)
     this.ctx.processes.unregister(this)
