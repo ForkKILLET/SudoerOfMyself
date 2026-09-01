@@ -4,14 +4,13 @@ import { MemoryFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import { Bitmap } from '@/utils/bitmap'
 import { cloneFsDelta, type FsDelta } from '@/sys0/fs/image'
-import type { FileSystemSnapshot } from '@/sys0/fs/save'
 
 class RecordingPersistence extends MemoryFsPersistence {
   readonly deltas: FsDelta[] = []
 
-  override save(snapshot: FileSystemSnapshot, delta?: FsDelta) {
-    super.save(snapshot)
-    if (delta) this.deltas.push(cloneFsDelta(delta))
+  override commit(delta: FsDelta) {
+    super.commit(delta)
+    this.deltas.push(cloneFsDelta(delta))
   }
 }
 
@@ -57,17 +56,24 @@ describe('Fs file handles', () => {
 
   it('does not persist writes through a detached handle', async () => {
     const persistence = new RecordingPersistence()
-    const fs = new Fs(Vfs.dir({ old: Vfs.normal('old') }), { persistence })
+    const image = Vfs.dir({ old: Vfs.normal('old') })
+    const fs = new Fs(image, { persistence })
     const detached = fs.openU('/old', 'a').handle
+    const detachedIid = fs.findInodeU('/old').inode.iid
 
     fs.rmU('/old')
     await fs.flush()
-    const deltaCountAfterRemove = persistence.deltas.length
+    fs.openU('/new', 'w').handle.write('current')
+    expect(fs.findInodeU('/new').inode.iid).toBe(detachedIid)
+    await fs.flush()
+    const deltaCountBeforeDetachedWrite = persistence.deltas.length
     detached.write(' zombie')
     await fs.flush()
 
-    expect(persistence.deltas).toHaveLength(deltaCountAfterRemove)
+    expect(persistence.deltas).toHaveLength(deltaCountBeforeDetachedWrite)
     expect(fs.find('/old').isErr).toBe(true)
+    const rebooted = new Fs(image, { persistence })
+    expect(rebooted.openU('/new', 'r').handle.read()).toBe('current')
   })
 })
 

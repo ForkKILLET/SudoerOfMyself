@@ -76,3 +76,28 @@ export const mergeFsDelta = (earlier: FsDelta, later: FsDelta): FsDelta => {
 export const isFsDeltaEmpty = (delta: FsDelta) => (
   ! delta.replaceAll && delta.puts.size === 0 && delta.deletes.size === 0
 )
+
+export const applyFsDelta = (
+  image: FileSystemImage | undefined,
+  delta: FsDelta,
+): FileSystemImage => {
+  if (! image && ! delta.replaceAll) {
+    throw new Error('Cannot apply a file-system patch without an existing image')
+  }
+
+  const base = delta.replaceAll ?? image
+  if (! base) throw new Error('File-system delta has no base image')
+  const inodes = new Map(
+    base.inodes.map(inode => [inode.iid, structuredClone(inode)]),
+  )
+  delta.deletes.forEach(iid => inodes.delete(iid))
+  delta.puts.forEach((inode, iid) => inodes.set(iid, structuredClone(inode)))
+
+  return {
+    format: FILE_SYSTEM_IMAGE_FORMAT,
+    version: FILE_SYSTEM_IMAGE_VERSION,
+    revision: (image?.revision ?? 0) + 1,
+    rootIid: base.rootIid,
+    inodes: [...inodes.values()],
+  }
+}

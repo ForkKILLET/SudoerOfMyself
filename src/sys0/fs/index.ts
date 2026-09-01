@@ -5,12 +5,6 @@ import { UserError } from '@/utils/errors'
 
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
 import { FsPersistence, MemoryFsPersistence } from './persistence'
-import {
-  assertFileSystemSnapshot,
-  FILE_SYSTEM_SNAPSHOT_FORMAT,
-  FILE_SYSTEM_SNAPSHOT_VERSION,
-  FileSystemSnapshot,
-} from './save'
 import { Vfs } from './vfs'
 import { Path } from './path'
 import {
@@ -230,7 +224,6 @@ export class Fs {
   private readonly getCwd: () => string
   private readonly mounts: MountedFs[] = []
   private readonly mountsByParent = new WeakMap<DirFile, Map<string, MountedFs>>()
-  private generation = 0
   private saveTimer: ReturnType<typeof setTimeout> | undefined
   private pendingDelta = createFsDelta()
 
@@ -260,7 +253,6 @@ export class Fs {
     this.inodes.clear()
     this.inodeBitmap.clear()
     this.createInitialImage()
-    this.generation ++
     this.pendingDelta = createReplaceAllDelta(this.createReplacement())
     this.persistNow()
     this.mounts.forEach(mount => this.attachMount(mount))
@@ -271,15 +263,12 @@ export class Fs {
     const snapshot = this.persistence.load()
     if (! snapshot) {
       this.createInitialImage()
-      this.generation = 1
       this.pendingDelta = createReplaceAllDelta(this.createReplacement())
       this.persistNow()
       return
     }
 
-    assertFileSystemSnapshot(snapshot)
     this.rootIid = snapshot.rootIid
-    this.generation = snapshot.generation
     snapshot.inodes.forEach((inode) => {
       if (inode.iid >= MAX_INODE_COUNT) {
         throw new Error(`Invalid file-system snapshot: inode ${inode.iid} is out of range`)
@@ -296,18 +285,11 @@ export class Fs {
     this.rootIid = result.val.inode.iid
   }
 
-  private createSnapshot(): FileSystemSnapshot {
+  exportImage() {
     return {
-      format: FILE_SYSTEM_SNAPSHOT_FORMAT,
-      version: FILE_SYSTEM_SNAPSHOT_VERSION,
-      generation: this.generation,
-      rootIid: this.rootIid,
-      inodes: [...this.inodes.values()],
+      ...this.createReplacement(),
+      revision: this.persistence.load()?.revision ?? 0,
     }
-  }
-
-  exportSnapshot() {
-    return structuredClone(this.createSnapshot())
   }
 
   private createReplacement(): FileSystemReplacement {
@@ -324,11 +306,10 @@ export class Fs {
     this.saveTimer = undefined
     const delta = this.pendingDelta
     this.pendingDelta = createFsDelta()
-    this.persistence.save(this.createSnapshot(), delta)
+    this.persistence.commit(delta)
   }
 
   private markDirty(delta: FsDelta) {
-    this.generation ++
     this.pendingDelta = mergeFsDelta(this.pendingDelta, delta)
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => this.persistNow(), SAVE_DEBOUNCE_MS)

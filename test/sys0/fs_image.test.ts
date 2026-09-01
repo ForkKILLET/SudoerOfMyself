@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FileT, type Inode } from '@/sys0/fs'
 import {
+  applyFsDelta,
   createDeleteDelta,
   createPutDelta,
   createReplaceAllDelta,
@@ -80,5 +81,33 @@ describe('FsDelta merging', () => {
     if (inode.file.type === FileT.NORMAL) inode.file.content = 'mutated'
 
     expect(delta.puts.get(2)).toEqual(normalInode(2, 'original'))
+  })
+})
+
+describe('FsDelta application', () => {
+  it('builds an initial revision from replaceAll', () => {
+    const image = applyFsDelta(undefined, createReplaceAllDelta(replacement('initial')))
+
+    expect(image.revision).toBe(1)
+    expect(image.inodes).toEqual(replacement('initial').inodes)
+  })
+
+  it('atomically applies deletes and puts to a new revision', () => {
+    const initial = applyFsDelta(undefined, createReplaceAllDelta(replacement('initial')))
+    const patch = mergeFsDelta(
+      createDeleteDelta(2),
+      createPutDelta(normalInode(3, 'new')),
+    )
+    const next = applyFsDelta(initial, patch)
+
+    expect(next.revision).toBe(2)
+    expect(next.inodes.map(({ iid }) => iid)).toEqual([1, 3])
+    expect(initial.inodes.map(({ iid }) => iid)).toEqual([1, 2])
+  })
+
+  it('rejects a patch without an existing image', () => {
+    expect(() => applyFsDelta(undefined, createPutDelta(normalInode(2, 'orphan')))).toThrow(
+      'without an existing image',
+    )
   })
 })

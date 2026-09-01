@@ -9,11 +9,25 @@ import {
   FILE_SYSTEM_SNAPSHOT_VERSION,
   FileSystemSnapshot,
 } from '@/sys0/fs/save'
+import {
+  createPutDelta,
+  createReplaceAllDelta,
+  FILE_SYSTEM_IMAGE_FORMAT,
+  FILE_SYSTEM_IMAGE_VERSION,
+  type FileSystemReplacement,
+} from '@/sys0/fs/image'
 
 const createSnapshot = (generation: number): FileSystemSnapshot => ({
   format: FILE_SYSTEM_SNAPSHOT_FORMAT,
   version: FILE_SYSTEM_SNAPSHOT_VERSION,
   generation,
+  rootIid: 1,
+  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
+})
+
+const createReplacement = (): FileSystemReplacement => ({
+  format: FILE_SYSTEM_IMAGE_FORMAT,
+  version: FILE_SYSTEM_IMAGE_VERSION,
   rootIid: 1,
   inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
 })
@@ -30,8 +44,8 @@ describe('QueuedFsPersistence', () => {
     }
     const persistence = await QueuedFsPersistence.create(store)
 
-    persistence.save(createSnapshot(1))
-    persistence.save(createSnapshot(2))
+    persistence.commit(createReplaceAllDelta(createReplacement()))
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
     await persistence.flush()
 
     expect(saved.map(({ generation }) => generation)).toEqual([2])
@@ -50,7 +64,7 @@ describe('QueuedFsPersistence', () => {
       clear: async () => {},
     }
     const persistence = await QueuedFsPersistence.create(store)
-    persistence.save(createSnapshot(1))
+    persistence.commit(createReplaceAllDelta(createReplacement()))
 
     await expect(persistence.flush()).rejects.toThrow('disk unavailable')
     await expect(persistence.flush()).resolves.toBeUndefined()
@@ -71,7 +85,10 @@ describe('QueuedFsPersistence', () => {
     const persistence = await QueuedFsPersistence.create(store)
 
     expect(persistence.recoveredFromPrevious).toBe(true)
-    expect(persistence.load()).toEqual(previous)
+    expect(persistence.load()).toEqual({
+      ...createReplacement(),
+      revision: previous.generation,
+    })
     expect(restored).toEqual(previous)
   })
 
