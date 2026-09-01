@@ -38,14 +38,7 @@ export const createGameSyscallHandlers = (
 })
 
 export class WorkerProcessApi {
-  constructor(
-    private readonly client: SyncSyscallClient<GameSyscallSchema>,
-    private readonly onCpuTime?: (totalMs: number) => void,
-  ) {}
-
-  reportCpuTime(totalMs: number) {
-    this.onCpuTime?.(totalMs)
-  }
+  constructor(private readonly client: SyncSyscallClient<GameSyscallSchema>) {}
 
   readKey() {
     return this.client.call('stdio.readKey')

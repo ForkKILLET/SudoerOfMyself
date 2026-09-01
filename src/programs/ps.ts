@@ -1,6 +1,6 @@
 import { createCommand } from '@/sys0/program'
 
-export const formatCpuTime = (milliseconds: number) => {
+export const formatProcessTime = (milliseconds: number) => {
   const totalSeconds = Math.floor(milliseconds / 1000)
   const seconds = totalSeconds % 60
   const totalMinutes = Math.floor(totalSeconds / 60)
@@ -20,7 +20,7 @@ export const ps = createCommand('ps', '', 'Report active processes.')
     const processes = proc.ctx.processes.values()
     const rows = processes.map(process => ({
       pid: process.pid.toString(),
-      time: formatCpuTime(process.cpuTimeMs),
+      time: formatProcessTime(process.elapsedTimeMs),
       command: process.name,
     }))
     const pidWidth = Math.max(7, ...rows.map(row => row.pid.length))

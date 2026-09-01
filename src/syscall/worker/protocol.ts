@@ -18,12 +18,7 @@ export interface WorkerFailureMessage {
   stack?: string
 }
 
-export interface WorkerCpuTimeMessage {
-  type: 'sudoer:worker-cpu-time'
-  totalMs: number
-}
-
-export type WorkerStatusMessage = WorkerExitMessage | WorkerFailureMessage | WorkerCpuTimeMessage
+export type WorkerStatusMessage = WorkerExitMessage | WorkerFailureMessage
 
 export const isWorkerInitMessage = (value: unknown): value is WorkerInitMessage => {
   if (! value || typeof value !== 'object') return false
@@ -37,10 +32,5 @@ export const isWorkerInitMessage = (value: unknown): value is WorkerInitMessage 
 export const isWorkerStatusMessage = (value: unknown): value is WorkerStatusMessage => {
   if (! value || typeof value !== 'object') return false
   const message = value as Partial<WorkerStatusMessage>
-  return message.type === 'sudoer:worker-exit'
-    || message.type === 'sudoer:worker-failure'
-    || (message.type === 'sudoer:worker-cpu-time'
-      && typeof message.totalMs === 'number'
-      && Number.isFinite(message.totalMs)
-      && message.totalMs >= 0)
+  return message.type === 'sudoer:worker-exit' || message.type === 'sudoer:worker-failure'
 }

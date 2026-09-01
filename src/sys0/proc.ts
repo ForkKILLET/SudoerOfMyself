@@ -37,15 +37,12 @@ export class Process extends Emitter<ProcessEvents> {
   exitCode: number | null = null
   exitStatus: ProcessExit | null = null
   jobTable: JobTable | null
-  private _cpuTimeMs = 0
+  readonly startedAtMs = performance.now()
 
-  get cpuTimeMs() {
-    return this._cpuTimeMs
-  }
-
-  reportCpuTime(totalMs: number) {
-    if (! Number.isFinite(totalMs) || totalMs < 0) return
-    this._cpuTimeMs = Math.max(this._cpuTimeMs, totalMs)
+  // TODO: Replace elapsed wall time with scheduler-owned CPU accounting once
+  // Worker execution can be dynamically instrumented.
+  get elapsedTimeMs() {
+    return Math.max(0, performance.now() - this.startedAtMs)
   }
 
   private _cwd = '/'

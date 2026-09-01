@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { formatCpuTime, ps } from '@/programs/ps'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { formatProcessTime, ps } from '@/programs/ps'
 import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
@@ -28,7 +28,11 @@ const deferred = <T>() => {
 }
 
 describe('ps', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it('reports the active process table including itself', async () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
     const output = new MemoryOutput()
     const context = { processes: new ProcessTable() } as Context
     const root = new Process(context, null, {
@@ -37,15 +41,16 @@ describe('ps', () => {
       stdio: new Stdio(new EmptyInput(), output),
     })
     const longExit = deferred<number>()
+    now = 2000
     const longRunning = root.spawn(() => longExit.promise, { name: 'long-running' })
-    root.subProcesses[0].reportCpuTime(12_999)
 
+    now = 15_000
     await root.spawn(ps, { name: 'ps' })
 
     expect(output.content).toBe(
       '    PID     TIME CMD\n' +
-      '      1 00:00:00 init\n' +
-      '      2 00:00:12 long-running\n' +
+      '      1 00:00:14 init\n' +
+      '      2 00:00:13 long-running\n' +
       '      3 00:00:00 ps\n',
     )
 
@@ -53,8 +58,8 @@ describe('ps', () => {
     await longRunning
   })
 
-  it('formats accumulated CPU time with an optional day prefix', () => {
-    expect(formatCpuTime(999)).toBe('00:00:00')
-    expect(formatCpuTime(93_784_999)).toBe('1-02:03:04')
+  it('formats process time with an optional day prefix', () => {
+    expect(formatProcessTime(999)).toBe('00:00:00')
+    expect(formatProcessTime(93_784_999)).toBe('1-02:03:04')
   })
 })

@@ -133,18 +133,4 @@ describe('Worker process host', () => {
     expect(root.subProcesses).toEqual([])
     expect(root.ctx.processes.size).toBe(1)
   })
-
-  it('records CPU time reported by a running Worker', async () => {
-    const { root } = createRootProcess()
-    const worker = new FakeWorker()
-    const running = root.spawn(createWorkerProgram(definitionFor(worker)), { name: 'cpu-bound' })
-    const child = root.subProcesses[0]
-
-    worker.emitMessage({ type: 'sudoer:worker-cpu-time', totalMs: 2345 })
-
-    expect(child.cpuTimeMs).toBe(2345)
-
-    worker.emitMessage({ type: 'sudoer:worker-exit', exitCode: 0 })
-    await running
-  })
 })
