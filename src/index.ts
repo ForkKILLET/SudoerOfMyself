@@ -6,10 +6,14 @@ import { game0 } from '@/programs/game0'
 import { NATIVE_PROGRAMS } from '@/programs'
 import { getBinImage, getRootImage } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
-import { showRecoveryMode } from '@/recovery'
+import { showRecoveryMode, showStartupBlockedMode } from '@/recovery'
 import { IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { QueuedFsPersistence } from '@/sys0/fs/persistence'
-import { acquireFileSystemWriterLock } from '@/sys0/fs/writer_lock'
+import {
+  acquireFileSystemWriterLock,
+  FileSystemWriterLockUnavailableError,
+  FileSystemWriterLockUnsupportedError,
+} from '@/sys0/fs/writer_lock'
 
 const start = async () => {
   const store = await IndexedDbFileSystemStore.open()
@@ -59,4 +63,22 @@ const boot = async () => {
   }
 }
 
-void boot().catch(showRecoveryMode)
+void boot().catch((error: unknown) => {
+  if (error instanceof FileSystemWriterLockUnavailableError) {
+    showStartupBlockedMode(
+      error,
+      'HumanOS is already running',
+      'Continue in the existing tab, or close it and reload this page.',
+    )
+    return
+  }
+  if (error instanceof FileSystemWriterLockUnsupportedError) {
+    showStartupBlockedMode(
+      error,
+      'This browser cannot safely open HumanOS',
+      'Use a browser that supports the Web Locks API.',
+    )
+    return
+  }
+  showRecoveryMode(error)
+})

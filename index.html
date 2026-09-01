@@ -10,14 +10,14 @@
     <div id="app">
       <div id="xterm-container"></div>
       <main id="recovery" class="recovery" hidden>
-        <p class="recovery__eyebrow">RECOVERY MODE</p>
-        <h1>HumanOS could not start</h1>
-        <p>
+        <p id="recovery-eyebrow" class="recovery__eyebrow">RECOVERY MODE</p>
+        <h1 id="recovery-title">HumanOS could not start</h1>
+        <p id="recovery-description">
           The local save may be damaged. Export it for inspection before resetting,
           or reload the page to try again without changing it.
         </p>
         <pre id="recovery-error" class="recovery__error"></pre>
-        <div class="recovery__actions">
+        <div id="recovery-actions" class="recovery__actions">
           <button id="recovery-export" type="button">Export save</button>
           <button id="recovery-reset" class="recovery__reset" type="button">Reset save and reload</button>
         </div>

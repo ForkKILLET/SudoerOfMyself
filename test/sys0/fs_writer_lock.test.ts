@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   acquireFileSystemWriterLock,
   FileSystemWriterLockUnavailableError,
+  FileSystemWriterLockUnsupportedError,
 } from '@/sys0/fs/writer_lock'
 
 class FakeLockManager {
@@ -24,6 +25,12 @@ class FakeLockManager {
 }
 
 describe('file-system writer lock', () => {
+  it('rejects browsers without the Web Locks API', async () => {
+    await expect(acquireFileSystemWriterLock(null)).rejects.toBeInstanceOf(
+      FileSystemWriterLockUnsupportedError,
+    )
+  })
+
   it('allows one writer and rejects a competing tab without waiting', async () => {
     const lockManager = new FakeLockManager() as unknown as LockManager
     const first = await acquireFileSystemWriterLock(lockManager)

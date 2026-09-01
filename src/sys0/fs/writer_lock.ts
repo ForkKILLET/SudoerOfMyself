@@ -11,11 +11,18 @@ export class FileSystemWriterLockUnavailableError extends Error {
   }
 }
 
+export class FileSystemWriterLockUnsupportedError extends Error {
+  constructor() {
+    super('This browser does not support the Web Locks API')
+    this.name = 'FileSystemWriterLockUnsupportedError'
+  }
+}
+
 export const acquireFileSystemWriterLock = (
-  lockManager: LockManager | undefined = globalThis.navigator?.locks,
+  lockManager: LockManager | null = globalThis.navigator?.locks ?? null,
 ) => {
   if (! lockManager) {
-    return Promise.reject(new Error('This browser does not support the Web Locks API'))
+    return Promise.reject(new FileSystemWriterLockUnsupportedError())
   }
 
   return new Promise<FileSystemWriterLock>((resolve, reject) => {

@@ -2,6 +2,13 @@ import { serializeFileSystemSave } from '@/sys0/fs/save'
 import { deleteIndexedDbFileSystem, IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { errorMessage } from '@/utils/errors'
 
+interface FailureModeOptions {
+  eyebrow: string
+  title: string
+  description: string
+  recoveryActions: boolean
+}
+
 const getElement = <E extends HTMLElement>(id: string) => {
   const element = document.getElementById(id)
   if (! element) throw new Error(`Recovery element #${id} not found`)
@@ -31,21 +38,54 @@ const downloadFileSystemSave = async () => {
   }
 }
 
+const showFailureMode = (error: unknown, options: FailureModeOptions) => {
+  const terminal = getElement<HTMLElement>('xterm-container')
+  const recovery = getElement<HTMLElement>('recovery')
+  const eyebrow = getElement<HTMLElement>('recovery-eyebrow')
+  const title = getElement<HTMLElement>('recovery-title')
+  const description = getElement<HTMLElement>('recovery-description')
+  const details = getElement<HTMLElement>('recovery-error')
+  const actions = getElement<HTMLElement>('recovery-actions')
+
+  terminal.hidden = true
+  recovery.hidden = false
+  eyebrow.textContent = options.eyebrow
+  title.textContent = options.title
+  description.textContent = options.description
+  details.textContent = error instanceof Error && error.stack
+    ? error.stack
+    : errorMessage(error)
+  actions.hidden = ! options.recoveryActions
+}
+
+export const showStartupBlockedMode = (
+  error: unknown,
+  title: string,
+  description: string,
+) => {
+  console.error('Game startup blocked', error)
+  showFailureMode(error, {
+    eyebrow: 'STARTUP BLOCKED',
+    title,
+    description,
+    recoveryActions: false,
+  })
+}
+
 export const showRecoveryMode = (error: unknown) => {
   console.error('Game startup failed', error)
 
-  const terminal = getElement<HTMLElement>('xterm-container')
-  const recovery = getElement<HTMLElement>('recovery')
-  const details = getElement<HTMLElement>('recovery-error')
   const status = getElement<HTMLElement>('recovery-status')
   const exportButton = getElement<HTMLButtonElement>('recovery-export')
   const resetButton = getElement<HTMLButtonElement>('recovery-reset')
 
-  terminal.hidden = true
-  recovery.hidden = false
-  details.textContent = error instanceof Error && error.stack
-    ? error.stack
-    : errorMessage(error)
+  showFailureMode(error, {
+    eyebrow: 'RECOVERY MODE',
+    title: 'HumanOS could not start',
+    description: 'The local save may be damaged. Export it for inspection before resetting, '
+      + 'or reload the page to try again without changing it.',
+    recoveryActions: true,
+  })
 
   exportButton.onclick = async () => {
     exportButton.disabled = true
