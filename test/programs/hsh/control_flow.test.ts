@@ -194,8 +194,10 @@ describe('hsh control-flow execution', () => {
       name: 'hsh',
       env: { HOME: '/', PATH: '/bin', PWD: '/' },
       stdio: new Stdio(new KeyInput([
-        'if ok', '\r',
-        'then emit yes', '\r',
+        'if', '\r',
+        'ok', '\r',
+        'then', '\r',
+        'emit yes', '\r',
         'fi', '\r',
         '\x04',
       ]), output, error),
@@ -204,7 +206,7 @@ describe('hsh control-flow execution', () => {
     const hsh = createHsh({ builtins: { ok: () => 0, emit } })
 
     await expect(hsh(process, 'hsh')).resolves.toBe(0)
-    expect(stripAnsi(output.content)).toContain('> ')
+    expect(stripAnsi(output.content).match(/> /g)).toHaveLength(4)
     expect(output.content).toContain('yes\n')
     expect(error.content).toBe('')
   })

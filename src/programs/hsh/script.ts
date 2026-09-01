@@ -309,7 +309,10 @@ class ScriptParser {
   }
 
   private requireNonEmpty(script: HshControlScript, message: string) {
-    if (! script.entries.length) throw new UserError(message)
+    if (! script.entries.length) {
+      if (! this.peek()) throw new IncompleteHshScriptError(message)
+      throw new UserError(message)
+    }
     return script
   }
 

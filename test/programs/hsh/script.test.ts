@@ -50,8 +50,14 @@ describe('hsh control-flow parser', () => {
   })
 
   it('reports unfinished compounds separately from invalid completed syntax', () => {
+    expect(() => parseControlScript('if')).toThrow(IncompleteHshScriptError)
     expect(() => parseControlScript('if ready; then echo yes'))
       .toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('if ready; then')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('if ready; then echo yes; else'))
+      .toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('while')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('while ready; do')).toThrow(IncompleteHshScriptError)
     expect(() => parseControlScript('echo "unfinished'))
       .toThrow(IncompleteHshScriptError)
     expect(() => parseControlScript('then echo nope'))
