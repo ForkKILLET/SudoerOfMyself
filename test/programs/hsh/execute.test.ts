@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Ok } from 'fk-result'
+import { Err, Ok } from 'fk-result'
 import { execute, executeScript } from '@/programs/hsh'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
@@ -14,6 +14,7 @@ import { createPipe } from '@/sys0/pipe'
 import { cat } from '@/programs/cat'
 import { jobs } from '@/programs/jobs'
 import { wait } from '@/programs/wait'
+import { ExecErrorT } from '@/sys0/exec'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -135,6 +136,76 @@ describe('hsh execution', () => {
     expect(fs.openU('/second.txt', 'r').handle.read()).toBe('payload')
   })
 
+  it('makes descriptor duplication order observable', async () => {
+    const program: Program = (child) => {
+      child.stdio.write('stdout')
+      child.stdio.writeError('stderr')
+      return 0
+    }
+    const first = createShellProcess(program)
+    await execute(first.process, {
+      name: 'mixed',
+      args: [],
+      redirections: [
+        { fd: 2, type: 'duplicate', sourceFd: 1 },
+        { fd: 1, type: 'writeTo', path: '/first.txt' },
+      ],
+    }, {})
+    expect(first.output.content).toBe('stderr')
+    expect(first.fs.openU('/first.txt', 'r').handle.read()).toBe('stdout')
+
+    const second = createShellProcess(program)
+    await execute(second.process, {
+      name: 'mixed',
+      args: [],
+      redirections: [
+        { fd: 1, type: 'writeTo', path: '/second.txt' },
+        { fd: 2, type: 'duplicate', sourceFd: 1 },
+      ],
+    }, {})
+    expect(second.output.content).toBe('')
+    expect(second.fs.openU('/second.txt', 'r').handle.read()).toBe('stdoutstderr')
+  })
+
+  it('installs, duplicates, and closes descriptors beyond stderr', async () => {
+    const { fs, process } = createShellProcess((child) => {
+      child.stdio.fds.getWritable(3).unwrap().write('first')
+      child.stdio.fds.getWritable(4).unwrap().write(' second')
+      expect(child.stdio.fds.has(5)).toBe(false)
+      return 0
+    })
+
+    await execute(process, {
+      name: 'fd-writer',
+      args: [],
+      redirections: [
+        { fd: 3, type: 'writeTo', path: '/fd.txt' },
+        { fd: 4, type: 'duplicate', sourceFd: 3 },
+        { fd: 5, type: 'duplicate', sourceFd: 3 },
+        { fd: 5, type: 'close' },
+      ],
+    }, {})
+
+    expect(fs.openU('/fd.txt', 'r').handle.read()).toBe('first second')
+  })
+
+  it('applies stderr redirection to command resolution failures', async () => {
+    const { error, fs, process } = createShellProcess(() => 0)
+    process.ctx.exec = {
+      resolve: () => Err({ type: ExecErrorT.NOT_FOUND }),
+    } as unknown as Context['exec']
+
+    const status = await execute(process, {
+      name: 'missing',
+      args: [],
+      redirections: [{ fd: 2, type: 'writeTo', path: '/error.txt' }],
+    }, {})
+
+    expect(status.code).toBe(127)
+    expect(error.content).toBe('')
+    expect(fs.openU('/error.txt', 'r').handle.read()).toBe('missing: Command not found\n')
+  })
+
   it('runs pipeline stages concurrently and pipes only stdout', async () => {
     const { error, output, process } = createShellProcess({
       producer: (child) => {
@@ -159,6 +230,40 @@ describe('hsh execution', () => {
     expect(output.content).toBe('PAYLOAD')
     expect(error.content).toBe('producer: diagnostic\n')
     expect(process.env['?']).toBe('7')
+  })
+
+  it('keeps a pipe open while a descendant retains the writer descriptor', async () => {
+    const release = deferred<number>()
+    const { output, process } = createShellProcess({
+      producer: (child) => {
+        void child.spawn(async (descendant) => {
+          descendant.stdio.write('late output')
+          return release.promise
+        }, { name: 'descendant' })
+        return 0
+      },
+      consumer: async (child) => {
+        child.stdio.write(await child.stdio.read())
+        return 0
+      },
+    })
+    let completed = false
+
+    const running = executeScript(process, {
+      commands: [
+        { name: 'producer', args: [], pipeToNext: true },
+        { name: 'consumer', args: [] },
+      ],
+    }, {}).then(() => {
+      completed = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(completed).toBe(false)
+
+    release.resolve(0)
+    await running
+    expect(output.content).toBe('late output')
   })
 
   it('writes only one newline when multiple pipeline stages receive SIGINT', async () => {

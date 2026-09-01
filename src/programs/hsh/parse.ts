@@ -59,8 +59,8 @@ export interface HshTokenHome extends HshTokenBase {
 
 export interface HshTokenRedirect extends HshTokenBase {
   type: 'redirect'
-  fd: 0 | 1 | 2
-  mode: 'read' | 'write' | 'append'
+  fd: number
+  mode: 'read' | 'write' | 'append' | 'duplicate-read' | 'duplicate-write'
 }
 
 export interface HshTokenPipe extends HshTokenBase {
@@ -220,15 +220,31 @@ export const tokenize = (line: string, isStrict = true) => {
       isWh = true
     }
     else if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
-      const explicitFd = begin === i - 2 && (
-        (ch === '>' && (now === '1' || now === '2'))
-        || (ch === '<' && now === '0')
-      )
-        ? Number(now) as 0 | 1 | 2
-        : undefined
+      const previousToken = tokens.at(- 1)
+      const isPendingDupTarget = previousToken?.type === 'redirect'
+        && previousToken.mode.startsWith('duplicate-')
+      const hasExplicitFd = ! isPendingDupTarget
+        && begin === i - 1 - now.length
+        && /^\d+$/.test(now)
+      const parsedFd = hasExplicitFd ? Number(now) : undefined
+      if (parsedFd !== undefined && ! Number.isSafeInteger(parsedFd)) {
+        throw new UserError(`Invalid file descriptor: ${now}`)
+      }
+      const explicitFd = parsedFd
       if (explicitFd !== undefined) now = ''
       else consumeNow()
-      if (ch === '>' && line[i] === '>') {
+      if (line[i] === '&') {
+        tokens.push({
+          type: 'redirect',
+          fd: explicitFd ?? (ch === '<' ? 0 : 1),
+          mode: ch === '<' ? 'duplicate-read' : 'duplicate-write',
+          begin,
+          end: i,
+          content: `${explicitFd ?? ''}${ch}&`,
+        })
+        i ++
+      }
+      else if (ch === '>' && line[i] === '>') {
         tokens.push({
           type: 'redirect',
           fd: explicitFd ?? 1,
@@ -387,8 +403,10 @@ export interface HshAstCommand {
 }
 
 export type HshAstRedirection =
-  | { fd: 0, type: 'readFrom', path: string }
-  | { fd: 1 | 2, type: 'writeTo' | 'appendTo', path: string }
+  | { fd: number, type: 'readFrom', path: string }
+  | { fd: number, type: 'writeTo' | 'appendTo', path: string }
+  | { fd: number, type: 'duplicate', sourceFd: number }
+  | { fd: number, type: 'close' }
 
 export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   const script: HshAstScript = {
@@ -427,16 +445,29 @@ export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
         if (target.type !== 'text') {
           throw new UserError('Expected redirect target, got ' + target.type)
         }
-        if (token.fd === 0) {
-          command.redirections ??= []
+        command.redirections ??= []
+        if (token.mode.startsWith('duplicate-')) {
+          if (target.content === '-') {
+            command.redirections.push({ fd: token.fd, type: 'close' })
+            continue
+          }
+          if (! /^\d+$/.test(target.content)) {
+            throw new UserError(`Expected file descriptor, got ${target.content}`)
+          }
+          const sourceFd = Number(target.content)
+          if (! Number.isSafeInteger(sourceFd)) {
+            throw new UserError(`Invalid file descriptor: ${target.content}`)
+          }
+          command.redirections.push({ fd: token.fd, type: 'duplicate', sourceFd })
+        }
+        else if (token.mode === 'read') {
           command.redirections.push({
-            fd: 0,
+            fd: token.fd,
             type: 'readFrom',
             path: target.content,
           })
         }
         else {
-          command.redirections ??= []
           command.redirections.push({
             fd: token.fd,
             type: token.mode === 'append' ? 'appendTo' : 'writeTo',

@@ -8,7 +8,9 @@ import {
   displayFdError,
   FdTable,
   OpenFileDescription,
+  readableFileTarget,
   type OpenFileTarget,
+  writableFileTarget,
 } from './fd'
 
 export interface StdinEvents extends Events {
@@ -151,9 +153,9 @@ export class Stdio implements FReadWrite {
       descriptions.set(stream, description)
       return description
     }
-    this.fds.set(0, descriptionFor(input, { readable: input })).unwrap()
-    this.fds.set(1, descriptionFor(output, { writable: output, close: closeOf(output) })).unwrap()
-    this.fds.set(2, descriptionFor(error, { writable: error, close: closeOf(error) })).unwrap()
+    this.fds.set(0, descriptionFor(input, readableFileTarget(input))).unwrap()
+    this.fds.set(1, descriptionFor(output, writableFileTarget(output))).unwrap()
+    this.fds.set(2, descriptionFor(error, writableFileTarget(error))).unwrap()
   }
 
   get input() {
@@ -163,7 +165,7 @@ export class Stdio implements FReadWrite {
   }
 
   set input(input: FRead) {
-    this.fds.replace(0, { readable: input, close: closeOf(input) }).unwrap()
+    this.fds.replace(0, readableFileTarget(input)).unwrap()
   }
 
   get output() {
@@ -173,7 +175,7 @@ export class Stdio implements FReadWrite {
   }
 
   set output(output: FWrite) {
-    this.fds.replace(1, { writable: output, close: closeOf(output) }).unwrap()
+    this.fds.replace(1, writableFileTarget(output)).unwrap()
   }
 
   get error() {
@@ -183,7 +185,7 @@ export class Stdio implements FReadWrite {
   }
 
   set error(error: FWrite) {
-    this.fds.replace(2, { writable: error, close: closeOf(error) }).unwrap()
+    this.fds.replace(2, writableFileTarget(error)).unwrap()
   }
 
   get stdin() {
@@ -238,11 +240,4 @@ export class Stdio implements FReadWrite {
     const line = await this.readLn()
     return line.trim().toLowerCase() === 'y'
   }
-}
-
-const closeOf = (stream: object) => {
-  const close = (stream as { close?: unknown }).close
-  return typeof close === 'function'
-    ? () => close.call(stream)
-    : undefined
 }

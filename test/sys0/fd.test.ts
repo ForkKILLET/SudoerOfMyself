@@ -65,4 +65,11 @@ describe('file descriptor table', () => {
     table.close(3).unwrap()
     expect(oldClose).toHaveBeenCalledOnce()
   })
+
+  it('can close an unopened valid descriptor without hiding invalid numbers', () => {
+    const table = new FdTable()
+
+    expect(table.closeIfOpen(8).isOk).toBe(true)
+    expect(table.closeIfOpen(- 1).isErr).toBe(true)
+  })
 })

@@ -28,6 +28,23 @@ export interface OpenFileTarget {
   close?: () => void
 }
 
+const closeOf = (stream: object) => {
+  const close = (stream as { close?: unknown }).close
+  return typeof close === 'function'
+    ? () => close.call(stream)
+    : undefined
+}
+
+export const readableFileTarget = (readable: FRead): OpenFileTarget => ({
+  readable,
+  close: closeOf(readable),
+})
+
+export const writableFileTarget = (writable: FWrite): OpenFileTarget => ({
+  writable,
+  close: closeOf(writable),
+})
+
 export class OpenFileDescription {
   private referenceCount = 0
   private closed = false
@@ -152,6 +169,11 @@ export class FdTable {
     this.entries.delete(fd)
     entry.val.description.release()
     return Ok(undefined)
+  }
+
+  closeIfOpen(fd: Fd): Result<void, FdError> {
+    if (! isFd(fd)) return Err({ type: 'bad-file-descriptor', fd })
+    return this.entries.has(fd) ? this.close(fd) : Ok(undefined)
   }
 
   fork() {

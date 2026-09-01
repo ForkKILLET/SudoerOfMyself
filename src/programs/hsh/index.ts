@@ -17,7 +17,13 @@ import { createPipe } from '@/sys0/pipe'
 import { JobTable, ProcessGroup } from '@/sys0/job'
 import { getShellExitRequest } from './control'
 import { initializeShellParameters, updateLastArgument } from './parameters'
-import { errorMessage } from '@/utils/errors'
+import { errorMessage, UserError } from '@/utils/errors'
+import {
+  displayFdError,
+  type FdError,
+  readableFileTarget,
+  writableFileTarget,
+} from '@/sys0/fd'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -43,32 +49,50 @@ export const execute = async (
   const { ctx, env } = proc
 
   const getStdio = () => {
-    let input = options.input ?? proc.stdio.input
-    let output = options.output ?? proc.stdio.output
-    let error = proc.stdio.error
-    command.redirections?.forEach((redirection) => {
-      if (redirection.fd === 0) {
-        input = ctx.fs.openU(redirection.path, 'r').handle
-      }
-      else {
-        const handle = ctx.fs.openU(redirection.path, redirection.type[0] as 'a' | 'w').handle
-        if (redirection.fd === 1) {
-          output = handle
-        }
-        else {
-          error = handle
-        }
-      }
+    const fds = proc.stdio.fds.fork()
+    const unwrapFd = <T>(result: Result<T, FdError>) => result.unwrapBy((error) => {
+      throw new UserError(displayFdError(error))
     })
+    try {
+      if (options.input) unwrapFd(fds.replace(0, readableFileTarget(options.input)))
+      if (options.output) unwrapFd(fds.replace(1, writableFileTarget(options.output)))
+      command.redirections?.forEach((redirection) => {
+        switch (redirection.type) {
+          case 'readFrom': {
+            const handle = ctx.fs.openU(redirection.path, 'r').handle
+            unwrapFd(fds.replace(redirection.fd, readableFileTarget(handle)))
+            break
+          }
+          case 'writeTo':
+          case 'appendTo': {
+            const mode = redirection.type === 'appendTo' ? 'a' : 'w'
+            const handle = ctx.fs.openU(redirection.path, mode).handle
+            unwrapFd(fds.replace(redirection.fd, writableFileTarget(handle)))
+            break
+          }
+          case 'duplicate':
+            unwrapFd(fds.duplicate(redirection.sourceFd, redirection.fd))
+            break
+          case 'close':
+            unwrapFd(fds.closeIfOpen(redirection.fd))
+            break
+        }
+      })
 
-    return new Stdio(input, output, error)
+      return new Stdio(fds)
+    }
+    catch (error) {
+      fds.closeAll()
+      throw error
+    }
   }
 
+  const commandStdio = getStdio()
   if (name in builtins) {
     if (options.pipelineStage) {
       return proc.spawn(builtins[name], {
         name,
-        stdio: getStdio(),
+        stdio: commandStdio,
         processGroup: options.processGroup,
         foreground: options.foreground,
       }, ...args)
@@ -76,7 +100,6 @@ export const execute = async (
 
     const originalStdio = proc.stdio
     const originalName = proc.name
-    const commandStdio = getStdio()
     proc.stdio = commandStdio
     proc.name = name
     try {
@@ -95,24 +118,32 @@ export const execute = async (
   else {
     const exeRes = ctx.exec.resolve(name, { envPath: env.PATH, cwd: env.PWD })
     if (exeRes.isErr) {
-      switch (exeRes.err.type) {
-        case ExecErrorT.NOT_FOUND:
-          proc.stdio.writeErrorLn(`${name}: Command not found`)
-          return normalExit(127)
-        case ExecErrorT.NOT_EXECUTABLE:
-          proc.error(`${name}: Not an executable`)
-          return normalExit(126)
-        case ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED:
-          proc.error(`${name}: Native program '${exeRes.err.programId}' is not registered`)
-          return normalExit(126)
-        case ExecErrorT.FILE_SYSTEM_ERROR:
-          proc.error(`${name}: ${FOp.displayError(exeRes.err.error)}`)
-          return normalExit(126)
+      try {
+        switch (exeRes.err.type) {
+          case ExecErrorT.NOT_FOUND:
+            commandStdio.writeErrorLn(`${name}: Command not found`)
+            return normalExit(127)
+          case ExecErrorT.NOT_EXECUTABLE:
+            commandStdio.writeErrorLn(`${name}: Not an executable`)
+            return normalExit(126)
+          case ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED:
+            commandStdio.writeErrorLn(
+              `${name}: Native program '${exeRes.err.programId}' is not registered`,
+            )
+            return normalExit(126)
+          case ExecErrorT.FILE_SYSTEM_ERROR:
+            commandStdio.writeErrorLn(`${name}: ${FOp.displayError(exeRes.err.error)}`)
+            return normalExit(126)
+        }
       }
+      finally {
+        commandStdio.close()
+      }
+      throw new Error('Unknown executable resolution error')
     }
     return proc.spawn(exeRes.val.program, {
       name,
-      stdio: getStdio(),
+      stdio: commandStdio,
       processGroup: options.processGroup,
       foreground: options.foreground,
     }, ...args)

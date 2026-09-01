@@ -67,6 +67,39 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses arbitrary descriptors, duplication, and close redirects', () => {
+    expect(parseLine('echo value 3>file 2>&1 4<&0 5>&-', {})).toEqual({
+      commands: [{
+        name: 'echo',
+        args: ['value'],
+        redirections: [
+          { fd: 3, type: 'writeTo', path: 'file' },
+          { fd: 2, type: 'duplicate', sourceFd: 1 },
+          { fd: 4, type: 'duplicate', sourceFd: 0 },
+          { fd: 5, type: 'close' },
+        ],
+      }],
+    })
+  })
+
+  it('finishes a duplicate target before an adjacent redirect', () => {
+    expect(parseLine('echo 2>&1>output', {})).toEqual({
+      commands: [{
+        name: 'echo',
+        args: [],
+        redirections: [
+          { fd: 2, type: 'duplicate', sourceFd: 1 },
+          { fd: 1, type: 'writeTo', path: 'output' },
+        ],
+      }],
+    })
+  })
+
+  it('rejects a non-descriptor duplication target', () => {
+    expect(() => parseLine('echo 2>&output', {}))
+      .toThrow('Expected file descriptor, got output')
+  })
+
   it('parses a pipeline as linked commands', () => {
     const script = parse(expand(tokenize('echo hello | cat | cat > output.txt'), {}))
 
