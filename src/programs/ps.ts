@@ -1,29 +1,39 @@
 import { createCommand } from '@/sys0/program'
 
+export const formatCpuTime = (milliseconds: number) => {
+  const totalSeconds = Math.floor(milliseconds / 1000)
+  const seconds = totalSeconds % 60
+  const totalMinutes = Math.floor(totalSeconds / 60)
+  const minutes = totalMinutes % 60
+  const totalHours = Math.floor(totalMinutes / 60)
+  const hours = totalHours % 24
+  const days = Math.floor(totalHours / 24)
+  const clock = [hours, minutes, seconds]
+    .map(value => value.toString().padStart(2, '0'))
+    .join(':')
+  return days ? `${days}-${clock}` : clock
+}
+
 export const ps = createCommand('ps', '', 'Report active processes.')
   .help('help')
   .program(({ proc }) => {
-    const processes = proc.ctx.processes.values().sort((left, right) => left.pid - right.pid)
+    const processes = proc.ctx.processes.values()
     const rows = processes.map(process => ({
       pid: process.pid.toString(),
-      ppid: process.ppid.toString(),
-      state: process.state,
+      time: formatCpuTime(process.cpuTimeMs),
       command: process.name,
     }))
-    const pidWidth = Math.max('PID'.length, ...rows.map(row => row.pid.length))
-    const ppidWidth = Math.max('PPID'.length, ...rows.map(row => row.ppid.length))
-    const stateWidth = Math.max('STATE'.length, ...rows.map(row => row.state.length))
+    const pidWidth = Math.max(7, ...rows.map(row => row.pid.length))
+    const timeWidth = Math.max(8, ...rows.map(row => row.time.length))
 
     proc.stdio.writeLn(
       `${'PID'.padStart(pidWidth)} ` +
-      `${'PPID'.padStart(ppidWidth)} ` +
-      `${'STATE'.padEnd(stateWidth)} COMMAND`,
+      `${'TIME'.padStart(timeWidth)} CMD`,
     )
     rows.forEach((row) => {
       proc.stdio.writeLn(
         `${row.pid.padStart(pidWidth)} ` +
-        `${row.ppid.padStart(ppidWidth)} ` +
-        `${row.state.padEnd(stateWidth)} ${row.command}`,
+        `${row.time.padStart(timeWidth)} ${row.command}`,
       )
     })
     return 0

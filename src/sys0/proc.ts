@@ -37,6 +37,16 @@ export class Process extends Emitter<ProcessEvents> {
   exitCode: number | null = null
   exitStatus: ProcessExit | null = null
   jobTable: JobTable | null
+  private _cpuTimeMs = 0
+
+  get cpuTimeMs() {
+    return this._cpuTimeMs
+  }
+
+  reportCpuTime(totalMs: number) {
+    if (! Number.isFinite(totalMs) || totalMs < 0) return
+    this._cpuTimeMs = Math.max(this._cpuTimeMs, totalMs)
+  }
 
   private _cwd = '/'
   get cwd() {

@@ -53,7 +53,10 @@ export const runWorkerProgram = (
     }
     const onMessage = (event: MessageEvent<unknown>) => {
       if (! isWorkerStatusMessage(event.data)) return
-      if (event.data.type === 'sudoer:worker-exit') finish(normalExit(event.data.exitCode))
+      if (event.data.type === 'sudoer:worker-cpu-time') {
+        process.reportCpuTime(event.data.totalMs)
+      }
+      else if (event.data.type === 'sudoer:worker-exit') finish(normalExit(event.data.exitCode))
       else {
         process.error(event.data.stack ?? event.data.message)
         finish(normalExit(128))

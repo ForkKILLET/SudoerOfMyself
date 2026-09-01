@@ -24,7 +24,10 @@ export const startWorkerProgram = (
 
     const { channel, name, args } = event.data
     const client = new SyncSyscallClient<GameSyscallSchema>(channel, scope)
-    const process = new WorkerProcessApi(client)
+    const process = new WorkerProcessApi(client, totalMs => scope.postMessage({
+      type: 'sudoer:worker-cpu-time',
+      totalMs,
+    }))
     try {
       const exitCode = program(process, name, ...args)
       scope.postMessage({ type: 'sudoer:worker-exit', exitCode })
