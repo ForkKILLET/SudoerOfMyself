@@ -8,13 +8,14 @@ import { errorMessage } from '@/utils/errors'
 import { normalizeExit, normalExit, ProcessExit, ProcessSignal } from './process_exit'
 import { Pid } from './process_table'
 import type { JobTable, ProcessGroup } from './job'
+import { defaultProcessScheduler } from './process_scheduler'
 
 export interface ProcessEvents extends Events {
   signal: [ProcessSignal]
   exit: [ProcessExit]
 }
 
-export type ProcessState = 'running' | 'exited'
+export type ProcessState = 'ready' | 'running' | 'exited'
 
 export interface CreateProcOptions {
   name: string
@@ -46,6 +47,7 @@ export class Process extends Emitter<ProcessEvents> {
   }
 
   private _cwd = '/'
+  private pendingSignals: ProcessSignal[] = []
   get cwd() {
     return this._cwd
   }
@@ -93,7 +95,21 @@ export class Process extends Emitter<ProcessEvents> {
 
   sendSignal(signal: ProcessSignal) {
     if (this.state === 'exited') return
+    if (this.state === 'ready') {
+      this.pendingSignals.push(signal)
+      return
+    }
     this.emit('signal', signal)
+  }
+
+  private startProgram<T>(run: () => T) {
+    if (this.state !== 'ready') throw new Error('Only a ready process can be started')
+    this.state = 'running'
+    const result = run()
+    const pendingSignals = this.pendingSignals
+    this.pendingSignals = []
+    pendingSignals.forEach(signal => this.emit('signal', signal))
+    return result
   }
 
   signalForeground(signal: ProcessSignal) {
@@ -137,9 +153,13 @@ export class Process extends Emitter<ProcessEvents> {
   async spawn(program: Program, options: CreateProcOptions, ...args: string[]) {
     const { name } = options
     const proc = this.fork(options)
+    proc.state = 'ready'
+    const scheduler = this.ctx.scheduler ?? defaultProcessScheduler
     let exitStatus: ProcessExit
     try {
-      exitStatus = normalizeExit(await program(proc, name, ...args))
+      exitStatus = normalizeExit(await scheduler.schedule(() => (
+        proc.startProgram(() => program(proc, name, ...args))
+      )))
     }
     catch (err) {
       console.error(err)

@@ -74,6 +74,7 @@ describe('cat standard input', () => {
     const stdin = new Stdin(term)
     const root = createRoot(new Stdio(stdin, output))
     const running = root.spawn(cat, { name: 'cat' })
+    await Promise.resolve()
 
     onData?.('typed input')
     await Promise.resolve()

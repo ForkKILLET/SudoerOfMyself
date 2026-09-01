@@ -365,6 +365,22 @@ describe('hsh execution', () => {
     expect(job?.group.size).toBe(0)
   })
 
+  it('prints the background job banner before immediate child output', async () => {
+    const { output, process } = createShellProcess((child) => {
+      child.stdio.writeLn('child output')
+      return 0
+    })
+
+    await executeScript(process, {
+      commands: [{ name: 'immediate', args: [] }],
+      background: true,
+    }, {}, { source: 'immediate &' })
+    await process.jobTable?.get(1)?.completion
+
+    const childPid = process.env['!']
+    expect(output.content).toBe(`[1] ${childPid}\nchild output\n`)
+  })
+
   it('reports completed jobs and wait removes them', async () => {
     const finished = deferred<number>()
     const { output, process } = createShellProcess(() => finished.promise)

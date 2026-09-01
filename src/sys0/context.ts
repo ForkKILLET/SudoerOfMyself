@@ -5,6 +5,7 @@ import { Vfs } from './fs/vfs'
 import { ExecService, NativeProgramRegistry } from './exec'
 import { ProcessTable } from './process_table'
 import { FsPersistence } from './fs/persistence'
+import { ProcessScheduler } from './process_scheduler'
 
 export interface ContextOptions {
   mounts?: readonly FsMount[]
@@ -18,6 +19,7 @@ export class Context {
   fs: Fs
   exec: ExecService
   processes: ProcessTable
+  scheduler: ProcessScheduler
 
   get fgProc(): Process {
     let process = this.init
@@ -32,6 +34,7 @@ export class Context {
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
+    this.scheduler = new ProcessScheduler()
     this.fs = new Fs(initialImage, {
       persistence: fsPersistence,
       getCwd: () => this.fgProc.cwd,

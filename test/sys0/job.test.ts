@@ -62,6 +62,7 @@ describe('ProcessGroup', () => {
     expect(childSignal).not.toHaveBeenCalled()
 
     group.sendSignal('SIGTERM')
+    await Promise.resolve()
     expect(childSignal).toHaveBeenCalledWith('SIGTERM')
 
     childExit.resolve(0)

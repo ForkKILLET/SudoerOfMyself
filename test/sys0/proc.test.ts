@@ -44,6 +44,37 @@ const createRootProcess = () => {
 }
 
 describe('Process lifecycle', () => {
+  it('creates a ready child synchronously and starts it on a scheduler tick', async () => {
+    const { root } = createRootProcess()
+    const events: string[] = []
+
+    const running = root.spawn(() => {
+      events.push('program')
+      return 0
+    }, { name: 'scheduled' })
+    const child = root.subProcesses[0]
+
+    expect(child.state).toBe('ready')
+    expect(events).toEqual([])
+    events.push('parent')
+
+    await running
+    expect(events).toEqual(['parent', 'program'])
+    expect(child.state).toBe('exited')
+  })
+
+  it('delivers signals queued before a scheduled program starts', async () => {
+    const { root } = createRootProcess()
+    const running = root.spawn(child => new Promise((resolve) => {
+      child.on('signal', signal => resolve(signalExit(signal)))
+    }), { name: 'scheduled' })
+    const child = root.subProcesses[0]
+
+    child.sendSignal('SIGTERM')
+
+    await expect(running).resolves.toEqual(signalExit('SIGTERM'))
+  })
+
   it('removes the child that exited instead of the newest child', async () => {
     const { root } = createRootProcess()
     const firstExit = deferred<number>()

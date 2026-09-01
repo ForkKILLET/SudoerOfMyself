@@ -176,6 +176,7 @@ describe('hsh control-flow execution', () => {
     const shell = createShell()
     const mutate: Program = async (child) => {
       expect(await child.stdio.read()).toBe('')
+      child.stdio.writeLn('compound output')
       child.env.CHILD_ONLY = 'yes'
       started.resolve(child)
       return release.promise
@@ -201,6 +202,8 @@ describe('hsh control-flow execution', () => {
     expect(job?.command).toContain('if true; then mutate; fi &')
     expect(job?.state).toBe('running')
     expect(shell.output.content).toContain('foreground\n')
+    expect(shell.output.content.indexOf(`[1] ${child.pid}\n`))
+      .toBeLessThan(shell.output.content.indexOf('compound output\n'))
 
     release.resolve(7)
     await expect(job?.completion).resolves.toMatchObject({ code: 7 })
