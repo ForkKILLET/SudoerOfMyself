@@ -9,6 +9,7 @@ import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
 import { showRecoveryMode } from '@/recovery'
 import { IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { QueuedFsPersistence } from '@/sys0/fs/persistence'
+import { acquireFileSystemWriterLock } from '@/sys0/fs/writer_lock'
 
 const start = async () => {
   const store = await IndexedDbFileSystemStore.open()
@@ -42,7 +43,14 @@ const start = async () => {
 
 const boot = async () => {
   if (! await prepareCrossOriginIsolation()) return
-  await start()
+  const writerLock = await acquireFileSystemWriterLock()
+  try {
+    await start()
+  }
+  catch (error) {
+    writerLock.release()
+    throw error
+  }
   try {
     await navigator.storage.persist?.()
   }
