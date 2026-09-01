@@ -15,7 +15,13 @@ import { ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
 import { JobTable, ProcessGroup } from '@/sys0/job'
-import { getShellExitRequest } from './control'
+import {
+  consumeLoopControlAtBoundary,
+  enterShellLoop,
+  getLoopControlRequest,
+  getShellExitRequest,
+  leaveShellLoop,
+} from './control'
 import { initializeShellParameters, updateLastArgument } from './parameters'
 import { errorMessage, UserError } from '@/utils/errors'
 import {
@@ -24,6 +30,13 @@ import {
   readableFileTarget,
   writableFileTarget,
 } from '@/sys0/fd'
+import {
+  type HshControlScript,
+  type HshForStatement,
+  type HshIfStatement,
+  type HshLoopStatement,
+  type HshStatement,
+} from './script'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -191,7 +204,8 @@ export const executeScript = async (
   script: HshAstScript,
   builtins: ProgramRegistry,
   { source }: { source?: string } = {},
-): Promise<void> => {
+): Promise<ProcessExit> => {
+  let lastStatus = normalExit(0)
   let commandIndex = 0
   while (commandIndex < script.commands.length) {
     const pipeline: HshAstCommand[] = []
@@ -226,7 +240,7 @@ export const executeScript = async (
       const lastCommand = pipeline.at(- 1)
       if (lastCommand) updateLastArgument(proc, lastCommand)
       proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
-      return
+      return normalExit(0)
     }
 
     const exitStatuses = await executePipeline(proc, pipeline, builtins, {
@@ -236,11 +250,145 @@ export const executeScript = async (
     if (exitStatuses.some(status => status.reason === 'signal' && status.signal === 'SIGINT')) {
       proc.stdio.writeLn('')
     }
-    proc.env['?'] = exitStatuses.at(- 1)?.code.toString() ?? '0'
+    lastStatus = exitStatuses.at(- 1) ?? normalExit(0)
+    proc.env['?'] = lastStatus.code.toString()
     const lastCommand = pipeline.at(- 1)
     if (lastCommand) updateLastArgument(proc, lastCommand)
-    if (getShellExitRequest(proc)) return
+    const exitRequest = getShellExitRequest(proc)
+    if (exitRequest) return exitRequest
   }
+  return lastStatus
+}
+
+const setLastStatus = (proc: Process, status: ProcessExit) => {
+  proc.env['?'] = status.code.toString()
+  return status
+}
+
+const executeIf = async (
+  proc: Process,
+  statement: HshIfStatement,
+  builtins: ProgramRegistry,
+): Promise<ProcessExit> => {
+  for (const branch of statement.branches) {
+    const conditionStatus = await executeControlScript(proc, branch.condition, builtins)
+    if (getShellExitRequest(proc) || getLoopControlRequest(proc)) return conditionStatus
+    if (conditionStatus.code === 0) {
+      return executeControlScript(proc, branch.body, builtins)
+    }
+  }
+  if (statement.elseBody) return executeControlScript(proc, statement.elseBody, builtins)
+  return setLastStatus(proc, normalExit(0))
+}
+
+const executeLoopIteration = async (
+  proc: Process,
+  body: HshControlScript,
+  builtins: ProgramRegistry,
+) => {
+  const status = await executeControlScript(proc, body, builtins)
+  return { status, action: consumeLoopControlAtBoundary(proc) }
+}
+
+const executeLoop = async (
+  proc: Process,
+  statement: HshLoopStatement,
+  builtins: ProgramRegistry,
+): Promise<ProcessExit> => {
+  let lastStatus = normalExit(0)
+  enterShellLoop(proc)
+  try {
+    while (true) {
+      const conditionStatus = await executeControlScript(proc, statement.condition, builtins)
+      if (getShellExitRequest(proc)) return conditionStatus
+      const conditionAction = consumeLoopControlAtBoundary(proc)
+      if (conditionAction) {
+        if (conditionAction === 'continue') continue
+        break
+      }
+      const shouldRun = statement.type === 'while'
+        ? conditionStatus.code === 0
+        : conditionStatus.code !== 0
+      if (! shouldRun) break
+
+      const iteration = await executeLoopIteration(proc, statement.body, builtins)
+      lastStatus = iteration.status
+      if (getShellExitRequest(proc)) return lastStatus
+      if (iteration.action === 'continue') continue
+      if (iteration.action) break
+    }
+  }
+  finally {
+    leaveShellLoop(proc)
+  }
+  return setLastStatus(proc, lastStatus)
+}
+
+const expandForWords = (proc: Process, statement: HshForStatement) => {
+  if (! statement.wordsSource) return []
+  const tokens = expand(tokenize(statement.wordsSource), proc.env)
+  return tokens.map((token) => {
+    if (token.type !== 'text') throw new UserError(`Unexpected ${token.type} in for word list`)
+    return token.content
+  })
+}
+
+const executeFor = async (
+  proc: Process,
+  statement: HshForStatement,
+  builtins: ProgramRegistry,
+): Promise<ProcessExit> => {
+  const words = expandForWords(proc, statement)
+  let lastStatus = normalExit(0)
+  enterShellLoop(proc)
+  try {
+    for (const word of words) {
+      proc.env[statement.name] = word
+      const iteration = await executeLoopIteration(proc, statement.body, builtins)
+      lastStatus = iteration.status
+      if (getShellExitRequest(proc)) return lastStatus
+      if (iteration.action === 'continue') continue
+      if (iteration.action) break
+    }
+  }
+  finally {
+    leaveShellLoop(proc)
+  }
+  return setLastStatus(proc, lastStatus)
+}
+
+const executeStatement = async (
+  proc: Process,
+  statement: HshStatement,
+  builtins: ProgramRegistry,
+): Promise<ProcessExit> => {
+  switch (statement.type) {
+    case 'simple':
+      return executeScript(proc, parseLine(statement.source, proc.env), builtins, {
+        source: statement.source,
+      })
+    case 'if': return executeIf(proc, statement, builtins)
+    case 'while':
+    case 'until': return executeLoop(proc, statement, builtins)
+    case 'for': return executeFor(proc, statement, builtins)
+  }
+}
+
+export const executeControlScript = async (
+  proc: Process,
+  script: HshControlScript,
+  builtins: ProgramRegistry,
+): Promise<ProcessExit> => {
+  let lastStatus = normalExit(0)
+  for (const entry of script.entries) {
+    if (getShellExitRequest(proc) || getLoopControlRequest(proc)) break
+    const shouldRun = entry.condition === 'always'
+      || (entry.condition === 'success' && lastStatus.code === 0)
+      || (entry.condition === 'failure' && lastStatus.code !== 0)
+    if (! shouldRun) continue
+    lastStatus = await executeStatement(proc, entry.statement, builtins)
+  }
+  return setLastStatus(proc, lastStatus)
 }
 
 export const getCompProvider = (

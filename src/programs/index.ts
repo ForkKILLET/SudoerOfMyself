@@ -26,10 +26,13 @@ import { read } from './read'
 import { unset } from './unset'
 import { createTypeCommand } from './type'
 import { createCommandBuiltin } from './command'
+import { breakLoop, continueLoop } from './loop_control'
 
 export const BUILTINS: Record<string, Program> = {
+  break: breakLoop,
   cd,
   command: createCommandBuiltin(() => BUILTINS),
+  continue: continueLoop,
   echo,
   exit,
   export: exportEnv,
