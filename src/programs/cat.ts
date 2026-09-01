@@ -1,5 +1,4 @@
 import { createCommand } from '@/sys0/program'
-import { chalk } from '@/utils/color'
 import { ProcessSignal, signalExit } from '@/sys0/process_exit'
 
 export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to standard output.')
@@ -8,11 +7,6 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
   .program(async ({ proc }, ...paths) => {
     proc.staticName = 'cat'
     const { stdio, ctx } = proc
-
-    const eol = chalk.blackBright(chalk.bgWhiteBright('%')) + '\n'
-    const writeEolBy = (str: string) => {
-      if (! str.endsWith('\n')) stdio.stdout?.write(eol)
-    }
 
     let hasError = false
 
@@ -34,14 +28,12 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
         }
         if (receivedSignal) return signalExit(receivedSignal)
         stdio.write(data)
-        writeEolBy(data)
         return 0
       }
       try {
         const fh = ctx.fs.openU(path, 'r').handle
         const data = fh.read()
         stdio.write(data)
-        writeEolBy(data)
       }
       catch (err) {
         proc.error(err)

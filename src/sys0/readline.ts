@@ -533,6 +533,8 @@ export interface ReadlineLoopOptions extends StrictPick<ReadlineReadLnOptions, '
 
 export type ReadlineLoopOptionsInit = MakeOptional<ReadlineLoopOptions, 'prompt'>
 
+const DEFAULT_EOL_MARK = chalk.blackBright(chalk.bgWhiteBright('%'))
+
 export class ReadlineLoopHandle {
   options: ReadlineLoopOptions
 
@@ -554,7 +556,10 @@ export class ReadlineLoopHandle {
     this.options.onEnd?.()
   }
 
-  writePrompt() {
+  writePrompt(preservePartialLine = true) {
+    if (preservePartialLine && this.readline.stdio.stdout?.hasPartialLine) {
+      this.readline.stdio.write(DEFAULT_EOL_MARK + '\n')
+    }
     this.readline.stdio.write(compute(this.options.prompt))
   }
 
@@ -566,7 +571,7 @@ export class ReadlineLoopHandle {
         this.readline.readLn({
           history,
           onComp: this.options.onComp,
-          onClear: () => this.writePrompt(),
+          onClear: () => this.writePrompt(false),
         }),
         this.toStop.promise,
       ])

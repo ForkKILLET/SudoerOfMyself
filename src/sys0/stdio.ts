@@ -80,6 +80,7 @@ export interface StdoutEvents extends Events {
 export class Stdout extends Emitter<StdoutEvents> implements FWrite {
   isDisabled = false
   isWriting = false
+  hasPartialLine = false
 
   constructor(private term: Term) {
     super()
@@ -96,9 +97,10 @@ export class Stdout extends Emitter<StdoutEvents> implements FWrite {
   }
 
   write(data: string) {
-    if (this.isDisabled) return
+    if (this.isDisabled || ! data) return
     this.startWriting()
     this.term.write(data.replaceAll('\n', '\r\n'))
+    this.hasPartialLine = ! data.endsWith('\n')
     this.stopWriting()
   }
 
