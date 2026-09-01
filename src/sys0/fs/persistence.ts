@@ -1,10 +1,11 @@
-import { assertFileSystemSnapshot, type FileSystemSnapshot } from './save'
 import {
   applyFsDelta,
+  cloneFsDelta,
+  createFsDelta,
   type FileSystemImage,
-  FILE_SYSTEM_IMAGE_FORMAT,
-  FILE_SYSTEM_IMAGE_VERSION,
   type FsDelta,
+  isFsDeltaEmpty,
+  mergeFsDelta,
 } from './image'
 
 export interface FsPersistence {
@@ -27,62 +28,53 @@ export class MemoryFsPersistence implements FsPersistence {
   async flush() {}
 }
 
-export interface AsyncFileSystemSnapshotStore {
-  load(): Promise<unknown | undefined>
-  loadPrevious(): Promise<unknown | undefined>
-  save(snapshot: FileSystemSnapshot): Promise<void>
-  restore(snapshot: FileSystemSnapshot): Promise<void>
+export interface AsyncFileSystemStore {
+  load(): Promise<FileSystemImage | undefined>
+  commit(delta: FsDelta, expectedRevision: number): Promise<number>
   clear(): Promise<void>
+}
+
+export class FileSystemRevisionConflictError extends Error {
+  constructor(
+    readonly expectedRevision: number,
+    readonly actualRevision: number,
+  ) {
+    super(`File-system revision conflict: expected ${expectedRevision}, got ${actualRevision}`)
+    this.name = 'FileSystemRevisionConflictError'
+  }
 }
 
 export class QueuedFsPersistence implements FsPersistence {
   private current: FileSystemImage | undefined
-  private pending: FileSystemImage | undefined
+  private pending = createFsDelta()
+  private committedRevision: number
+  private isCommitInFlight = false
   private drainPromise: Promise<void> | undefined
   private writeError: unknown
   private hasWriteError = false
 
   private constructor(
-    private readonly store: AsyncFileSystemSnapshotStore,
+    private readonly store: AsyncFileSystemStore,
     initialImage: FileSystemImage | undefined,
-    readonly recoveredFromPrevious: boolean,
   ) {
     this.current = initialImage && structuredClone(initialImage)
+    this.committedRevision = initialImage?.revision ?? 0
   }
 
-  static async create(store: AsyncFileSystemSnapshotStore) {
-    const snapshot = await store.load()
-    if (snapshot === undefined) return new QueuedFsPersistence(store, undefined, false)
-
-    try {
-      assertFileSystemSnapshot(snapshot)
-      return new QueuedFsPersistence(store, snapshotToImage(snapshot), false)
-    }
-    catch (currentError) {
-      const previous = await store.loadPrevious()
-      if (previous === undefined) throw currentError
-      try {
-        assertFileSystemSnapshot(previous)
-      }
-      catch (previousError) {
-        throw new AggregateError(
-          [currentError, previousError],
-          'Current and previous file-system snapshots are invalid',
-        )
-      }
-      await store.restore(previous)
-      return new QueuedFsPersistence(store, snapshotToImage(previous), true)
-    }
+  static async create(store: AsyncFileSystemStore) {
+    return new QueuedFsPersistence(store, await store.load())
   }
+
+  readonly recoveredFromPrevious = false
 
   load() {
     return this.current && structuredClone(this.current)
   }
 
   commit(delta: FsDelta) {
-    const image = applyFsDelta(this.current, delta)
-    this.current = image
-    this.pending = image
+    this.current = applyFsDelta(this.current, delta)
+    this.pending = mergeFsDelta(this.pending, delta)
+    this.updateCurrentRevision()
     if (! this.drainPromise) {
       this.hasWriteError = false
       this.startDrain()
@@ -90,7 +82,7 @@ export class QueuedFsPersistence implements FsPersistence {
   }
 
   async flush() {
-    if (this.hasWriteError && this.pending && ! this.drainPromise) {
+    if (this.hasWriteError && ! isFsDeltaEmpty(this.pending) && ! this.drainPromise) {
       this.hasWriteError = false
       this.startDrain()
     }
@@ -107,37 +99,34 @@ export class QueuedFsPersistence implements FsPersistence {
       })
       .finally(() => {
         this.drainPromise = undefined
-        if (this.pending && ! this.hasWriteError) this.startDrain()
+        if (! isFsDeltaEmpty(this.pending) && ! this.hasWriteError) this.startDrain()
       })
   }
 
   private async drain() {
-    while (this.pending) {
-      const image = this.pending
-      this.pending = undefined
+    while (! isFsDeltaEmpty(this.pending)) {
+      const delta = cloneFsDelta(this.pending)
+      this.pending = createFsDelta()
+      this.isCommitInFlight = true
+      this.updateCurrentRevision()
       try {
-        await this.store.save(imageToSnapshot(image))
+        this.committedRevision = await this.store.commit(delta, this.committedRevision)
+        this.isCommitInFlight = false
+        this.updateCurrentRevision()
       }
       catch (error) {
-        this.pending ??= image
+        this.isCommitInFlight = false
+        this.pending = mergeFsDelta(delta, this.pending)
+        this.updateCurrentRevision()
         throw error
       }
     }
   }
+
+  private updateCurrentRevision() {
+    if (! this.current) return
+    this.current.revision = this.committedRevision
+      + (this.isCommitInFlight ? 1 : 0)
+      + (isFsDeltaEmpty(this.pending) ? 0 : 1)
+  }
 }
-
-const snapshotToImage = (snapshot: FileSystemSnapshot): FileSystemImage => ({
-  format: FILE_SYSTEM_IMAGE_FORMAT,
-  version: FILE_SYSTEM_IMAGE_VERSION,
-  revision: snapshot.generation,
-  rootIid: snapshot.rootIid,
-  inodes: structuredClone(snapshot.inodes),
-})
-
-const imageToSnapshot = (image: FileSystemImage): FileSystemSnapshot => ({
-  format: FILE_SYSTEM_IMAGE_FORMAT,
-  version: FILE_SYSTEM_IMAGE_VERSION,
-  generation: image.revision,
-  rootIid: image.rootIid,
-  inodes: structuredClone(image.inodes),
-})

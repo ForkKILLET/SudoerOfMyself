@@ -1,5 +1,14 @@
-import type { AsyncFileSystemSnapshotStore } from './persistence'
+import {
+  type AsyncFileSystemStore,
+  FileSystemRevisionConflictError,
+} from './persistence'
 import type { FileSystemSnapshot } from './save'
+import {
+  type FileSystemImage,
+  FILE_SYSTEM_IMAGE_FORMAT,
+  FILE_SYSTEM_IMAGE_VERSION,
+  type FsDelta,
+} from './image'
 
 export const FILE_SYSTEM_DATABASE_NAME = 'sudoer-of-myself'
 export const FILE_SYSTEM_DATABASE_VERSION = 2
@@ -8,6 +17,14 @@ export const FILE_SYSTEM_META_OBJECT_STORE = 'meta'
 export const FILE_SYSTEM_INODES_OBJECT_STORE = 'inodes'
 export const FILE_SYSTEM_SNAPSHOT_KEY = 'current'
 export const FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY = 'previous'
+export const FILE_SYSTEM_META_KEY = 'file-system'
+
+interface StoredFileSystemMetadata {
+  format: FileSystemImage['format']
+  version: FileSystemImage['version']
+  revision: number
+  rootIid: number
+}
 
 const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
   request.addEventListener('success', () => resolve(request.result), { once: true })
@@ -32,7 +49,7 @@ export interface IndexedDbFileSystemStoreOptions {
   databaseVersion?: number | null
 }
 
-export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
+export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
   private constructor(private readonly database: IDBDatabase) {}
 
   static async open({
@@ -60,14 +77,35 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
   }
 
   async load() {
-    return this.loadKey(FILE_SYSTEM_SNAPSHOT_KEY)
+    const transaction = this.database.transaction([
+      FILE_SYSTEM_META_OBJECT_STORE,
+      FILE_SYSTEM_INODES_OBJECT_STORE,
+    ], 'readonly')
+    const completion = transactionCompletion(transaction)
+    const [metadata, inodes] = await Promise.all([
+      requestResult(
+        transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).get(FILE_SYSTEM_META_KEY),
+      ) as Promise<StoredFileSystemMetadata | undefined>,
+      requestResult(
+        transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).getAll(),
+      ) as Promise<FileSystemImage['inodes']>,
+    ])
+    await completion
+    if (! metadata) {
+      if (inodes.length) throw new Error('File-system metadata is missing')
+      return undefined
+    }
+    return {
+      ...metadata,
+      inodes,
+    }
   }
 
   async loadPrevious() {
-    return this.loadKey(FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
+    return this.loadLegacyKey(FILE_SYSTEM_PREVIOUS_SNAPSHOT_KEY)
   }
 
-  private async loadKey(key: string) {
+  private async loadLegacyKey(key: string) {
     const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readonly')
     const completion = transactionCompletion(transaction)
     const snapshot = await requestResult(
@@ -91,6 +129,61 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
     await completion
   }
 
+  async commit(delta: FsDelta, expectedRevision: number) {
+    const transaction = this.database.transaction([
+      FILE_SYSTEM_META_OBJECT_STORE,
+      FILE_SYSTEM_INODES_OBJECT_STORE,
+    ], 'readwrite')
+    const completion = transactionCompletion(transaction)
+    const metadataStore = transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE)
+    const inodeStore = transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE)
+    const metadataRequest = metadataStore.get(FILE_SYSTEM_META_KEY)
+    let operationError: Error | undefined
+
+    metadataRequest.addEventListener('success', () => {
+      const current = metadataRequest.result as StoredFileSystemMetadata | undefined
+      const actualRevision = current?.revision ?? 0
+      if (actualRevision !== expectedRevision) {
+        operationError = new FileSystemRevisionConflictError(expectedRevision, actualRevision)
+        transaction.abort()
+        return
+      }
+      if (! current && ! delta.replaceAll) {
+        operationError = new Error('Cannot patch a missing file-system image')
+        transaction.abort()
+        return
+      }
+
+      const replacement = delta.replaceAll
+      const rootIid = replacement?.rootIid ?? current?.rootIid
+      if (rootIid === undefined) {
+        operationError = new Error('File-system root inode is missing')
+        transaction.abort()
+        return
+      }
+      if (replacement) {
+        inodeStore.clear()
+        replacement.inodes.forEach(inode => inodeStore.put(inode))
+      }
+      delta.deletes.forEach(iid => inodeStore.delete(iid))
+      delta.puts.forEach(inode => inodeStore.put(inode))
+      metadataStore.put({
+        format: replacement?.format ?? current?.format ?? FILE_SYSTEM_IMAGE_FORMAT,
+        version: replacement?.version ?? current?.version ?? FILE_SYSTEM_IMAGE_VERSION,
+        revision: actualRevision + 1,
+        rootIid,
+      } satisfies StoredFileSystemMetadata, FILE_SYSTEM_META_KEY)
+    }, { once: true })
+
+    try {
+      await completion
+    }
+    catch (error) {
+      throw operationError ?? error
+    }
+    return expectedRevision + 1
+  }
+
   async restore(snapshot: FileSystemSnapshot) {
     const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
     const completion = transactionCompletion(transaction)
@@ -99,9 +192,15 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemSnapshotStore {
   }
 
   async clear() {
-    const transaction = this.database.transaction(FILE_SYSTEM_OBJECT_STORE, 'readwrite')
+    const transaction = this.database.transaction([
+      FILE_SYSTEM_OBJECT_STORE,
+      FILE_SYSTEM_META_OBJECT_STORE,
+      FILE_SYSTEM_INODES_OBJECT_STORE,
+    ], 'readwrite')
     const completion = transactionCompletion(transaction)
     transaction.objectStore(FILE_SYSTEM_OBJECT_STORE).clear()
+    transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).clear()
+    transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).clear()
     await completion
   }
 

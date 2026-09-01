@@ -1,29 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { FileT } from '@/sys0/fs'
 import {
-  AsyncFileSystemSnapshotStore,
+  type AsyncFileSystemStore,
   QueuedFsPersistence,
 } from '@/sys0/fs/persistence'
 import {
-  FILE_SYSTEM_SNAPSHOT_FORMAT,
-  FILE_SYSTEM_SNAPSHOT_VERSION,
-  FileSystemSnapshot,
-} from '@/sys0/fs/save'
-import {
+  cloneFsDelta,
   createPutDelta,
   createReplaceAllDelta,
   FILE_SYSTEM_IMAGE_FORMAT,
   FILE_SYSTEM_IMAGE_VERSION,
+  type FileSystemImage,
   type FileSystemReplacement,
+  type FsDelta,
 } from '@/sys0/fs/image'
-
-const createSnapshot = (generation: number): FileSystemSnapshot => ({
-  format: FILE_SYSTEM_SNAPSHOT_FORMAT,
-  version: FILE_SYSTEM_SNAPSHOT_VERSION,
-  generation,
-  rootIid: 1,
-  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
-})
 
 const createReplacement = (): FileSystemReplacement => ({
   format: FILE_SYSTEM_IMAGE_FORMAT,
@@ -32,35 +22,45 @@ const createReplacement = (): FileSystemReplacement => ({
   inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
 })
 
+const createImage = (revision: number): FileSystemImage => ({
+  ...createReplacement(),
+  revision,
+})
+
 describe('QueuedFsPersistence', () => {
-  it('coalesces snapshots queued before a write starts', async () => {
-    const saved: FileSystemSnapshot[] = []
-    const store: AsyncFileSystemSnapshotStore = {
+  it('coalesces deltas queued before a write starts', async () => {
+    const commits: Array<{ delta: FsDelta, expectedRevision: number }> = []
+    const store: AsyncFileSystemStore = {
       load: async () => undefined,
-      loadPrevious: async () => undefined,
-      save: async (snapshot) => { saved.push(structuredClone(snapshot)) },
-      restore: async () => {},
+      commit: async (delta, expectedRevision) => {
+        commits.push({ delta: cloneFsDelta(delta), expectedRevision })
+        return expectedRevision + 1
+      },
       clear: async () => {},
     }
     const persistence = await QueuedFsPersistence.create(store)
 
     persistence.commit(createReplaceAllDelta(createReplacement()))
     persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    expect(persistence.load()?.revision).toBe(1)
     await persistence.flush()
 
-    expect(saved.map(({ generation }) => generation)).toEqual([2])
+    expect(commits).toHaveLength(1)
+    expect(commits[0]?.expectedRevision).toBe(0)
+    expect(commits[0]?.delta.replaceAll).toEqual(createReplacement())
+    expect([...commits[0]?.delta.puts.keys() ?? []]).toEqual([1])
+    expect(persistence.load()?.revision).toBe(1)
   })
 
-  it('keeps a failed snapshot available for an explicit retry', async () => {
+  it('keeps a failed delta available for an explicit retry', async () => {
     let attempts = 0
-    const store: AsyncFileSystemSnapshotStore = {
+    const store: AsyncFileSystemStore = {
       load: async () => undefined,
-      loadPrevious: async () => undefined,
-      save: async () => {
+      commit: async (_delta, expectedRevision) => {
         attempts ++
         if (attempts === 1) throw new Error('disk unavailable')
+        return expectedRevision + 1
       },
-      restore: async () => {},
       clear: async () => {},
     }
     const persistence = await QueuedFsPersistence.create(store)
@@ -71,38 +71,21 @@ describe('QueuedFsPersistence', () => {
     expect(attempts).toBe(2)
   })
 
-  it('restores the previous snapshot when the current one is invalid', async () => {
-    const previous = createSnapshot(3)
-    let restored: FileSystemSnapshot | undefined
-    const store: AsyncFileSystemSnapshotStore = {
-      load: async () => ({ broken: true }),
-      loadPrevious: async () => previous,
-      save: async () => {},
-      restore: async (snapshot) => { restored = structuredClone(snapshot) },
+  it('commits against the loaded image revision', async () => {
+    const expectedRevisions: number[] = []
+    const store: AsyncFileSystemStore = {
+      load: async () => createImage(7),
+      commit: async (_delta, expectedRevision) => {
+        expectedRevisions.push(expectedRevision)
+        return expectedRevision + 1
+      },
       clear: async () => {},
     }
-
     const persistence = await QueuedFsPersistence.create(store)
 
-    expect(persistence.recoveredFromPrevious).toBe(true)
-    expect(persistence.load()).toEqual({
-      ...createReplacement(),
-      revision: previous.generation,
-    })
-    expect(restored).toEqual(previous)
-  })
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    await persistence.flush()
 
-  it('rejects startup when both retained snapshots are invalid', async () => {
-    const store: AsyncFileSystemSnapshotStore = {
-      load: async () => ({ broken: 'current' }),
-      loadPrevious: async () => ({ broken: 'previous' }),
-      save: async () => {},
-      restore: async () => {},
-      clear: async () => {},
-    }
-
-    await expect(QueuedFsPersistence.create(store)).rejects.toThrow(
-      'Current and previous file-system snapshots are invalid',
-    )
+    expect(expectedRevisions).toEqual([7])
   })
 })

@@ -6,20 +6,27 @@ import {
   FILE_SYSTEM_META_OBJECT_STORE,
   IndexedDbFileSystemStore,
 } from '@/sys0/fs/indexed_db'
-import { QueuedFsPersistence } from '@/sys0/fs/persistence'
+import {
+  FileSystemRevisionConflictError,
+  QueuedFsPersistence,
+} from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import {
-  FILE_SYSTEM_SNAPSHOT_FORMAT,
-  FILE_SYSTEM_SNAPSHOT_VERSION,
-  FileSystemSnapshot,
-} from '@/sys0/fs/save'
+  createPutDelta,
+  createReplaceAllDelta,
+  FILE_SYSTEM_IMAGE_FORMAT,
+  FILE_SYSTEM_IMAGE_VERSION,
+  type FileSystemReplacement,
+} from '@/sys0/fs/image'
 
-const snapshot: FileSystemSnapshot = {
-  format: FILE_SYSTEM_SNAPSHOT_FORMAT,
-  version: FILE_SYSTEM_SNAPSHOT_VERSION,
-  generation: 4,
+const replacement: FileSystemReplacement = {
+  format: FILE_SYSTEM_IMAGE_FORMAT,
+  version: FILE_SYSTEM_IMAGE_VERSION,
   rootIid: 1,
-  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
+  inodes: [
+    { iid: 1, file: { type: FileT.DIR, entries: { file: 2 } } },
+    { iid: 2, file: { type: FileT.NORMAL, content: 'initial' } },
+  ],
 }
 
 describe('IndexedDbFileSystemStore', () => {
@@ -43,7 +50,7 @@ describe('IndexedDbFileSystemStore', () => {
     database.close()
   })
 
-  it('atomically rotates current to previous and clears both snapshots', async () => {
+  it('atomically commits deltas at an expected revision', async () => {
     const indexedDB = new IDBFactory()
     const store = await IndexedDbFileSystemStore.open({
       indexedDB,
@@ -51,17 +58,43 @@ describe('IndexedDbFileSystemStore', () => {
     })
 
     expect(await store.load()).toBeUndefined()
-    await store.save(snapshot)
-    expect(await store.load()).toEqual(snapshot)
-    expect(await store.loadPrevious()).toBeUndefined()
-    const nextSnapshot = { ...snapshot, generation: snapshot.generation + 1 }
-    await store.save(nextSnapshot)
-    expect(await store.load()).toEqual(nextSnapshot)
-    expect(await store.loadPrevious()).toEqual(snapshot)
+    await expect(store.commit(createReplaceAllDelta(replacement), 0)).resolves.toBe(1)
+    expect(await store.load()).toEqual({ ...replacement, revision: 1 })
+
+    const update = createPutDelta({
+      iid: 2,
+      file: { type: FileT.NORMAL, content: 'updated' },
+    })
+    await expect(store.commit(update, 0)).rejects.toBeInstanceOf(FileSystemRevisionConflictError)
+    expect((await store.load())?.inodes).toEqual(replacement.inodes)
+    await expect(store.commit(update, 1)).resolves.toBe(2)
+    expect(await store.load()).toEqual({
+      ...replacement,
+      revision: 2,
+      inodes: [replacement.inodes[0], update.puts.get(2)],
+    })
+
     await store.clear()
     expect(await store.load()).toBeUndefined()
-    expect(await store.loadPrevious()).toBeUndefined()
 
+    store.close()
+  })
+
+  it('clears stale inodes during replaceAll', async () => {
+    const indexedDB = new IDBFactory()
+    const store = await IndexedDbFileSystemStore.open({
+      indexedDB,
+      databaseName: 'fs-indexed-db-replace-test',
+    })
+    await store.commit(createReplaceAllDelta(replacement), 0)
+    const emptyReplacement: FileSystemReplacement = {
+      ...replacement,
+      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
+    }
+
+    await store.commit(createReplaceAllDelta(emptyReplacement), 1)
+
+    expect(await store.load()).toEqual({ ...emptyReplacement, revision: 2 })
     store.close()
   })
 
