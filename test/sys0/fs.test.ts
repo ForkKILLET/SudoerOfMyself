@@ -72,25 +72,27 @@ describe('Fs mutation consistency', () => {
     fs.reset()
 
     expect(fs.find('/temporary').isErr).toBe(true)
-    expect(persistence.get(temporaryIid)).toBeUndefined()
+    expect(persistence.load()?.inodes.some(({ iid }) => iid === temporaryIid)).toBe(false)
   })
 
-  it('persists files created after the initial image', () => {
+  it('persists files created after the initial image', async () => {
     const persistence = new MemoryFsPersistence()
     const image = Vfs.dir({})
     const firstBoot = new Fs(image, { persistence })
     firstBoot.openU('/save', 'w').handle.write('progress')
+    await firstBoot.flush()
 
     const secondBoot = new Fs(image, { persistence })
 
     expect(secondBoot.openU('/save', 'r').handle.read()).toBe('progress')
   })
 
-  it('mounts a fresh read-only image over a persisted path', () => {
+  it('mounts a fresh read-only image over a persisted path', async () => {
     const persistence = new MemoryFsPersistence()
     const image = Vfs.dir({ bin: Vfs.dir({ old: Vfs.normal('persisted') }) })
     const firstBoot = new Fs(image, { persistence })
     firstBoot.openU('/save', 'w').handle.write('progress')
+    await firstBoot.flush()
     const mountedBoot = new Fs(image, {
       persistence,
       mounts: [{

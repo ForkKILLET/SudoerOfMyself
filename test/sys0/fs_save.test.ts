@@ -1,55 +1,49 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assertFileSystemSnapshot,
   createFileSystemSaveArchive,
-  resetFileSystemSave,
+  FILE_SYSTEM_SNAPSHOT_FORMAT,
+  FILE_SYSTEM_SNAPSHOT_VERSION,
+  FileSystemSnapshot,
   serializeFileSystemSave,
 } from '@/sys0/fs/save'
+import { FileT } from '@/sys0/fs'
 
-class MemoryStorage implements Storage {
-  private readonly values = new Map<string, string>()
-
-  get length() { return this.values.size }
-  clear() { this.values.clear() }
-  getItem(key: string) { return this.values.get(key) ?? null }
-  key(index: number) { return [...this.values.keys()][index] ?? null }
-  removeItem(key: string) { this.values.delete(key) }
-  setItem(key: string, value: string) { this.values.set(key, value) }
+const snapshot: FileSystemSnapshot = {
+  format: FILE_SYSTEM_SNAPSHOT_FORMAT,
+  version: FILE_SYSTEM_SNAPSHOT_VERSION,
+  generation: 3,
+  rootIid: 1,
+  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
 }
 
 describe('file-system save recovery', () => {
-  it('exports raw save values even when an inode contains invalid JSON', () => {
-    const storage = new MemoryStorage()
-    storage.setItem('fs:initialized', 'true')
-    storage.setItem('i:1', '{broken json')
-    storage.setItem('unrelated', 'keep me')
+  it('exports a backend-independent snapshot', () => {
     const exportedAt = new Date('2026-08-24T00:00:00.000Z')
-
-    const archive = createFileSystemSaveArchive(storage, exportedAt)
+    const archive = createFileSystemSaveArchive(snapshot, exportedAt)
 
     expect(archive).toEqual({
       format: 'sudoer-of-myself/file-system-save',
       version: 1,
       exportedAt: '2026-08-24T00:00:00.000Z',
-      entries: {
-        'fs:initialized': 'true',
-        'i:1': '{broken json',
-      },
+      snapshot,
     })
-    expect(JSON.parse(serializeFileSystemSave(storage, exportedAt))).toEqual(archive)
+    expect(JSON.parse(serializeFileSystemSave(snapshot, exportedAt))).toEqual(archive)
   })
 
-  it('resets only file-system save keys', () => {
-    const storage = new MemoryStorage()
-    storage.setItem('fs:initialized', 'true')
-    storage.setItem('fs:future-metadata', 'value')
-    storage.setItem('i:1', 'inode')
-    storage.setItem('unrelated', 'keep me')
+  it('can export an invalid raw snapshot from recovery mode', () => {
+    const invalidSnapshot = { broken: true }
 
-    resetFileSystemSave(storage)
+    expect(createFileSystemSaveArchive(invalidSnapshot).snapshot).toEqual(invalidSnapshot)
+  })
 
-    expect(storage.getItem('fs:initialized')).toBeNull()
-    expect(storage.getItem('fs:future-metadata')).toBeNull()
-    expect(storage.getItem('i:1')).toBeNull()
-    expect(storage.getItem('unrelated')).toBe('keep me')
+  it('rejects dangling inode references before hydrating the VFS', () => {
+    const invalidSnapshot = structuredClone(snapshot)
+    invalidSnapshot.inodes[0].file = {
+      type: FileT.DIR,
+      entries: { missing: 2 },
+    }
+
+    expect(() => assertFileSystemSnapshot(invalidSnapshot)).toThrow('dangling inode reference 2')
   })
 })

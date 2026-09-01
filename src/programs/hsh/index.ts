@@ -17,6 +17,7 @@ import { createPipe } from '@/sys0/pipe'
 import { JobTable, ProcessGroup } from '@/sys0/job'
 import { getShellExitRequest } from './control'
 import { initializeShellParameters, updateLastArgument } from './parameters'
+import { errorMessage } from '@/utils/errors'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -319,6 +320,12 @@ export const createHsh = ({
         return
       }
       await executeScript(proc, parseResult.val, builtins, { source: line })
+      try {
+        await ctx.fs.flush()
+      }
+      catch (error) {
+        proc.error(`file system save failed: ${errorMessage(error)}`)
+      }
       return getShellExitRequest(proc)
     }
 

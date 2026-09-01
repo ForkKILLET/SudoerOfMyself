@@ -16,6 +16,7 @@
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.10.0",
     "eslint": "^10.2.0",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17.4.0",
     "jiti": "^2.7.0",
     "typescript": "^5.7.3",

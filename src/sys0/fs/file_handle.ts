@@ -1,16 +1,12 @@
 import { Pred } from '@/utils/types'
 import { NormalFile, FRead, FWrite, FReadWrite, Inode } from '.'
 
-export interface FileHandlePersistence {
-  set(iid: number, inode: Inode): void
-}
-
 export type FileModeWritable = 'w' | 'a' | 'rw' | 'ra'
 export type FileMode = 'r' | FileModeWritable
 
 export abstract class FileHandle {
   constructor(
-    private readonly persistence: FileHandlePersistence,
+    private readonly didMutate: () => void,
     protected inode: Inode<NormalFile>,
   ) {}
 
@@ -46,27 +42,23 @@ export abstract class FileHandle {
     return this.inode.file.content.slice(start)
   }
 
-  protected sync() {
-    this.persistence.set(this.inode.iid, this.inode)
-  }
-
   protected rewrite(data: string) {
     this.inode.file.content = data
     this.cursor = data.length
-    this.sync()
+    this.didMutate()
   }
 
   protected append(data: string) {
     this.inode.file.content += data
     this.cursor = this.inode.file.content.length
-    this.sync()
+    this.didMutate()
   }
 
   protected writeAtCursor(data: string) {
     const content = this.inode.file.content
     this.inode.file.content = content.slice(0, this.cursor) + data + content.slice(this.cursor + data.length)
     this.cursor += data.length
-    this.sync()
+    this.didMutate()
   }
 }
 

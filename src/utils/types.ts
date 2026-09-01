@@ -16,10 +16,3 @@ export type StrictOmit<T, K extends keyof T> = Omit<T, K>
 export type Pred<T> = (value: T) => boolean
 
 export type Awaitable<T> = T | Promise<T>
-
-export interface IStorage<K, V> {
-  get: (key: K) => V | undefined
-  getAll: () => [K, V][]
-  set: (key: K, value: V) => void
-  delete: (key: K) => void
-}

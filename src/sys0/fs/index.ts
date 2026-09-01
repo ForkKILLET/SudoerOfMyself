@@ -4,7 +4,13 @@ import { Err, Ok, Result } from 'fk-result'
 import { UserError } from '@/utils/errors'
 
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
-import { FsPersistence, LocalStorageFsPersistence, MemoryFsPersistence } from './persistence'
+import { FsPersistence, MemoryFsPersistence } from './persistence'
+import {
+  assertFileSystemSnapshot,
+  FILE_SYSTEM_SNAPSHOT_FORMAT,
+  FILE_SYSTEM_SNAPSHOT_VERSION,
+  FileSystemSnapshot,
+} from './save'
 import { Vfs } from './vfs'
 import { Path } from './path'
 
@@ -91,6 +97,7 @@ export interface FWrite {
 export interface FReadWrite extends FRead, FWrite {}
 
 export const MAX_INODE_COUNT = 1024
+const SAVE_DEBOUNCE_MS = 25
 
 export interface InodeMaintainer {
   inodes: Inodes
@@ -211,11 +218,13 @@ export class Fs {
   private readonly getCwd: () => string
   private readonly mounts: MountedFs[] = []
   private readonly mountsByParent = new WeakMap<DirFile, Map<string, MountedFs>>()
+  private generation = 0
+  private saveTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private readonly initialImage: Vfs.DirVfile,
     {
-      persistence = new LocalStorageFsPersistence(),
+      persistence = new MemoryFsPersistence(),
       getCwd = () => '/',
       mounts = [],
       readOnly = false,
@@ -235,29 +244,72 @@ export class Fs {
   }
 
   reset() {
-    this.persistence.clear()
     this.inodes.clear()
     this.inodeBitmap.clear()
-    this.load()
+    this.createInitialImage()
+    this.generation ++
+    this.persistNow()
     this.mounts.forEach(mount => this.attachMount(mount))
     if (this.isReadOnly) this.freezeFiles()
   }
 
   load() {
-    if (! this.persistence.isInitialized) {
-      this.createUnchecked(this.initialImage)
-      this.inodes.forEach((inode, iid) => {
-        this.persistence.set(iid, inode)
-      })
-      this.persistence.isInitialized = true
+    const snapshot = this.persistence.load()
+    if (! snapshot) {
+      this.createInitialImage()
+      this.generation = 1
+      this.persistNow()
+      return
     }
-    else {
-      this.persistence.getAll().forEach(([iid, inode]) => {
-        this.inodes.set(iid, inode)
-        this.inodeBitmap.set(iid, 1)
-        FILE_SYSTEM_OWNER.set(inode.file, this)
-      })
+
+    assertFileSystemSnapshot(snapshot)
+    this.rootIid = snapshot.rootIid
+    this.generation = snapshot.generation
+    snapshot.inodes.forEach((inode) => {
+      if (inode.iid >= MAX_INODE_COUNT) {
+        throw new Error(`Invalid file-system snapshot: inode ${inode.iid} is out of range`)
+      }
+      this.inodes.set(inode.iid, inode)
+      this.inodeBitmap.set(inode.iid, 1)
+      FILE_SYSTEM_OWNER.set(inode.file, this)
+    })
+  }
+
+  private createInitialImage() {
+    const result = this.createUnchecked(this.initialImage)
+    if (result.isErr) throw new Error(`Cannot create initial file system: ${FOp.displayError(result.err)}`)
+    this.rootIid = result.val.inode.iid
+  }
+
+  private createSnapshot(): FileSystemSnapshot {
+    return {
+      format: FILE_SYSTEM_SNAPSHOT_FORMAT,
+      version: FILE_SYSTEM_SNAPSHOT_VERSION,
+      generation: this.generation,
+      rootIid: this.rootIid,
+      inodes: [...this.inodes.values()],
     }
+  }
+
+  exportSnapshot() {
+    return structuredClone(this.createSnapshot())
+  }
+
+  private persistNow() {
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveTimer = undefined
+    this.persistence.save(this.createSnapshot())
+  }
+
+  private markDirty = () => {
+    this.generation ++
+    if (this.saveTimer) return
+    this.saveTimer = setTimeout(() => this.persistNow(), SAVE_DEBOUNCE_MS)
+  }
+
+  async flush() {
+    if (this.saveTimer) this.persistNow()
+    await this.persistence.flush()
   }
 
   private mount({ path, image, readOnly = false }: FsMount) {
@@ -333,7 +385,9 @@ export class Fs {
 
   create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
     if (this.isReadOnly) return this.readOnlyError()
-    return this.createUnchecked(tree)
+    const result = this.createUnchecked(tree)
+    if (result.isOk) this.markDirty()
+    return result
   }
 
   private createUnchecked<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
@@ -343,7 +397,6 @@ export class Fs {
       this.inodes.forEach((inode, iid) => {
         if (existingIids.has(iid)) return
         FILE_SYSTEM_OWNER.set(inode.file, this)
-        this.persistence.set(iid, inode)
       })
     }
     return result
@@ -354,11 +407,11 @@ export class Fs {
     if (owner && owner !== this) return owner.createAt(parent, name, tree)
     if (this.isReadOnly) return this.readOnlyError()
     if (this.getChildInode(parent.file, name)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
-    const createRes = this.create(tree)
+    const createRes = this.createUnchecked(tree)
     if (createRes.isErr) return createRes
 
     parent.file.entries[name] = createRes.val.inode.iid
-    this.persistence.set(parent.iid, parent)
+    this.markDirty()
     return createRes
   }
 
@@ -533,8 +586,7 @@ export class Fs {
     this.inodeBitmap.set(iid, 0)
     delete parentInode.file.entries[filename]
 
-    this.persistence.delete(iid)
-    this.persistence.set(parentInode.iid, parentInode)
+    this.markDirty()
 
     return FOp.ok(undefined)
   }
@@ -563,7 +615,7 @@ export class Fs {
 
   private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
     const Handle = FILE_HANDLE_FROM_MODE[mode]
-    return new Handle(this.persistence, inode) as FileHandleFromMode<FM>
+    return new Handle(this.markDirty, inode) as FileHandleFromMode<FM>
   }
 
   open<FM extends FileMode>(path: string, mode: FM): FOp.OpenResult<FM> {
@@ -593,7 +645,7 @@ export class Fs {
 
     if (mode === 'w' || mode === 'rw') {
       inode.file.content = ''
-      this.persistence.set(inode.iid, inode)
+      this.markDirty()
     }
 
     return FOp.ok({

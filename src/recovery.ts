@@ -1,5 +1,5 @@
-import { Result } from 'fk-result'
-import { serializeFileSystemSave, resetFileSystemSave } from '@/sys0/fs/save'
+import { serializeFileSystemSave } from '@/sys0/fs/save'
+import { deleteIndexedDbFileSystem, IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { errorMessage } from '@/utils/errors'
 
 const getElement = <E extends HTMLElement>(id: string) => {
@@ -8,17 +8,23 @@ const getElement = <E extends HTMLElement>(id: string) => {
   return element as E
 }
 
-const downloadFileSystemSave = () => {
-  const serialized = serializeFileSystemSave(localStorage)
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const url = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `sudoer-of-myself-save-${timestamp}.json`
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+const downloadFileSystemSave = async () => {
+  const store = await IndexedDbFileSystemStore.open({ databaseVersion: null })
+  try {
+    const serialized = serializeFileSystemSave(await store.load())
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const url = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `sudoer-of-myself-save-${timestamp}.json`
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+  finally {
+    store.close()
+  }
 }
 
 export const showRecoveryMode = (error: unknown) => {
@@ -37,18 +43,30 @@ export const showRecoveryMode = (error: unknown) => {
     ? error.stack
     : errorMessage(error)
 
-  exportButton.onclick = () => {
-    Result.wrap<void, unknown>(downloadFileSystemSave).match(
-      () => { status.textContent = 'Save exported.' },
-      (exportError) => { status.textContent = `Export failed: ${errorMessage(exportError)}` },
-    )
+  exportButton.onclick = async () => {
+    exportButton.disabled = true
+    try {
+      await downloadFileSystemSave()
+      status.textContent = 'Save exported.'
+    }
+    catch (exportError) {
+      status.textContent = `Export failed: ${errorMessage(exportError)}`
+    }
+    finally {
+      exportButton.disabled = false
+    }
   }
 
-  resetButton.onclick = () => {
+  resetButton.onclick = async () => {
     if (! window.confirm('Delete the local save and start over? Export it first if you may need it.')) return
-    Result.wrap<void, unknown>(() => resetFileSystemSave(localStorage)).match(
-      () => location.reload(),
-      (resetError) => { status.textContent = `Reset failed: ${errorMessage(resetError)}` },
-    )
+    resetButton.disabled = true
+    try {
+      await deleteIndexedDbFileSystem()
+      location.reload()
+    }
+    catch (resetError) {
+      status.textContent = `Reset failed: ${errorMessage(resetError)}`
+      resetButton.disabled = false
+    }
   }
 }

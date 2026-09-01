@@ -1,73 +1,98 @@
-import { IStorage } from '@/utils/types'
-import { getJson, getJsonOr, setJson } from '@/utils/storage'
-import { Inode } from '.'
-import { FS_INITIALIZED_KEY, FS_INODE_KEY_PREFIX, isFileSystemSaveKey } from './save'
+import { assertFileSystemSnapshot, type FileSystemSnapshot } from './save'
 
-export interface FsPersistence extends IStorage<number, Inode> {
-  isInitialized: boolean
-  clear(): void
-}
-
-export class LocalStorageFsPersistence implements FsPersistence {
-  get isInitialized() {
-    return getJsonOr(localStorage, FS_INITIALIZED_KEY, false)
-  }
-
-  set isInitialized(value: boolean) {
-    setJson(localStorage, FS_INITIALIZED_KEY, value)
-  }
-
-  get(iid: number) {
-    return getJson<Inode>(localStorage, `${FS_INODE_KEY_PREFIX}${iid}`)
-  }
-
-  getAll() {
-    return Object.entries(localStorage)
-      .filter(([key]) => key.startsWith(FS_INODE_KEY_PREFIX))
-      .map(([key, value]) => [
-        parseInt(key.slice(FS_INODE_KEY_PREFIX.length)),
-        JSON.parse(value),
-      ] as [ number, Inode ])
-  }
-
-  set(iid: number, inode: Inode) {
-    setJson(localStorage, `${FS_INODE_KEY_PREFIX}${iid}`, inode)
-  }
-
-  delete(iid: number) {
-    localStorage.removeItem(`${FS_INODE_KEY_PREFIX}${iid}`)
-  }
-
-  clear() {
-    Object.keys(localStorage)
-      .filter(isFileSystemSaveKey)
-      .forEach(key => localStorage.removeItem(key))
-  }
+export interface FsPersistence {
+  load(): FileSystemSnapshot | undefined
+  save(snapshot: FileSystemSnapshot): void
+  flush(): Promise<void>
 }
 
 export class MemoryFsPersistence implements FsPersistence {
-  isInitialized = false
-  private readonly inodes = new Map<number, Inode>()
+  private snapshot: FileSystemSnapshot | undefined
 
-  get(iid: number) {
-    const inode = this.inodes.get(iid)
-    return inode && structuredClone(inode)
+  load() {
+    return this.snapshot && structuredClone(this.snapshot)
   }
 
-  getAll() {
-    return [...this.inodes].map(([iid, inode]): [number, Inode] => [iid, structuredClone(inode)])
+  save(snapshot: FileSystemSnapshot) {
+    this.snapshot = structuredClone(snapshot)
   }
 
-  set(iid: number, inode: Inode) {
-    this.inodes.set(iid, structuredClone(inode))
+  async flush() {}
+}
+
+export interface AsyncFileSystemSnapshotStore {
+  load(): Promise<unknown | undefined>
+  save(snapshot: FileSystemSnapshot): Promise<void>
+  clear(): Promise<void>
+}
+
+export class QueuedFsPersistence implements FsPersistence {
+  private current: FileSystemSnapshot | undefined
+  private pending: FileSystemSnapshot | undefined
+  private drainPromise: Promise<void> | undefined
+  private writeError: unknown
+  private hasWriteError = false
+
+  private constructor(
+    private readonly store: AsyncFileSystemSnapshotStore,
+    initialSnapshot: FileSystemSnapshot | undefined,
+  ) {
+    this.current = initialSnapshot && structuredClone(initialSnapshot)
   }
 
-  delete(iid: number) {
-    this.inodes.delete(iid)
+  static async create(store: AsyncFileSystemSnapshotStore) {
+    const snapshot = await store.load()
+    if (snapshot !== undefined) assertFileSystemSnapshot(snapshot)
+    return new QueuedFsPersistence(store, snapshot)
   }
 
-  clear() {
-    this.inodes.clear()
-    this.isInitialized = false
+  load() {
+    return this.current && structuredClone(this.current)
+  }
+
+  save(snapshot: FileSystemSnapshot) {
+    const copy = structuredClone(snapshot)
+    this.current = copy
+    this.pending = copy
+    if (! this.drainPromise) {
+      this.hasWriteError = false
+      this.startDrain()
+    }
+  }
+
+  async flush() {
+    if (this.hasWriteError && this.pending && ! this.drainPromise) {
+      this.hasWriteError = false
+      this.startDrain()
+    }
+    while (this.drainPromise) await this.drainPromise
+    if (this.hasWriteError) throw this.writeError
+  }
+
+  private startDrain() {
+    this.drainPromise = Promise.resolve()
+      .then(() => this.drain())
+      .catch((error: unknown) => {
+        this.writeError = error
+        this.hasWriteError = true
+      })
+      .finally(() => {
+        this.drainPromise = undefined
+        if (this.pending && ! this.hasWriteError) this.startDrain()
+      })
+  }
+
+  private async drain() {
+    while (this.pending) {
+      const snapshot = this.pending
+      this.pending = undefined
+      try {
+        await this.store.save(snapshot)
+      }
+      catch (error) {
+        this.pending ??= snapshot
+        throw error
+      }
+    }
   }
 }

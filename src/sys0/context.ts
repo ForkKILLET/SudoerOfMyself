@@ -4,9 +4,11 @@ import { Fs, FsMount } from './fs'
 import { Vfs } from './fs/vfs'
 import { ExecService, NativeProgramRegistry } from './exec'
 import { ProcessTable } from './process_table'
+import { FsPersistence } from './fs/persistence'
 
 export interface ContextOptions {
   mounts?: readonly FsMount[]
+  fsPersistence?: FsPersistence
   nativePrograms: NativeProgramRegistry
 }
 
@@ -25,11 +27,13 @@ export class Context {
 
   constructor(initialImage: Vfs.DirVfile, {
     mounts = [],
+    fsPersistence,
     nativePrograms,
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
     this.fs = new Fs(initialImage, {
+      persistence: fsPersistence,
       getCwd: () => this.fgProc.cwd,
       mounts,
     })
