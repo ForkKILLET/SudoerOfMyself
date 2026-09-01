@@ -1,6 +1,7 @@
 import stripAnsi from 'strip-ansi'
 import { describe, expect, it } from 'vitest'
 import { cat } from '@/programs/cat'
+import { echo } from '@/programs/echo'
 import { createHsh } from '@/programs/hsh'
 import { tee } from '@/programs/tee'
 import { Context } from '@/sys0/context'
@@ -53,7 +54,7 @@ const runShell = async (keys: string[]) => {
     env: { HOME: '/', PATH: '/bin', PWD: '/' },
     stdio,
   })
-  const hsh = createHsh({ builtins: { cat, tee } })
+  const hsh = createHsh({ builtins: { cat, echo, tee } })
 
   await hsh(shell, 'hsh')
 
@@ -64,6 +65,15 @@ const runShell = async (keys: string[]) => {
 }
 
 describe('interactive partial-line output', () => {
+  it('marks echo -n output at the following prompt', async () => {
+    const { output } = await runShell([
+      'echo -n partial', '\r',
+      '\x04',
+    ])
+
+    expect(output).toContain('partial%\r\n/ $ ')
+  })
+
   it('marks cat output at the following prompt without changing file data', async () => {
     const { fs, output } = await runShell([
       'cat /partial.txt', '\r',
