@@ -27,8 +27,10 @@ import { unset } from './unset'
 import { createTypeCommand } from './type'
 import { createCommandBuiltin } from './command'
 import { breakLoop, continueLoop } from './loop_control'
+import { fail, succeed } from './status'
 
 export const BUILTINS: Record<string, Program> = {
+  [':']: succeed,
   break: breakLoop,
   cd,
   command: createCommandBuiltin(() => BUILTINS),
@@ -36,6 +38,7 @@ export const BUILTINS: Record<string, Program> = {
   echo,
   exit,
   export: exportEnv,
+  false: fail,
   hsh_tokenize,
   jobs,
   kill,
@@ -43,6 +46,7 @@ export const BUILTINS: Record<string, Program> = {
   read,
   type: createTypeCommand(() => BUILTINS),
   unset,
+  true: succeed,
   wait,
 }
 

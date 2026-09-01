@@ -36,6 +36,8 @@ import {
   type HshIfStatement,
   type HshLoopStatement,
   type HshStatement,
+  IncompleteHshScriptError,
+  parseControlScript,
 } from './script'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
@@ -490,16 +492,16 @@ export const createHsh = ({
     proc.jobTable = new JobTable()
     initializeShellParameters(proc, path ?? name, scriptArgs)
 
-    const executeLine = async (proc: Process, line: string) => {
-      const parseResult = Result.wrap<HshAstScript, unknown>(() => {
-        return parseLine(line, env)
+    const executeSource = async (proc: Process, source: string) => {
+      const parseResult = Result.wrap<HshControlScript, unknown>(() => {
+        return parseControlScript(source)
       })
       if (parseResult.isErr) {
         proc.error(parseResult.err)
         proc.env['?'] = '2'
         return false
       }
-      await executeScript(proc, parseResult.val, builtins, { source: line })
+      await executeControlScript(proc, parseResult.val, builtins)
       try {
         await ctx.fs.flush()
       }
@@ -510,33 +512,64 @@ export const createHsh = ({
     }
 
     if (options.command) {
-      const lines = options.command.split('\n')
-      for (const line of lines) {
-        const parsed = await executeLine(proc, line)
-        if (! parsed || getShellExitRequest(proc)) break
-      }
+      await executeSource(proc, options.command)
     }
 
     else if (! path) {
       const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
+      let pendingSource = ''
 
       const readline = new Readline(proc, stdio, ctx.term)
       const loop = readline.createLoop({
         history: new ReadlineHistory(historyFile.read().split('\n')),
-        prompt: () => `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
+        prompt: () => pendingSource
+          ? `${chalk.greenBright('>')} `
+          : `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
         onComp: getCompProvider(proc, builtins),
         onLine: async (line) => {
-          if (line === '\x03') return
+          if (line === '\x03') {
+            pendingSource = ''
+            return
+          }
           if (line === '\x04') {
+            if (pendingSource) {
+              const result = Result.wrap(() => parseControlScript(pendingSource))
+              if (result.isErr) proc.error(result.err)
+              proc.env['?'] = '2'
+              pendingSource = ''
+              return
+            }
             stdio.writeLn('')
             loop.stop()
             return
           }
-          await executeLine(proc, line)
           historyFile.appendLn(line)
+          const source = pendingSource ? `${pendingSource}\n${line}` : line
+          const parseResult = Result.wrap(() => parseControlScript(source))
+          if (parseResult.isErr && parseResult.err instanceof IncompleteHshScriptError) {
+            pendingSource = source
+            return
+          }
+          pendingSource = ''
+          if (parseResult.isErr) {
+            proc.error(parseResult.err)
+            proc.env['?'] = '2'
+          }
+          else {
+            await executeControlScript(proc, parseResult.val, builtins)
+            try {
+              await ctx.fs.flush()
+            }
+            catch (error) {
+              proc.error(`file system save failed: ${errorMessage(error)}`)
+            }
+          }
           if (getShellExitRequest(proc)) loop.stop()
         },
-        onInterrupt: () => true,
+        onInterrupt: () => {
+          pendingSource = ''
+          return true
+        },
         onEnd: () => stdio.writeLn('[Process exited]'),
       })
       await loop.start()
@@ -544,11 +577,7 @@ export const createHsh = ({
 
     else {
       const fh = ctx.fs.openU(path, 'r').handle
-      const lines = fh.read().split('\n')
-      for (const line of lines) {
-        const parsed = await executeLine(proc, line)
-        if (! parsed || getShellExitRequest(proc)) break
-      }
+      await executeSource(proc, fh.read())
     }
 
     return getShellExitRequest(proc) ?? Number.parseInt(env['?'], 10)

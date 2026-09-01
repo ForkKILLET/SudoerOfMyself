@@ -156,7 +156,7 @@ class ScriptParser {
   private parseList(stopWords: ReadonlySet<string>): HshControlScript {
     const entries: HshListEntry[] = []
     let condition: HshListCondition = 'always'
-    this.skipSeparators()
+    this.skipNewlines()
 
     while (this.cursor < this.tokens.length && ! this.isStopWord(stopWords)) {
       const statement = this.parseStatement()
@@ -167,7 +167,7 @@ class ScriptParser {
       if (next.type === 'and' || next.type === 'or') {
         condition = next.type === 'and' ? 'success' : 'failure'
         this.cursor ++
-        this.skipSeparators(false)
+        this.skipNewlines()
         if (! this.peek() || this.isStopWord(stopWords)) {
           throw new IncompleteHshScriptError(`Expected command after ${next.type === 'and' ? '&&' : '||'}`)
         }
@@ -178,7 +178,8 @@ class ScriptParser {
           throw new UserError('Background compound statements are not supported')
         }
         condition = 'always'
-        this.skipSeparators()
+        this.cursor ++
+        this.skipNewlines()
         continue
       }
       throw new UserError(`Expected command separator before ${this.displayToken(next)}`)
@@ -227,7 +228,10 @@ class ScriptParser {
     this.requireWord('then')
 
     while (true) {
-      const body = this.parseList(new Set(['elif', 'else', 'fi']))
+      const body = this.requireNonEmpty(
+        this.parseList(new Set(['elif', 'else', 'fi'])),
+        'Expected command after then',
+      )
       branches.push({ condition, body })
       if (this.isWord('elif')) {
         this.cursor ++
@@ -240,7 +244,10 @@ class ScriptParser {
       }
       if (this.isWord('else')) {
         this.cursor ++
-        const elseBody = this.parseList(new Set(['fi']))
+        const elseBody = this.requireNonEmpty(
+          this.parseList(new Set(['fi'])),
+          'Expected command after else',
+        )
         this.requireWord('fi')
         return { type: 'if', branches, elseBody }
       }
@@ -256,7 +263,10 @@ class ScriptParser {
       `Expected condition after ${type}`,
     )
     this.requireWord('do')
-    const body = this.parseList(new Set(['done']))
+    const body = this.requireNonEmpty(
+      this.parseList(new Set(['done'])),
+      `Expected command after do`,
+    )
     this.requireWord('done')
     return { type, condition, body }
   }
@@ -280,12 +290,20 @@ class ScriptParser {
       wordsSource = this.source.slice(begin, end)
     }
     const separator = this.peek()
-    if (! separator || separator.type !== 'separator') {
+    if (
+      ! separator
+      || separator.type !== 'separator'
+      || separator.value === '&'
+    ) {
       throw new IncompleteHshScriptError(`Expected ';' or newline before do`)
     }
-    this.skipSeparators()
+    this.cursor ++
+    this.skipNewlines()
     this.requireWord('do')
-    const body = this.parseList(new Set(['done']))
+    const body = this.requireNonEmpty(
+      this.parseList(new Set(['done'])),
+      `Expected command after do`,
+    )
     this.requireWord('done')
     return { type: 'for', name: variable.value, wordsSource, body }
   }
@@ -314,12 +332,15 @@ class ScriptParser {
     return token?.type === 'word' && words.has(token.value)
   }
 
-  private skipSeparators(includeSemicolon = true) {
-    while (this.peek()?.type === 'separator') {
-      const token = this.peek()
-      if (! includeSemicolon && token?.type === 'separator' && token.value === ';') break
+  private skipNewlines() {
+    while (this.peek()?.type === 'separator' && this.peekSeparatorValue() === '\n') {
       this.cursor ++
     }
+  }
+
+  private peekSeparatorValue() {
+    const token = this.peek()
+    return token?.type === 'separator' ? token.value : undefined
   }
 
   private peek() {
