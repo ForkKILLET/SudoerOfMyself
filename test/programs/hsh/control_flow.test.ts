@@ -40,6 +40,14 @@ class KeyInput implements FRead {
   readLn() { return '' }
 }
 
+const deferred = <T>() => {
+  let resolve: (value: T) => void = value => void value
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 const createShell = () => {
   const output = new MemoryOutput()
   const error = new MemoryOutput()
@@ -160,6 +168,77 @@ describe('hsh control-flow execution', () => {
     expect(broken.error.content).toContain('only meaningful in a loop')
     expect(continued.status.code).toBe(1)
     expect(continued.error.content).toContain('only meaningful in a loop')
+  })
+
+  it('runs a background compound statement in an isolated child process', async () => {
+    const release = deferred<number>()
+    const started = deferred<Process>()
+    const shell = createShell()
+    const mutate: Program = async (child) => {
+      expect(await child.stdio.read()).toBe('')
+      child.env.CHILD_ONLY = 'yes'
+      started.resolve(child)
+      return release.promise
+    }
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const script = parseControlScript(`
+      if true; then mutate; fi &
+      emit foreground
+    `)
+
+    const status = await executeControlScript(shell.process, script, {
+      true: () => 0,
+      mutate,
+      emit,
+    })
+    const child = await started.promise
+    const job = shell.process.jobTable?.get(1)
+
+    expect(status.code).toBe(0)
+    expect(child.isForeground).toBe(false)
+    expect(shell.process.env.CHILD_ONLY).toBeUndefined()
+    expect(shell.process.env['!']).toBe(child.pid.toString())
+    expect(job?.command).toContain('if true; then mutate; fi &')
+    expect(job?.state).toBe('running')
+    expect(shell.output.content).toContain('foreground\n')
+
+    release.resolve(7)
+    await expect(job?.completion).resolves.toMatchObject({ code: 7 })
+    expect(job?.state).toBe('completed')
+  })
+
+  it('keeps a background compound pipeline in the job process group', async () => {
+    const release = deferred<number>()
+    const leftStarted = deferred<Process>()
+    const rightStarted = deferred<Process>()
+    const shell = createShell()
+    const left: Program = (child) => {
+      leftStarted.resolve(child)
+      return release.promise
+    }
+    const right: Program = (child) => {
+      rightStarted.resolve(child)
+      return release.promise
+    }
+
+    await executeControlScript(
+      shell.process,
+      parseControlScript('if true; then left | right; fi &'),
+      { true: () => 0, left, right },
+    )
+    const [leftProcess, rightProcess] = await Promise.all([
+      leftStarted.promise,
+      rightStarted.promise,
+    ])
+    const job = shell.process.jobTable?.get(1)
+
+    expect(job?.group.values()).toEqual(expect.arrayContaining([
+      leftProcess,
+      rightProcess,
+    ]))
+    release.resolve(0)
+    await job?.completion
+    expect(job?.group.size).toBe(0)
   })
 
   it('parses command mode as one multiline script', async () => {

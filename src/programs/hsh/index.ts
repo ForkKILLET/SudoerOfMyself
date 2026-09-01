@@ -217,7 +217,9 @@ export const executeScript = async (
       if (! command.pipeToNext) break
     } while (commandIndex < script.commands.length)
 
-    const processGroup = new ProcessGroup()
+    const processGroup = ! script.background && proc.processGroup
+      ? proc.processGroup
+      : new ProcessGroup()
     if (script.background) {
       const eofInput = createPipe()
       eofInput.writer.close()
@@ -376,6 +378,45 @@ const executeStatement = async (
   }
 }
 
+const createBackgroundStdio = (proc: Process) => {
+  const eofInput = createPipe()
+  eofInput.writer.close()
+  const fds = proc.stdio.fds.fork()
+  const replaced = fds.replace(0, readableFileTarget(eofInput.reader))
+  if (replaced.isErr) {
+    fds.closeAll()
+    throw new UserError(displayFdError(replaced.err))
+  }
+  return new Stdio(fds)
+}
+
+const executeBackgroundStatement = (
+  proc: Process,
+  statement: HshStatement,
+  builtins: ProgramRegistry,
+  source?: string,
+) => {
+  const processGroup = new ProcessGroup()
+  const completion = proc.spawn(
+    child => executeStatement(child, statement, builtins),
+    {
+      name: 'hsh',
+      stdio: createBackgroundStdio(proc),
+      processGroup,
+      foreground: false,
+    },
+  )
+  proc.jobTable ??= new JobTable()
+  const job = proc.jobTable.create(
+    processGroup,
+    `${source ?? statement.type} &`,
+    completion,
+  )
+  proc.env['!'] = processGroup.pgid?.toString() ?? ''
+  proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
+  return setLastStatus(proc, normalExit(0))
+}
+
 export const executeControlScript = async (
   proc: Process,
   script: HshControlScript,
@@ -388,7 +429,9 @@ export const executeControlScript = async (
       || (entry.condition === 'success' && lastStatus.code === 0)
       || (entry.condition === 'failure' && lastStatus.code !== 0)
     if (! shouldRun) continue
-    lastStatus = await executeStatement(proc, entry.statement, builtins)
+    lastStatus = entry.background
+      ? executeBackgroundStatement(proc, entry.statement, builtins, entry.source)
+      : await executeStatement(proc, entry.statement, builtins)
   }
   return setLastStatus(proc, lastStatus)
 }

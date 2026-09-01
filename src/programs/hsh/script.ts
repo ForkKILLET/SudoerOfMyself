@@ -14,6 +14,8 @@ export interface HshControlScript {
 export interface HshListEntry {
   condition: HshListCondition
   statement: HshStatement
+  background?: true
+  source?: string
 }
 
 export type HshStatement =
@@ -159,10 +161,24 @@ class ScriptParser {
     this.skipNewlines()
 
     while (this.cursor < this.tokens.length && ! this.isStopWord(stopWords)) {
+      const statementBegin = this.peek() !.begin
       const statement = this.parseStatement()
-      entries.push({ condition, statement })
-
       const next = this.peek()
+      const isBackgroundCompound = next?.type === 'separator'
+        && next.value === '&'
+        && statement.type !== 'simple'
+      entries.push({
+        condition,
+        statement,
+        ...(isBackgroundCompound ? {
+          background: true as const,
+          source: this.source.slice(
+            statementBegin,
+            this.tokens[this.cursor - 1]?.end,
+          ).trim(),
+        } : {}),
+      })
+
       if (! next || this.isStopWord(stopWords)) break
       if (next.type === 'and' || next.type === 'or') {
         condition = next.type === 'and' ? 'success' : 'failure'
@@ -174,9 +190,6 @@ class ScriptParser {
         continue
       }
       if (next.type === 'separator') {
-        if (next.value === '&' && statement.type !== 'simple') {
-          throw new UserError('Background compound statements are not supported')
-        }
         condition = 'always'
         this.cursor ++
         this.skipNewlines()

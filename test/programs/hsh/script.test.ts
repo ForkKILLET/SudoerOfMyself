@@ -49,6 +49,21 @@ describe('hsh control-flow parser', () => {
     })
   })
 
+  it('marks compound statements for background execution', () => {
+    const script = parseControlScript('if ready; then work; fi & after')
+
+    expect(script.entries[0]).toMatchObject({
+      condition: 'always',
+      background: true,
+      source: 'if ready; then work; fi',
+      statement: { type: 'if' },
+    })
+    expect(script.entries[1]).toEqual({
+      condition: 'always',
+      statement: { type: 'simple', source: 'after' },
+    })
+  })
+
   it('reports unfinished compounds separately from invalid completed syntax', () => {
     expect(() => parseControlScript('if')).toThrow(IncompleteHshScriptError)
     expect(() => parseControlScript('if ready; then echo yes'))
