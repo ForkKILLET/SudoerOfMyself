@@ -47,6 +47,7 @@ export interface HshTokenText extends HshTokenBase {
   type: 'text'
   isDq?: boolean
   isSq?: boolean
+  isBraceLiteral?: boolean
 }
 
 export interface HshTokenVariable extends HshTokenBase {
@@ -127,6 +128,28 @@ export const tokenize = (line: string, isStrict = true) => {
       if (ch === '\0') {
         now += '\\'
         break
+      }
+      if (ch === '{' || ch === '}') {
+        if (now) {
+          tokens.push({
+            type: 'text',
+            content: now,
+            begin,
+            end: i - 3,
+            isDq,
+            isSq,
+          })
+          now = ''
+        }
+        tokens.push({
+          type: 'text',
+          content: ch,
+          begin: i - 2,
+          end: i - 1,
+          isBraceLiteral: true,
+        })
+        begin = i
+        continue
       }
       now += ch
       continue
@@ -344,11 +367,150 @@ export const tokenize = (line: string, isStrict = true) => {
   return tokens
 }
 
+const MAX_BRACE_EXPANSIONS = 10_000
+
+const splitBraceAlternatives = (body: string) => {
+  const alternatives: string[] = []
+  let depth = 0
+  let begin = 0
+  for (let index = 0; index < body.length; index ++) {
+    const char = body[index]
+    if (char === '{') depth ++
+    else if (char === '}') depth --
+    else if (char === ',' && depth === 0) {
+      alternatives.push(body.slice(begin, index))
+      begin = index + 1
+    }
+  }
+  if (! alternatives.length) return null
+  alternatives.push(body.slice(begin))
+  return alternatives
+}
+
+const expandBraceRange = (body: string) => {
+  const numeric = body.match(/^(-?\d+)\.\.(-?\d+)$/)
+  if (numeric) {
+    const start = Number(numeric[1])
+    const end = Number(numeric[2])
+    if (! Number.isSafeInteger(start) || ! Number.isSafeInteger(end)) return null
+    const length = Math.abs(end - start) + 1
+    if (length > MAX_BRACE_EXPANSIONS) {
+      throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
+    }
+    const width = Math.max(
+      numeric[1].replace(/^-/, '').length,
+      numeric[2].replace(/^-/, '').length,
+    )
+    const isPadded = /^-?0\d/.test(numeric[1]) || /^-?0\d/.test(numeric[2])
+    const step = start <= end ? 1 : - 1
+    return Array.from({ length }, (_, index) => {
+      const value = start + index * step
+      if (! isPadded) return String(value)
+      const digits = String(Math.abs(value)).padStart(width, '0')
+      return value < 0 ? `-${digits}` : digits
+    })
+  }
+
+  const characters = body.match(/^(.?)\.\.(.?)$/u)
+  if (! characters) return null
+  const [startText, endText] = characters.slice(1)
+  if (Array.from(startText).length !== 1 || Array.from(endText).length !== 1) return null
+  const start = startText.codePointAt(0) !
+  const end = endText.codePointAt(0) !
+  const length = Math.abs(end - start) + 1
+  if (length > MAX_BRACE_EXPANSIONS) {
+    throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
+  }
+  const step = start <= end ? 1 : - 1
+  return Array.from({ length }, (_, index) => String.fromCodePoint(start + index * step))
+}
+
+interface BraceExpression {
+  begin: number
+  end: number
+  alternatives: string[]
+}
+
+const findBraceExpression = (content: string): BraceExpression | null => {
+  for (let begin = 0; begin < content.length; begin ++) {
+    if (content[begin] !== '{') continue
+    let depth = 1
+    for (let end = begin + 1; end < content.length; end ++) {
+      if (content[end] === '{') depth ++
+      else if (content[end] === '}') depth --
+      if (depth) continue
+      const body = content.slice(begin + 1, end)
+      const alternatives = splitBraceAlternatives(body) ?? expandBraceRange(body)
+      if (alternatives) return { begin, end, alternatives }
+      begin = end
+      break
+    }
+  }
+  return null
+}
+
+const expandBraceContent = (content: string): string[] => {
+  const expression = findBraceExpression(content)
+  if (! expression) return [content]
+  const prefix = content.slice(0, expression.begin)
+  const suffix = content.slice(expression.end + 1)
+  const expanded: string[] = []
+  for (const value of expression.alternatives) {
+    for (const result of expandBraceContent(prefix + value + suffix)) {
+      expanded.push(result)
+      if (expanded.length > MAX_BRACE_EXPANSIONS) {
+        throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
+      }
+    }
+  }
+  return expanded
+}
+
+const expandBraces = (tokens: HshToken[]) => {
+  const expanded: HshToken[] = []
+  let word: HshToken[] = []
+
+  const flushWord = () => {
+    if (! word.length) return
+    let variants: HshToken[][] = [[]]
+    for (const token of word) {
+      const contents = token.type === 'text'
+        && ! token.isDq
+        && ! token.isSq
+        && ! token.isBraceLiteral
+        ? expandBraceContent(token.content)
+        : [token.content]
+      if (variants.length * contents.length > MAX_BRACE_EXPANSIONS) {
+        throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
+      }
+      variants = variants.flatMap(variant => contents.map(content => [
+        ...variant,
+        token.type === 'text' ? { ...token, content } : token,
+      ]))
+    }
+    expanded.push(...variants.flat())
+    word = []
+  }
+
+  for (const token of tokens) {
+    if (token.type === 'redirect' || token.type === 'pipe' || token.type === 'background') {
+      flushWord()
+      expanded.push(token)
+      continue
+    }
+    const previous = word.at(- 1)
+    if (previous && previous.end + 1 !== token.begin) flushWord()
+    word.push(token)
+  }
+  flushWord()
+  return expanded
+}
+
 export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
   const expanded: HshExpandedToken[] = []
 
   let text: HshExpandedTokenText | null = null
-  for (const token of tokens) {
+  for (const token of expandBraces(tokens)) {
     if (token.type === 'redirect' || token.type === 'pipe' || token.type === 'background') {
       if (text) {
         expanded.push(text)

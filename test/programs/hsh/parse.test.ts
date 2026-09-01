@@ -14,6 +14,62 @@ describe('hsh parser', () => {
     })
   })
 
+  it('expands brace alternatives with prefixes, suffixes, and adjacent variables', () => {
+    expect(parseLine('echo pre{a,b,c}post x{1,2}{a,b} $HEAD{left,right}$TAIL', {
+      HEAD: '<',
+      TAIL: '>',
+    })).toEqual({
+      commands: [{
+        name: 'echo',
+        args: [
+          'preapost',
+          'prebpost',
+          'precpost',
+          'x1a',
+          'x1b',
+          'x2a',
+          'x2b',
+          '<left>',
+          '<right>',
+        ],
+      }],
+    })
+  })
+
+  it('expands ascending, descending, padded, and character ranges', () => {
+    expect(parseLine('echo {1..3} {3..1} {-1..1} {01..3} {a..c} {C..A}', {}))
+      .toEqual({
+        commands: [{
+          name: 'echo',
+          args: [
+            '1', '2', '3',
+            '3', '2', '1',
+            '-1', '0', '1',
+            '01', '02', '03',
+            'a', 'b', 'c',
+            'C', 'B', 'A',
+          ],
+        }],
+      })
+  })
+
+  it('supports nested alternatives and keeps non-expanding braces literal', () => {
+    expect(parseLine('echo {a,{b,c}} "{d,e}" \\{f,g\\} {word..other}', {}))
+      .toEqual({
+        commands: [{
+          name: 'echo',
+          args: ['a', 'b', 'c', '{d,e}', '{f,g}', '{word..other}'],
+        }],
+      })
+  })
+
+  it('limits the size of brace expansion', () => {
+    expect(() => parseLine('echo {1..10001}', {}))
+      .toThrow('Brace expansion exceeds 10000 values')
+    expect(() => parseLine('echo {1..101}{1..101}', {}))
+      .toThrow('Brace expansion exceeds 10000 values')
+  })
+
   it('parses output redirects', () => {
     const script = parse(expand(tokenize('echo hello >> output.txt'), {}))
 
