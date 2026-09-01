@@ -52,7 +52,7 @@ export namespace Vfs {
     vroot: FB,
   ): FOp.CreateResult<FileFromT<FB['type']>> => {
     const queue: FsBuildStep[] = [{ vfile: vroot, entries: {}, name: '' }]
-    const allocatedIids: number[] = []
+    const createdInodes: Inode[] = []
     let rootInode: Inode | undefined
 
     while (queue.length) {
@@ -82,9 +82,9 @@ export namespace Vfs {
       // TODO: optimize
       const iid = fs.inodeBitmap.getFree(1)
       if (iid === - 1) {
-        allocatedIids.forEach((allocatedIid) => {
-          fs.inodes.delete(allocatedIid)
-          fs.inodeBitmap.set(allocatedIid, 0)
+        createdInodes.forEach((createdInode) => {
+          fs.inodes.delete(createdInode.iid)
+          fs.inodeBitmap.set(createdInode.iid, 0)
         })
         return FOp.err({ type: FOp.T.OUT_OF_INODES })
       }
@@ -94,13 +94,16 @@ export namespace Vfs {
         file,
         ...(executable ? { executable } : {}),
       }
-      allocatedIids.push(iid)
+      createdInodes.push(inode)
       fs.inodes.set(iid, inode)
       if (! rootInode) rootInode = inode
       entries[name] = iid
     }
 
     if (! rootInode) throw new Error('VFS image produced no root inode')
-    return FOp.ok({ inode: rootInode as Inode<FileFromT<FB['type']>> })
+    return FOp.ok({
+      inode: rootInode as Inode<FileFromT<FB['type']>>,
+      createdInodes,
+    })
   }
 }

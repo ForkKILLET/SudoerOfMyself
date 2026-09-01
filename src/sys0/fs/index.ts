@@ -185,7 +185,10 @@ export namespace FOp {
   }>
   export type MkdirResult = OperationResult<{ dir: DirFile }>
   export type OpenResult<FM extends FileMode> = OperationResult<{ handle: FileHandleFromMode<FM> }>
-  export type CreateResult<F extends File = File> = OperationResult<{ inode: Inode<F> }>
+  export type CreateResult<F extends File = File> = OperationResult<{
+    inode: Inode<F>
+    createdInodes: Inode[]
+  }>
 
   export type RmResult = OperationResult<{ path: string }>
 
@@ -395,22 +398,15 @@ export class Fs {
 
   create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
     if (this.isReadOnly) return this.readOnlyError()
-    const existingIids = new Set(this.inodes.keys())
     const result = this.createUnchecked(tree)
-    if (result.isOk) {
-      this.markDirty(createPutsDelta(
-        [...this.inodes].filter(([iid]) => ! existingIids.has(iid)).map(([, inode]) => inode),
-      ))
-    }
+    if (result.isOk) this.markDirty(createPutsDelta(result.val.createdInodes))
     return result
   }
 
   private createUnchecked<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
-    const existingIids = new Set(this.inodes.keys())
     const result = Vfs.create(this, tree)
     if (result.isOk) {
-      this.inodes.forEach((inode, iid) => {
-        if (existingIids.has(iid)) return
+      result.val.createdInodes.forEach((inode) => {
         FILE_SYSTEM_OWNER.set(inode.file, this)
       })
     }
@@ -422,16 +418,13 @@ export class Fs {
     if (owner && owner !== this) return owner.createAt(parent, name, tree)
     if (this.isReadOnly) return this.readOnlyError()
     if (this.getChildInode(parent.file, name)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
-    const existingIids = new Set(this.inodes.keys())
     const createRes = this.createUnchecked(tree)
     if (createRes.isErr) return createRes
 
     parent.file.entries[name] = createRes.val.inode.iid
     this.markDirty(createPutsDelta([
       parent,
-      ...[...this.inodes]
-        .filter(([iid]) => ! existingIids.has(iid))
-        .map(([, inode]) => inode),
+      ...createRes.val.createdInodes,
     ]))
     return createRes
   }

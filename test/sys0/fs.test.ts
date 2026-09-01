@@ -196,6 +196,23 @@ describe('Fs mutation consistency', () => {
     expect(maintainer.inodeBitmap.usedCount).toBe(0)
   })
 
+  it('returns the complete inode allocation from VFS image creation', () => {
+    const maintainer = {
+      inodes: new Map<number, Inode>(),
+      inodeBitmap: new Bitmap(8),
+    }
+
+    const result = Vfs.create(maintainer, Vfs.dir({
+      child: Vfs.normal('data'),
+      nested: Vfs.dir({ leaf: Vfs.normal('value') }),
+    }))
+
+    expect(result.isOk).toBe(true)
+    if (result.isErr) return
+    expect(result.val.createdInodes).toEqual([...maintainer.inodes.values()])
+    expect(result.val.createdInodes.map(({ iid }) => iid)).toEqual([1, 2, 3, 4])
+  })
+
   it('resolves relative paths through the injected working directory', () => {
     const persistence = new MemoryFsPersistence()
     const fs = new Fs(Vfs.dir({ home: Vfs.dir({ file: Vfs.normal('ok') }) }), {
