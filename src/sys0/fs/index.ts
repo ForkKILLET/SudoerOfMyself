@@ -8,6 +8,7 @@ import { FsPersistence, MemoryFsPersistence } from './persistence'
 import { Vfs } from './vfs'
 import { Path } from './path'
 import {
+  assertFileSystemImage,
   createDeleteDelta,
   createFsDelta,
   createPutsDelta,
@@ -268,6 +269,7 @@ export class Fs {
       return
     }
 
+    assertFileSystemImage(snapshot)
     this.rootIid = snapshot.rootIid
     snapshot.inodes.forEach((inode) => {
       if (inode.iid >= MAX_INODE_COUNT) {

@@ -1,5 +1,6 @@
 import {
   applyFsDelta,
+  assertFileSystemImage,
   cloneFsDelta,
   createFsDelta,
   type FileSystemImage,
@@ -29,7 +30,7 @@ export class MemoryFsPersistence implements FsPersistence {
 }
 
 export interface AsyncFileSystemStore {
-  load(): Promise<FileSystemImage | undefined>
+  load(): Promise<unknown | undefined>
   commit(delta: FsDelta, expectedRevision: number): Promise<number>
   clear(): Promise<void>
 }
@@ -62,10 +63,10 @@ export class QueuedFsPersistence implements FsPersistence {
   }
 
   static async create(store: AsyncFileSystemStore) {
-    return new QueuedFsPersistence(store, await store.load())
+    const image = await store.load()
+    if (image !== undefined) assertFileSystemImage(image)
+    return new QueuedFsPersistence(store, image)
   }
-
-  readonly recoveredFromPrevious = false
 
   load() {
     return this.current && structuredClone(this.current)

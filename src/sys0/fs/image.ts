@@ -19,6 +19,73 @@ export interface FsDelta {
   deletes: Set<InodeId>
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null
+)
+
+const invalidImage = (reason: string): never => {
+  throw new Error(`Invalid file-system image: ${reason}`)
+}
+
+export function assertFileSystemImage(value: unknown): asserts value is FileSystemImage {
+  if (! isRecord(value)) invalidImage('expected an object')
+  const image = value as Record<string, unknown>
+  if (image.format !== FILE_SYSTEM_IMAGE_FORMAT) invalidImage('unknown format')
+  if (image.version !== FILE_SYSTEM_IMAGE_VERSION) invalidImage('unsupported version')
+  if (! Number.isSafeInteger(image.revision) || (image.revision as number) < 0) {
+    invalidImage('invalid revision')
+  }
+  if (! Number.isSafeInteger(image.rootIid) || (image.rootIid as number) < 1) {
+    invalidImage('invalid root inode')
+  }
+  if (! Array.isArray(image.inodes)) invalidImage('inodes must be an array')
+
+  const inodeIds = new Set<number>()
+  const directoryReferences: number[] = []
+  let rootIsDirectory = false
+
+  const inodes = image.inodes as unknown[]
+  inodes.forEach((candidate: unknown, index: number) => {
+    if (! isRecord(candidate)) invalidImage(`inode ${index} is not an object`)
+    const { iid, file, executable } = candidate as Record<string, unknown>
+    if (! Number.isSafeInteger(iid) || (iid as number) < 1) {
+      invalidImage(`inode ${index} has an invalid id`)
+    }
+    if (inodeIds.has(iid as number)) invalidImage(`duplicate inode ${String(iid)}`)
+    inodeIds.add(iid as number)
+
+    if (! isRecord(file)) invalidImage(`inode ${String(iid)} has no file`)
+    const fileRecord = file as Record<string, unknown>
+    if (fileRecord.type === 0) {
+      if (! isRecord(fileRecord.entries)) invalidImage(`directory inode ${String(iid)} has invalid entries`)
+      Object.values(fileRecord.entries as Record<string, unknown>).forEach((childIid) => {
+        if (! Number.isSafeInteger(childIid) || (childIid as number) < 1) {
+          invalidImage(`directory inode ${String(iid)} contains an invalid reference`)
+        }
+        directoryReferences.push(childIid as number)
+      })
+      if (iid === image.rootIid) rootIsDirectory = true
+    }
+    else if (fileRecord.type === 1) {
+      if (typeof fileRecord.content !== 'string') invalidImage(`file inode ${String(iid)} has invalid content`)
+    }
+    else invalidImage(`inode ${String(iid)} has an unknown file type`)
+
+    if (executable !== undefined) {
+      if (! isRecord(executable)) invalidImage(`inode ${String(iid)} has an invalid executable descriptor`)
+      const executableRecord = executable as Record<string, unknown>
+      if (executableRecord.format !== 'native' || typeof executableRecord.programId !== 'string') {
+        invalidImage(`inode ${String(iid)} has an invalid executable descriptor`)
+      }
+    }
+  })
+
+  if (! inodeIds.has(image.rootIid as number)) invalidImage('root inode is missing')
+  if (! rootIsDirectory) invalidImage('root inode is not a directory')
+  const danglingIid = directoryReferences.find(iid => ! inodeIds.has(iid))
+  if (danglingIid !== undefined) invalidImage(`dangling inode reference ${danglingIid}`)
+}
+
 export const createFsDelta = (): FsDelta => ({
   puts: new Map(),
   deletes: new Set(),

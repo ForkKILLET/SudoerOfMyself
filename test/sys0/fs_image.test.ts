@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FileT, type Inode } from '@/sys0/fs'
 import {
   applyFsDelta,
+  assertFileSystemImage,
   createDeleteDelta,
   createPutDelta,
   createReplaceAllDelta,
@@ -109,5 +110,19 @@ describe('FsDelta application', () => {
     expect(() => applyFsDelta(undefined, createPutDelta(normalInode(2, 'orphan')))).toThrow(
       'without an existing image',
     )
+  })
+})
+
+describe('FileSystemImage validation', () => {
+  it('rejects invalid revisions and dangling inode references', () => {
+    expect(() => assertFileSystemImage({
+      ...replacement('data'),
+      revision: - 1,
+    })).toThrow('invalid revision')
+    expect(() => assertFileSystemImage({
+      ...replacement('data'),
+      revision: 1,
+      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: { missing: 9 } } }],
+    })).toThrow('dangling inode reference 9')
   })
 })

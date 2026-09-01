@@ -18,26 +18,27 @@ const snapshot: FileSystemSnapshot = {
 }
 
 describe('file-system save recovery', () => {
-  it('exports a backend-independent snapshot', () => {
+  it('wraps supplied recovery data in a versioned archive', () => {
     const exportedAt = new Date('2026-08-24T00:00:00.000Z')
     const archive = createFileSystemSaveArchive(snapshot, exportedAt)
 
     expect(archive).toEqual({
       format: 'sudoer-of-myself/file-system-save',
-      version: 1,
+      version: 2,
       exportedAt: '2026-08-24T00:00:00.000Z',
-      snapshot,
+      data: snapshot,
     })
     expect(JSON.parse(serializeFileSystemSave(snapshot, exportedAt))).toEqual(archive)
   })
 
   it('can export an invalid raw snapshot from recovery mode', () => {
-    const invalidSnapshot = { broken: true }
-    const previousSnapshot = { generation: 2 }
+    const invalidData = {
+      metadata: { broken: true },
+      inodes: [{ iid: 'invalid' }],
+    }
 
-    const archive = createFileSystemSaveArchive(invalidSnapshot, new Date(), previousSnapshot)
-    expect(archive.snapshot).toEqual(invalidSnapshot)
-    expect(archive.previousSnapshot).toEqual(previousSnapshot)
+    const archive = createFileSystemSaveArchive(invalidData)
+    expect(archive.data).toEqual(invalidData)
   })
 
   it('rejects dangling inode references before hydrating the VFS', () => {

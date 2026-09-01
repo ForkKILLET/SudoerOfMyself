@@ -26,6 +26,15 @@ interface StoredFileSystemMetadata {
   rootIid: number
 }
 
+export interface RawIndexedDbFileSystem {
+  metadata: unknown
+  inodes: unknown[]
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null
+)
+
 const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
   request.addEventListener('success', () => resolve(request.result), { once: true })
   request.addEventListener('error', () => reject(request.error ?? new Error('IndexedDB request failed')), {
@@ -77,6 +86,16 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
   }
 
   async load() {
+    const { metadata, inodes } = await this.exportRaw()
+    if (metadata === undefined) {
+      if (inodes.length) return { metadata, inodes }
+      return undefined
+    }
+    if (! isRecord(metadata)) return { metadata, inodes }
+    return { ...metadata, inodes }
+  }
+
+  async exportRaw(): Promise<RawIndexedDbFileSystem> {
     const transaction = this.database.transaction([
       FILE_SYSTEM_META_OBJECT_STORE,
       FILE_SYSTEM_INODES_OBJECT_STORE,
@@ -85,20 +104,13 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
     const [metadata, inodes] = await Promise.all([
       requestResult(
         transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).get(FILE_SYSTEM_META_KEY),
-      ) as Promise<StoredFileSystemMetadata | undefined>,
+      ) as Promise<unknown>,
       requestResult(
         transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).getAll(),
-      ) as Promise<FileSystemImage['inodes']>,
+      ) as Promise<unknown[]>,
     ])
     await completion
-    if (! metadata) {
-      if (inodes.length) throw new Error('File-system metadata is missing')
-      return undefined
-    }
-    return {
-      ...metadata,
-      inodes,
-    }
+    return { metadata, inodes }
   }
 
   async loadPrevious() {

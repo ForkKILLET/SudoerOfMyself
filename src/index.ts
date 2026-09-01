@@ -19,9 +19,6 @@ const start = async () => {
   const store = await IndexedDbFileSystemStore.open()
   try {
     const persistence = await QueuedFsPersistence.create(store)
-    if (persistence.recoveredFromPrevious) {
-      console.warn('Recovered the file system from the previous valid snapshot')
-    }
     const ctx = new Context(getRootImage(), {
       mounts: [{
         path: '/bin',

@@ -60,6 +60,15 @@ describe('IndexedDbFileSystemStore', () => {
     expect(await store.load()).toBeUndefined()
     await expect(store.commit(createReplaceAllDelta(replacement), 0)).resolves.toBe(1)
     expect(await store.load()).toEqual({ ...replacement, revision: 1 })
+    expect(await store.exportRaw()).toEqual({
+      metadata: {
+        format: FILE_SYSTEM_IMAGE_FORMAT,
+        version: FILE_SYSTEM_IMAGE_VERSION,
+        revision: 1,
+        rootIid: 1,
+      },
+      inodes: replacement.inodes,
+    })
 
     const update = createPutDelta({
       iid: 2,

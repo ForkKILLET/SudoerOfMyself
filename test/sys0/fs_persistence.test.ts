@@ -88,4 +88,16 @@ describe('QueuedFsPersistence', () => {
 
     expect(expectedRevisions).toEqual([7])
   })
+
+  it('rejects an invalid image before synchronous VFS hydration', async () => {
+    const store: AsyncFileSystemStore = {
+      load: async () => ({ broken: true }),
+      commit: async (_delta, expectedRevision) => expectedRevision + 1,
+      clear: async () => {},
+    }
+
+    await expect(QueuedFsPersistence.create(store)).rejects.toThrow(
+      'Invalid file-system image: unknown format',
+    )
+  })
 })
