@@ -90,7 +90,7 @@ describe('hsh execution', () => {
     await execute(process, {
       name: 'mixed',
       args: [],
-      error: { type: 'writeTo', path: '/errors.txt' },
+      redirections: [{ fd: 2, type: 'writeTo', path: '/errors.txt' }],
     }, {})
 
     expect(output.content).toBe('ordinary output\n')
@@ -108,12 +108,31 @@ describe('hsh execution', () => {
     await execute(process, {
       name: 'mixed',
       args: [],
-      output: { type: 'writeTo', path: '/output.txt' },
+      redirections: [{ fd: 1, type: 'writeTo', path: '/output.txt' }],
     }, {})
 
     expect(output.content).toBe('')
     expect(error.content).toBe('mixed: failure\n')
     expect(fs.openU('/output.txt', 'r').handle.read()).toBe('ordinary output\n')
+  })
+
+  it('applies repeated redirects from left to right', async () => {
+    const { fs, process } = createShellProcess((child) => {
+      child.stdio.write('payload')
+      return 0
+    })
+
+    await execute(process, {
+      name: 'producer',
+      args: [],
+      redirections: [
+        { fd: 1, type: 'writeTo', path: '/first.txt' },
+        { fd: 1, type: 'writeTo', path: '/second.txt' },
+      ],
+    }, {})
+
+    expect(fs.openU('/first.txt', 'r').handle.read()).toBe('')
+    expect(fs.openU('/second.txt', 'r').handle.read()).toBe('payload')
   })
 
   it('runs pipeline stages concurrently and pipes only stdout', async () => {

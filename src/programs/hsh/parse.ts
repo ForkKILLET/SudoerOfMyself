@@ -77,6 +77,8 @@ export const tokenize = (line: string, isStrict = true) => {
   let isNesc = false as false | 'x' | 'u' | 'o'
   let isSq = false
   let isDq = false
+  let quoteTokenCount = 0
+  let quoteBufferedLength = 0
   let isVar = false
   let isWh = true
   let now = ''
@@ -109,6 +111,11 @@ export const tokenize = (line: string, isStrict = true) => {
   while (true) {
     const ch = line[i ++] ?? '\0'
 
+    if (isEsc && ch === '\0') {
+      if (isStrict) throw new UserError('Trailing escape character')
+      now += '\\'
+      break
+    }
     if (isEsc && isDq) {
       if (ch === 'x' || ch === 'u' || ch === '0') isNesc = ch === '0' ? 'o' : ch
       else now += ESCAPES[ch] ?? ch
@@ -149,6 +156,7 @@ export const tokenize = (line: string, isStrict = true) => {
             end: i - 1,
           })
           isVar = false
+          begin = i
           continue
         }
         else if (is('env', ch)) {
@@ -179,6 +187,7 @@ export const tokenize = (line: string, isStrict = true) => {
       }
     }
     if (ch === '\0') break
+    const beginsWord = isWh
     if (is('white', ch) && ! isSq && ! isDq) {
       if (! isWh) {
         consumeNow()
@@ -197,6 +206,7 @@ export const tokenize = (line: string, isStrict = true) => {
         content: ch,
       })
       begin = i
+      isWh = true
     }
     else if (! isDq && ! isSq && ch === '|') {
       consumeNow()
@@ -207,50 +217,89 @@ export const tokenize = (line: string, isStrict = true) => {
         content: ch,
       })
       begin = i
+      isWh = true
     }
     else if (! isDq && ! isSq && (ch === '>' || ch === '<')) {
-      const isStderrRedirect = ch === '>' && now === '2' && begin === i - 2
-      if (isStderrRedirect) now = ''
+      const explicitFd = begin === i - 2 && (
+        (ch === '>' && (now === '1' || now === '2'))
+        || (ch === '<' && now === '0')
+      )
+        ? Number(now) as 0 | 1 | 2
+        : undefined
+      if (explicitFd !== undefined) now = ''
       else consumeNow()
       if (ch === '>' && line[i] === '>') {
         tokens.push({
           type: 'redirect',
-          fd: isStderrRedirect ? 2 : 1,
+          fd: explicitFd ?? 1,
           mode: 'append',
           begin,
           end: i,
-          content: '>>',
+          content: `${explicitFd ?? ''}>>`,
         })
         i ++
       }
       else {
         tokens.push({
           type: 'redirect',
-          fd: ch === '<' ? 0 : isStderrRedirect ? 2 : 1,
+          fd: explicitFd ?? (ch === '<' ? 0 : 1),
           mode: ch === '<' ? 'read' : 'write',
           begin,
           end: i - 1,
-          content: ch,
+          content: `${explicitFd ?? ''}${ch}`,
         })
       }
       begin = i
+      isWh = true
     }
     else if (ch === '\\' && ! isSq) isEsc = true
     else if (ch === '\'' && ! isDq) {
       if (isSq) {
-        consumeNow(0)
+        if (now) consumeNow(0)
+        else if (tokens.length === quoteTokenCount && now.length === quoteBufferedLength) {
+          tokens.push({
+            type: 'text',
+            content: '',
+            begin,
+            end: i - 1,
+            isSq: true,
+          })
+        }
         begin = i
+      }
+      else {
+        quoteTokenCount = tokens.length
+        quoteBufferedLength = now.length
       }
       isSq = ! isSq
     }
     else if (ch === '"' && ! isSq) {
       if (isDq) {
-        consumeNow(0)
+        if (now) consumeNow(0)
+        else if (tokens.length === quoteTokenCount && now.length === quoteBufferedLength) {
+          tokens.push({
+            type: 'text',
+            content: '',
+            begin,
+            end: i - 1,
+            isDq: true,
+          })
+        }
         begin = i
+      }
+      else {
+        quoteTokenCount = tokens.length
+        quoteBufferedLength = now.length
       }
       isDq = ! isDq
     }
-    else if (! isDq && ! isSq && ch === '~') {
+    else if (
+      ! isDq
+      && ! isSq
+      && beginsWord
+      && ch === '~'
+      && ['\0', '/', ...HSH_CHARS.white, '&', '|', '>', '<'].includes(line[i] ?? '\0')
+    ) {
       consumeNow()
       tokens.push({
         type: 'home',
@@ -334,69 +383,65 @@ export interface HshAstCommand {
   name: string
   args: string[]
   pipeToNext?: true
-  input?:
-    | { type: 'readFrom', path: string }
-  output?:
-    | { type: 'writeTo', path: string }
-    | { type: 'appendTo', path: string }
-  error?:
-    | { type: 'writeTo', path: string }
-    | { type: 'appendTo', path: string }
+  redirections?: HshAstRedirection[]
 }
 
-export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
+export type HshAstRedirection =
+  | { fd: 0, type: 'readFrom', path: string }
+  | { fd: 1 | 2, type: 'writeTo' | 'appendTo', path: string }
+
+export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   const script: HshAstScript = {
     commands: [],
   }
+  let cursor = 0
 
-  while (tokens.length) {
-    const firstToken = tokens[0]
+  while (cursor < tokens.length) {
+    const firstToken = tokens[cursor]
     if (firstToken.type === 'pipe') throw new UserError('Expected command before pipe')
     if (firstToken.type === 'background') throw new UserError('Expected command before background marker')
     const name = firstToken.type === 'redirect' ? 'cat' : firstToken.content
-    if (firstToken.type !== 'redirect') tokens.shift()
+    if (firstToken.type !== 'redirect') cursor ++
 
     const command: HshAstCommand = {
       name,
       args: [],
     }
 
-    while (tokens.length) {
-      const token = tokens.shift()
+    while (cursor < tokens.length) {
+      const token = tokens[cursor ++]
       if (! token) break
       if (token.type === 'background') {
-        if (tokens.length) throw new UserError('Background marker must end the command')
+        if (cursor < tokens.length) throw new UserError('Background marker must end the command')
         script.background = true
         break
       }
       else if (token.type === 'pipe') {
-        if (! tokens.length) throw new UserError('Expected command after pipe')
+        if (cursor >= tokens.length) throw new UserError('Expected command after pipe')
         command.pipeToNext = true
         break
       }
       else if (token.type === 'redirect') {
-        const target = tokens.shift()
+        const target = tokens[cursor ++]
         if (! target) throw new UserError('Expected redirect target, got end of input')
         if (target.type !== 'text') {
           throw new UserError('Expected redirect target, got ' + target.type)
         }
         if (token.fd === 0) {
-          command.input = {
+          command.redirections ??= []
+          command.redirections.push({
+            fd: 0,
             type: 'readFrom',
             path: target.content,
-          }
-        }
-        else if (token.fd === 1) {
-          command.output = {
-            type: token.mode === 'append' ? 'appendTo' : 'writeTo',
-            path: target.content,
-          }
+          })
         }
         else {
-          command.error = {
+          command.redirections ??= []
+          command.redirections.push({
+            fd: token.fd,
             type: token.mode === 'append' ? 'appendTo' : 'writeTo',
             path: target.content,
-          }
+          })
         }
       }
       else if (token.type === 'text') {
@@ -409,3 +454,5 @@ export const parse = (tokens: HshExpandedToken[]): HshAstScript => {
 
   return script
 }
+
+export const parseLine = (line: string, env: Env) => parse(expand(tokenize(line), env))

@@ -7,7 +7,7 @@ import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdio } from '@/sys0/stdio'
 
-import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parse, tokenize } from './parse'
+import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parseLine, tokenize } from './parse'
 import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
@@ -43,23 +43,34 @@ export const execute = async (
   const { ctx, env } = proc
 
   const getStdio = () => {
-    const { input: inputDesc } = command
-    const { output: outputDesc } = command
-    const { error: errorDesc } = command
-    const input = inputDesc
-      ? ctx.fs.openU(inputDesc.path, 'r').handle
-      : options.input ?? proc.stdio.input
-    const output = outputDesc
-      ? ctx.fs.openU(outputDesc.path, outputDesc.type[0] as 'a' | 'w').handle
-      : options.output ?? proc.stdio.output
-    const error = errorDesc
-      ? ctx.fs.openU(errorDesc.path, errorDesc.type[0] as 'a' | 'w').handle
-      : proc.stdio.error
+    let input = options.input ?? proc.stdio.input
+    let output = options.output ?? proc.stdio.output
+    let error = proc.stdio.error
+    let redirectsInput = false
+    let redirectsOutput = false
+    let redirectsError = false
+    command.redirections?.forEach((redirection) => {
+      if (redirection.fd === 0) {
+        input = ctx.fs.openU(redirection.path, 'r').handle
+        redirectsInput = true
+      }
+      else {
+        const handle = ctx.fs.openU(redirection.path, redirection.type[0] as 'a' | 'w').handle
+        if (redirection.fd === 1) {
+          output = handle
+          redirectsOutput = true
+        }
+        else {
+          error = handle
+          redirectsError = true
+        }
+      }
+    })
 
     const stdio = new Stdio(input, output, error)
-    stdio.stdin = inputDesc || options.input ? undefined : proc.stdio.stdin
-    stdio.stdout = outputDesc || options.output ? undefined : proc.stdio.stdout
-    stdio.stderr = errorDesc ? undefined : proc.stdio.stderr
+    stdio.stdin = redirectsInput || options.input ? undefined : proc.stdio.stdin
+    stdio.stdout = redirectsOutput || options.output ? undefined : proc.stdio.stdout
+    stdio.stderr = redirectsError ? undefined : proc.stdio.stderr
     return stdio
   }
 
@@ -310,14 +321,12 @@ export const createHsh = ({
 
     const executeLine = async (proc: Process, line: string) => {
       const parseResult = Result.wrap<HshAstScript, unknown>(() => {
-        const tokens = tokenize(line)
-        const etokens = expand(tokens, env)
-        return parse(etokens)
+        return parseLine(line, env)
       })
       if (parseResult.isErr) {
         proc.error(parseResult.err)
-        proc.env['?'] = '130'
-        return
+        proc.env['?'] = '2'
+        return false
       }
       await executeScript(proc, parseResult.val, builtins, { source: line })
       try {
@@ -326,14 +335,14 @@ export const createHsh = ({
       catch (error) {
         proc.error(`file system save failed: ${errorMessage(error)}`)
       }
-      return getShellExitRequest(proc)
+      return true
     }
 
     if (options.command) {
       const lines = options.command.split('\n')
       for (const line of lines) {
-        await executeLine(proc, line)
-        if (getShellExitRequest(proc)) break
+        const parsed = await executeLine(proc, line)
+        if (! parsed || getShellExitRequest(proc)) break
       }
     }
 
@@ -366,10 +375,10 @@ export const createHsh = ({
       const fh = ctx.fs.openU(path, 'r').handle
       const lines = fh.read().split('\n')
       for (const line of lines) {
-        await executeLine(proc, line)
-        if (getShellExitRequest(proc)) break
+        const parsed = await executeLine(proc, line)
+        if (! parsed || getShellExitRequest(proc)) break
       }
     }
 
-    return getShellExitRequest(proc) ?? 0
+    return getShellExitRequest(proc) ?? Number.parseInt(env['?'], 10)
   })

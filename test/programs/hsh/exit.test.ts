@@ -49,6 +49,25 @@ describe('exit builtin', () => {
     expect(getShellExitRequest(shell)).toEqual(normalExit(23))
   })
 
+  it('returns syntax errors and the last command status from command mode', async () => {
+    const syntaxError = createShell()
+    const afterError = vi.fn(() => 0)
+    const syntaxShell = createHsh({ builtins: { 'after-error': afterError } })
+
+    await expect(syntaxShell(
+      syntaxError.shell,
+      'hsh',
+      '-c',
+      'echo "unfinished\nafter-error',
+    )).resolves.toBe(2)
+    expect(syntaxError.error.content).toContain('Unmatched double quote')
+    expect(afterError).not.toHaveBeenCalled()
+
+    const failedCommand = createShell()
+    const statusShell = createHsh({ builtins: { fail: () => 7 } })
+    await expect(statusShell(failedCommand.shell, 'hsh', '-c', 'fail')).resolves.toBe(7)
+  })
+
   it('stops executing commands after a foreground exit request', async () => {
     const { shell } = createShell()
     const afterExit = vi.fn(() => 0)

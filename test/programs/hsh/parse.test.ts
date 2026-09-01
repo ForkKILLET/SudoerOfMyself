@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expand, parse, tokenize } from '@/programs/hsh/parse'
+import { expand, parse, parseLine, tokenize } from '@/programs/hsh/parse'
 
 describe('hsh parser', () => {
   it('expands variables and quoted text into one argument', () => {
@@ -21,7 +21,7 @@ describe('hsh parser', () => {
       commands: [{
         name: 'echo',
         args: ['hello'],
-        output: { type: 'appendTo', path: 'output.txt' },
+        redirections: [{ fd: 1, type: 'appendTo', path: 'output.txt' }],
       }],
     })
   })
@@ -33,8 +33,10 @@ describe('hsh parser', () => {
       commands: [{
         name: 'cat',
         args: [],
-        input: { type: 'readFrom', path: 'input.txt' },
-        output: { type: 'writeTo', path: 'output.txt' },
+        redirections: [
+          { fd: 0, type: 'readFrom', path: 'input.txt' },
+          { fd: 1, type: 'writeTo', path: 'output.txt' },
+        ],
       }],
     })
   })
@@ -46,7 +48,21 @@ describe('hsh parser', () => {
       commands: [{
         name: 'echo',
         args: ['hello'],
-        error: { type: 'appendTo', path: 'errors.txt' },
+        redirections: [{ fd: 2, type: 'appendTo', path: 'errors.txt' }],
+      }],
+    })
+  })
+
+  it('parses explicit stdin/stdout descriptors and preserves redirect order', () => {
+    expect(parseLine('cat 0<input 1>first >second', {})).toEqual({
+      commands: [{
+        name: 'cat',
+        args: [],
+        redirections: [
+          { fd: 0, type: 'readFrom', path: 'input' },
+          { fd: 1, type: 'writeTo', path: 'first' },
+          { fd: 1, type: 'writeTo', path: 'second' },
+        ],
       }],
     })
   })
@@ -61,7 +77,7 @@ describe('hsh parser', () => {
         {
           name: 'cat',
           args: [],
-          output: { type: 'writeTo', path: 'output.txt' },
+          redirections: [{ fd: 1, type: 'writeTo', path: 'output.txt' }],
         },
       ],
     })
@@ -140,5 +156,38 @@ describe('hsh parser', () => {
 
   it('reports incomplete quoted input', () => {
     expect(() => tokenize('echo \'unfinished')).toThrow('Unmatched single quote')
+    expect(() => tokenize('echo "unfinished')).toThrow('Unmatched double quote')
+  })
+
+  it('reports a trailing escape in strict mode but tolerates it for completion', () => {
+    expect(() => tokenize('echo unfinished\\')).toThrow('Trailing escape character')
+    expect(tokenize('echo unfinished\\', false).at(- 1)?.content).toBe('unfinished\\')
+  })
+
+  it('preserves empty quoted arguments and adjacent quote segments', () => {
+    expect(parseLine('echo "" \'\' a""b $MISSING""', {})).toEqual({
+      commands: [{
+        name: 'echo',
+        args: ['', '', 'ab', ''],
+      }],
+    })
+  })
+
+  it('only expands the current-user home marker at the start of a word', () => {
+    expect(parseLine('echo ~ ~/file prefix~ ~someone', { HOME: '/home/sudoer' })).toEqual({
+      commands: [{
+        name: 'echo',
+        args: ['/home/sudoer', '/home/sudoer/file', 'prefix~', '~someone'],
+      }],
+    })
+  })
+
+  it('does not consume the expanded token array while parsing', () => {
+    const tokens = expand(tokenize('echo hello | cat'), {})
+    const before = structuredClone(tokens)
+
+    parse(tokens)
+
+    expect(tokens).toEqual(before)
   })
 })
