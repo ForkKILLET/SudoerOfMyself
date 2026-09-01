@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FileT } from '@/sys0/fs'
 import {
   type AsyncFileSystemStore,
+  FileSystemRevisionConflictError,
   QueuedFsPersistence,
 } from '@/sys0/fs/persistence'
 import {
@@ -69,6 +70,26 @@ describe('QueuedFsPersistence', () => {
     await expect(persistence.flush()).rejects.toThrow('disk unavailable')
     await expect(persistence.flush()).resolves.toBeUndefined()
     expect(attempts).toBe(2)
+  })
+
+  it('does not retry a delta after a revision conflict', async () => {
+    let attempts = 0
+    const conflict = new FileSystemRevisionConflictError(0, 1)
+    const store: AsyncFileSystemStore = {
+      load: async () => undefined,
+      commit: async () => {
+        attempts ++
+        throw conflict
+      },
+      clear: async () => {},
+    }
+    const persistence = await QueuedFsPersistence.create(store)
+    persistence.commit(createReplaceAllDelta(createReplacement()))
+
+    await expect(persistence.flush()).rejects.toBe(conflict)
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    await expect(persistence.flush()).rejects.toBe(conflict)
+    expect(attempts).toBe(1)
   })
 
   it('commits against the loaded image revision', async () => {

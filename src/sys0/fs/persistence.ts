@@ -53,6 +53,7 @@ export class QueuedFsPersistence implements FsPersistence {
   private drainPromise: Promise<void> | undefined
   private writeError: unknown
   private hasWriteError = false
+  private hasTerminalWriteError = false
 
   private constructor(
     private readonly store: AsyncFileSystemStore,
@@ -76,6 +77,7 @@ export class QueuedFsPersistence implements FsPersistence {
     this.current = applyFsDelta(this.current, delta)
     this.pending = mergeFsDelta(this.pending, delta)
     this.updateCurrentRevision()
+    if (this.hasTerminalWriteError) return
     if (! this.drainPromise) {
       this.hasWriteError = false
       this.startDrain()
@@ -83,6 +85,7 @@ export class QueuedFsPersistence implements FsPersistence {
   }
 
   async flush() {
+    if (this.hasTerminalWriteError) throw this.writeError
     if (this.hasWriteError && ! isFsDeltaEmpty(this.pending) && ! this.drainPromise) {
       this.hasWriteError = false
       this.startDrain()
@@ -97,6 +100,7 @@ export class QueuedFsPersistence implements FsPersistence {
       .catch((error: unknown) => {
         this.writeError = error
         this.hasWriteError = true
+        this.hasTerminalWriteError = error instanceof FileSystemRevisionConflictError
       })
       .finally(() => {
         this.drainPromise = undefined
