@@ -21,10 +21,17 @@ export interface ShellVariableSnapshot {
   readonly: boolean
 }
 
+export interface DynamicShellVariable {
+  get(): string
+  set?(value: string): void
+  clone?(): DynamicShellVariable
+}
+
 export class ShellVariables {
   readonly values: Env
   private readonly exportedNames: Set<string>
   private readonly readonlyNames: Set<string>
+  private readonly dynamicVariables = new Map<string, DynamicShellVariable>()
 
   constructor(
     values: Env = {},
@@ -37,7 +44,24 @@ export class ShellVariables {
   }
 
   clone() {
-    return new ShellVariables(this.values, this.exportedNames, this.readonlyNames)
+    const cloned = new ShellVariables(this.values, this.exportedNames, this.readonlyNames)
+    this.dynamicVariables.forEach((variable, name) => {
+      cloned.defineDynamic(name, variable.clone?.() ?? variable)
+    })
+    return cloned
+  }
+
+  defineDynamic(name: string, variable: DynamicShellVariable) {
+    this.dynamicVariables.set(name, variable)
+    Object.defineProperty(this.values, name, {
+      configurable: true,
+      enumerable: true,
+      get: () => variable.get(),
+      set: (value: string) => {
+        if (! variable.set) throw new UserError(`${name}: readonly variable`)
+        variable.set(value)
+      },
+    })
   }
 
   has(name: string) {
@@ -71,6 +95,7 @@ export class ShellVariables {
   unset(name: string) {
     if (this.isReadonly(name)) throw new UserError(`${name}: readonly variable`)
     delete this.values[name]
+    this.dynamicVariables.delete(name)
     this.exportedNames.delete(name)
     this.readonlyNames.delete(name)
   }

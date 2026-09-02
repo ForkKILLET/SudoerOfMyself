@@ -1,4 +1,5 @@
 import type { Process } from '@/sys0/proc'
+import type { DynamicShellVariable } from '@/sys0/env'
 
 export const getPositionalParameters = (process: Process) => {
   const count = Number.parseInt(process.env['#'] ?? '0', 10)
@@ -35,6 +36,39 @@ export const initializeShellParameters = (
   variables.set('-', '', { exported: false })
   variables.set('_', arg0, { exported: false })
   setPositionalParameters(process, args)
+}
+
+const createSecondsVariable = (
+  now: () => number,
+  initialValue = 0,
+): DynamicShellVariable => {
+  let anchorMs = now()
+  let anchorValue = initialValue
+  const get = () => Math.floor(anchorValue + (now() - anchorMs) / 1_000).toString()
+  return {
+    get,
+    set: (value) => {
+      const parsed = Number(value)
+      anchorValue = Number.isFinite(parsed) ? parsed : 0
+      anchorMs = now()
+    },
+    clone: () => createSecondsVariable(now, Number(get())),
+  }
+}
+
+export const initializeTimeParameters = (process: Process) => {
+  const { time } = process.ctx
+  const monotonicNow = () => time?.monotonic.nowMs() ?? performance.now()
+  const gameNow = () => time?.game.nowMs() ?? Date.now()
+  process.variables.defineDynamic('SECONDS', createSecondsVariable(monotonicNow))
+  process.variables.defineDynamic('EPOCHSECONDS', {
+    get: () => Math.floor(gameNow() / 1_000).toString(),
+  })
+  process.variables.defineDynamic('EPOCHREALTIME', {
+    get: () => (gameNow() / 1_000).toFixed(6),
+  })
+  process.variables.makeReadonly('EPOCHSECONDS')
+  process.variables.makeReadonly('EPOCHREALTIME')
 }
 
 export const updateLastArgument = (

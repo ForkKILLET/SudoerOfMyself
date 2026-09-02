@@ -44,6 +44,18 @@ describe('sleep program', () => {
     expect(root.subProcesses).toEqual([])
   })
 
+  it('accepts duration suffixes', async () => {
+    vi.useFakeTimers()
+    const root = createRoot()
+    const running = root.spawn(sleep, { name: 'sleep' }, '1.5m')
+
+    await vi.advanceTimersByTimeAsync(89_999)
+    expect(root.subProcesses).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(running).resolves.toEqual(normalExit(0))
+  })
+
   it('cancels the timer and exits through a signal', async () => {
     vi.useFakeTimers()
     const root = createRoot()

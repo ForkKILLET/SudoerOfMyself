@@ -9,6 +9,7 @@ import { Vfs } from '@/sys0/fs/vfs'
 import { Process } from '@/sys0/proc'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
+import { TimeService } from '@/sys0/time'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -35,6 +36,61 @@ const createShell = () => {
 }
 
 describe('hsh special parameters', () => {
+  it('updates monotonic and game-clock time parameters dynamically', async () => {
+    let monotonicMs = 0
+    const gameEpochMs = Date.parse('2099-07-13T23:30:05.000Z')
+    const time = new TimeService({
+      monotonic: { nowMs: () => monotonicMs },
+      gameState: {
+        worldTimeMs: gameEpochMs,
+        rate: 0,
+        running: true,
+        timezone: 'UTC',
+      },
+    })
+    const context = {
+      fs: new Fs(Vfs.dir({ home: Vfs.dir() }), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      time,
+    } as Context
+    const shell = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/home', PATH: '/bin', PWD: '/home' },
+      stdio: new Stdio(new EmptyInput(), new NullOutput()),
+    })
+    const captured: string[][] = []
+    const hsh = createHsh({
+      builtins: {
+        advance: () => {
+          monotonicMs += 2_500
+          time.game.advanceBy(1_500)
+          return 0
+        },
+        capture: (_process, _name, ...args) => {
+          captured.push(args)
+          return 0
+        },
+      },
+    })
+
+    await hsh(shell, 'hsh', '-c', [
+      'capture $SECONDS $EPOCHSECONDS $EPOCHREALTIME',
+      'advance',
+      'capture $SECONDS $EPOCHSECONDS $EPOCHREALTIME',
+      'SECONDS=10',
+      'advance',
+      'capture $SECONDS',
+    ].join('; '))
+
+    const epochSeconds = Math.floor(gameEpochMs / 1_000)
+    expect(captured).toEqual([
+      ['0', epochSeconds.toString(), `${epochSeconds}.000000`],
+      ['2', (epochSeconds + 1).toString(), `${epochSeconds + 1}.500000`],
+      ['12'],
+    ])
+    expect(() => shell.variables.set('EPOCHSECONDS', '0')).toThrow('readonly variable')
+  })
+
   it('initializes PID and positional parameters for command mode', async () => {
     const shell = createShell()
     let captured: Record<string, string> = {}

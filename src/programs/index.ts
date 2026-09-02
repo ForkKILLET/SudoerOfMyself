@@ -40,6 +40,9 @@ import { printenv } from './printenv'
 import { readonly } from './readonly'
 import { bracket, test } from './test'
 import { date } from './date'
+import { times } from './times'
+import { timeout } from './timeout'
+import { uptime } from './uptime'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -67,6 +70,7 @@ export const BUILTINS: Record<string, Program> = {
   unset,
   true: succeed,
   wait,
+  times,
 }
 
 export const hsh = createHsh({
@@ -92,6 +96,8 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   stat,
   tee,
   touch,
+  timeout,
+  uptime,
   hsh,
   help,
 }

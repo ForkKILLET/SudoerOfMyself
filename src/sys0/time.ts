@@ -192,6 +192,7 @@ export class TimeService {
   readonly monotonic: MonotonicClock
   readonly host: HostClock
   readonly game: GameClock
+  readonly startedAtMs: number
 
   constructor({
     monotonic = performanceMonotonicClock,
@@ -200,6 +201,7 @@ export class TimeService {
   }: TimeServiceOptions = {}) {
     this.monotonic = monotonic
     this.host = host
+    this.startedAtMs = monotonic.nowMs()
     this.game = new GameClock(monotonic, gameState)
   }
 }

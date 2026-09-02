@@ -32,7 +32,11 @@ import {
   getShellExitRequest,
   leaveShellLoop,
 } from './control'
-import { initializeShellParameters, updateLastArgument } from './parameters'
+import {
+  initializeShellParameters,
+  initializeTimeParameters,
+  updateLastArgument,
+} from './parameters'
 import { errorMessage, UserError } from '@/utils/errors'
 import { displayConditionError } from '../condition'
 import {
@@ -713,6 +717,7 @@ export const createHsh = ({
     proc.cwd = env.HOME
     proc.jobTable = new JobTable()
     initializeShellParameters(proc, path ?? name, scriptArgs)
+    initializeTimeParameters(proc)
 
     const flushFileSystem = async () => {
       try {

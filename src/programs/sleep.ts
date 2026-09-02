@@ -1,6 +1,7 @@
 import { createCommand } from '@/sys0/program'
 import { normalExit, ProcessExit, signalExit } from '@/sys0/process_exit'
 import { UserError } from '@/utils/errors'
+import { parseDurationMilliseconds } from './duration'
 
 export const sleep = createCommand('sleep', 'SECONDS', 'Delay for a specified amount of time.')
   .help('help')
@@ -11,8 +12,8 @@ export const sleep = createCommand('sleep', 'SECONDS', 'Delay for a specified am
     if (args.length > 1) throw new UserError('Too many operands')
 
     const [durationArg] = args
-    const durationSeconds = Number(durationArg)
-    if (! Number.isFinite(durationSeconds) || durationSeconds < 0) {
+    const durationMilliseconds = parseDurationMilliseconds(durationArg)
+    if (durationMilliseconds === null) {
       throw new UserError(`Invalid duration: ${durationArg}`)
     }
 
@@ -25,7 +26,7 @@ export const sleep = createCommand('sleep', 'SECONDS', 'Delay for a specified am
         signalSubscription.dispose()
         resolve(exitStatus)
       }
-      const timer = setTimeout(() => finish(normalExit(0)), durationSeconds * 1000)
+      const timer = setTimeout(() => finish(normalExit(0)), durationMilliseconds)
       const signalSubscription = proc.on('signal', signal => finish(signalExit(signal)))
     })
   })

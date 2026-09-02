@@ -18,7 +18,7 @@ const SIGNALS: Record<string, KillSignal> = {
   SIGTERM: 'SIGTERM',
 }
 
-const parseSignal = (value: string) => SIGNALS[value.toUpperCase()]
+export const parseSignal = (value: string) => SIGNALS[value.toUpperCase()]
 
 const parsePid = (value: string) => {
   const pid = Number(value)
