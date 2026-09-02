@@ -394,7 +394,7 @@ describe('hsh control-flow execution', () => {
     expect(shell.output.content).toBe('yes\n')
   })
 
-  it('uses a continuation prompt for incomplete interactive statements', async () => {
+  it('uses PS2 for incomplete interactive statements', async () => {
     const output = new MemoryOutput()
     const error = new MemoryOutput()
     const term = {
@@ -410,7 +410,7 @@ describe('hsh control-flow execution', () => {
     } as Context
     const process = new Process(context, null, {
       name: 'hsh',
-      env: { HOME: '/', PATH: '/bin', PWD: '/' },
+      env: { HOME: '/', PATH: '/bin', PS2: 'continue> ', PWD: '/' },
       stdio: new Stdio(new KeyInput([
         'if', '\r',
         'ok', '\r',
@@ -424,9 +424,69 @@ describe('hsh control-flow execution', () => {
     const hsh = createHsh({ builtins: { ok: () => 0, emit } })
 
     await expect(hsh(process, 'hsh')).resolves.toBe(0)
-    expect(stripAnsi(output.content).match(/> /g)).toHaveLength(4)
+    expect(stripAnsi(output.content).match(/continue> /g)).toHaveLength(4)
     expect(output.content).toContain('yes\n')
     expect(error.content).toBe('')
+  })
+
+  it('uses PS1 for the primary prompt and rereads it after each command', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const term = {
+      buffer: { active: { cursorX: 0 } },
+      cols: 80,
+      doEcho: true,
+      getStringWidth: (value: string) => value.length,
+    } as unknown as Term
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      term,
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/', PATH: '/bin', PS1: 'initial> ', PWD: '/' },
+      stdio: new Stdio(new KeyInput([
+        'PS1="next> "', '\r',
+        '\x04',
+      ]), output, error),
+    })
+    const hsh = createHsh({ builtins: {} })
+
+    await expect(hsh(process, 'hsh')).resolves.toBe(0)
+
+    const plainOutput = stripAnsi(output.content)
+    expect(plainOutput).toMatch(/^initial> /)
+    expect(plainOutput).toContain('\nnext> ')
+    expect(error.content).toBe('')
+  })
+
+  it('initializes and renders the default PS1 and PS2 shell variables', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const term = {
+      buffer: { active: { cursorX: 0 } },
+      cols: 80,
+      doEcho: true,
+      getStringWidth: (value: string) => value.length,
+    } as unknown as Term
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      term,
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/home', PATH: '/bin', PWD: '/home' },
+      stdio: new Stdio(new KeyInput(['\x04']), output, error),
+    })
+    const hsh = createHsh({ builtins: {} })
+
+    await expect(hsh(process, 'hsh')).resolves.toBe(0)
+
+    expect(process.env.PS1).toContain('\\w')
+    expect(process.env.PS2).toContain('>')
+    expect(stripAnsi(output.content)).toMatch(/^~ \$ /)
   })
 
   it('continues double-bracket input until the closing word', async () => {

@@ -52,6 +52,7 @@ import {
 } from './script'
 import { evaluateDoubleBracketCondition } from './conditional'
 import { HSH_RESERVED_WORDS } from './reserved_words'
+import { DEFAULT_PS1, DEFAULT_PS2, renderPrompt } from './prompt'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -707,13 +708,26 @@ export const createHsh = ({
     else if (! path) {
       const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
       let pendingSource = ''
+      let commandNumber = 1
+
+      if (! proc.variables.has('PS1')) {
+        proc.variables.set('PS1', DEFAULT_PS1, { exported: false })
+      }
+      if (! proc.variables.has('PS2')) {
+        proc.variables.set('PS2', DEFAULT_PS2, { exported: false })
+      }
 
       const readline = new Readline(proc, stdio, ctx.term)
+      const history = new ReadlineHistory(historyFile.read().split('\n'))
+      const getPrompt = (name: 'PS1' | 'PS2') => renderPrompt(env[name] ?? '', {
+        env,
+        jobs: proc.jobTable?.values().filter(job => job.state === 'running').length,
+        historyNumber: history.size,
+        commandNumber,
+      })
       const loop = readline.createLoop({
-        history: new ReadlineHistory(historyFile.read().split('\n')),
-        prompt: () => pendingSource
-          ? `${chalk.greenBright('>')} `
-          : `${chalk.blueBright(env.PWD)} ${chalk.greenBright('$')} `,
+        history,
+        prompt: () => getPrompt(pendingSource ? 'PS2' : 'PS1'),
         onComp: getCompProvider(proc, builtins),
         onLine: async (line) => {
           if (line === '\x03') {
@@ -747,6 +761,7 @@ export const createHsh = ({
           else {
             await executeParsedSource(proc, parseResult.val)
           }
+          commandNumber ++
           if (getShellExitRequest(proc)) loop.stop()
         },
         onInterrupt: () => {
