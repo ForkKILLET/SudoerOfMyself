@@ -1,4 +1,4 @@
-import { Env, getEnv, isEnvName } from '@/sys0/env'
+import { createEnv, Env, getEnv, isEnvName } from '@/sys0/env'
 import { UserError } from '@/utils/errors'
 
 const ESCAPES: Record<string, string> = {
@@ -24,6 +24,7 @@ export const is = <K extends keyof typeof HSH_CHARS>(kind: K, ch: string) => HSH
 export type HshToken =
   | HshTokenText
   | HshTokenVariable
+  | HshTokenParameter
   | HshTokenHome
   | HshTokenBackground
   | HshTokenPipe
@@ -52,6 +53,12 @@ export interface HshTokenText extends HshTokenBase {
 
 export interface HshTokenVariable extends HshTokenBase {
   type: 'variable'
+  isDq?: boolean
+}
+
+export interface HshTokenParameter extends HshTokenBase {
+  type: 'parameter'
+  isDq?: boolean
 }
 
 export interface HshTokenHome extends HshTokenBase {
@@ -70,6 +77,36 @@ export interface HshTokenPipe extends HshTokenBase {
 
 export interface HshTokenBackground extends HshTokenBase {
   type: 'background'
+}
+
+const findParameterEnd = (line: string, openIndex: number) => {
+  let depth = 1
+  let isEscaped = false
+  let isSingleQuoted = false
+  let isDoubleQuoted = false
+  for (let index = openIndex + 1; index < line.length; index ++) {
+    const char = line[index]
+    if (isEscaped) {
+      isEscaped = false
+      continue
+    }
+    if (char === '\\' && ! isSingleQuoted) {
+      isEscaped = true
+      continue
+    }
+    if (char === '\'' && ! isDoubleQuoted) {
+      isSingleQuoted = ! isSingleQuoted
+      continue
+    }
+    if (char === '"' && ! isSingleQuoted) {
+      isDoubleQuoted = ! isDoubleQuoted
+      continue
+    }
+    if (isSingleQuoted || isDoubleQuoted) continue
+    if (char === '{') depth ++
+    else if (char === '}' && -- depth === 0) return index
+  }
+  return - 1
 }
 
 export const tokenize = (line: string, isStrict = true) => {
@@ -177,6 +214,7 @@ export const tokenize = (line: string, isStrict = true) => {
             content: '$' + ch,
             begin,
             end: i - 1,
+            isDq,
           })
           isVar = false
           begin = i
@@ -202,6 +240,7 @@ export const tokenize = (line: string, isStrict = true) => {
             content: '$' + vnow,
             begin,
             end: i - 2,
+            isDq,
           })
           begin = i - 1
           isVar = false
@@ -348,6 +387,24 @@ export const tokenize = (line: string, isStrict = true) => {
       })
       begin = i
     }
+    else if (! isSq && ch === '$' && line[i] === '{') {
+      consumeNow()
+      const end = findParameterEnd(line, i)
+      if (end === - 1) {
+        if (isStrict) throw new UserError('Unmatched parameter expansion')
+        now += line.slice(i - 1)
+        break
+      }
+      tokens.push({
+        type: 'parameter',
+        content: line.slice(i - 1, end + 1),
+        begin: i - 1,
+        end,
+        isDq,
+      })
+      i = end + 1
+      begin = i
+    }
     else if (! isSq && ch === '$') {
       if (is('env', line[i]) || is('senv', line[i])) {
         consumeNow()
@@ -466,6 +523,15 @@ const expandBraceContent = (content: string): string[] => {
   return expanded
 }
 
+const areWordTokensAdjacent = (previous: HshToken, next: HshToken) => (
+  previous.end + 1 === next.begin
+  || (
+    (previous.type === 'variable' || previous.type === 'parameter')
+    && previous.isDq
+    && previous.end + 2 === next.begin
+  )
+)
+
 const expandBraces = (tokens: HshToken[]) => {
   const expanded: HshToken[] = []
   let word: HshToken[] = []
@@ -499,55 +565,246 @@ const expandBraces = (tokens: HshToken[]) => {
       continue
     }
     const previous = word.at(- 1)
-    if (previous && previous.end + 1 !== token.begin) flushWord()
+    if (previous && ! areWordTokensAdjacent(previous, token)) flushWord()
     word.push(token)
   }
   flushWord()
   return expanded
 }
 
-export const expand = (tokens: HshToken[], env: Env): HshExpandedToken[] => {
+export interface HshExpansionOptions {
+  assignVariable?: (name: string, value: string) => void
+  fieldSplitting?: boolean
+}
+
+const PARAMETER_NAME = /^([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[?!$#*@_-])(.*)$/s
+const PARAMETER_OPERATOR = /^(:[-=+?]|[-=+?])(.*)$/s
+
+const expandParameter = (
+  expression: string,
+  env: Env,
+  options: HshExpansionOptions,
+): string => {
+  if (expression.startsWith('#') && expression.length > 1) {
+    const lengthName = expression.slice(1)
+    if (! PARAMETER_NAME.test(lengthName) || PARAMETER_NAME.exec(lengthName)?.[2]) {
+      throw new UserError(`Bad substitution: \${${expression}}`)
+    }
+    return Array.from(getEnv(env, lengthName)).length.toString()
+  }
+
+  const parameter = PARAMETER_NAME.exec(expression)
+  if (! parameter) throw new UserError(`Bad substitution: \${${expression}}`)
+  const [, name, remainder] = parameter
+  if (! remainder) return getEnv(env, name)
+
+  const operation = PARAMETER_OPERATOR.exec(remainder)
+  if (! operation) throw new UserError(`Bad substitution: \${${expression}}`)
+  const [, operator, word] = operation
+  const isSet = Object.hasOwn(env, name)
+  const value = getEnv(env, name)
+  const useNull = operator.startsWith(':')
+  const isMissing = ! isSet || (useNull && value === '')
+  const action = operator.at(- 1)
+  const expandedWord = () => expand(tokenize(word), env, options)
+    .map(token => token.content)
+    .join(' ')
+
+  switch (action) {
+    case '-': return isMissing ? expandedWord() : value
+    case '+': return isMissing ? '' : expandedWord()
+    case '=': {
+      if (! isMissing) return value
+      if (! isEnvName(name)) throw new UserError(`Cannot assign to parameter: ${name}`)
+      const assigned = expandedWord()
+      if (options.assignVariable) options.assignVariable(name, assigned)
+      else env[name] = assigned
+      return assigned
+    }
+    case '?': {
+      if (! isMissing) return value
+      throw new UserError(expandedWord() || `${name}: parameter null or not set`)
+    }
+  }
+  throw new UserError(`Bad substitution: \${${expression}}`)
+}
+
+export const expand = (
+  tokens: HshToken[],
+  env: Env,
+  options: HshExpansionOptions = {},
+): HshExpandedToken[] => {
   const expanded: HshExpandedToken[] = []
 
-  let text: HshExpandedTokenText | null = null
-  for (const token of expandBraces(tokens)) {
-    if (token.type === 'redirect' || token.type === 'pipe' || token.type === 'background') {
-      if (text) {
-        expanded.push(text)
-        text = null
-      }
-      expanded.push(token)
-      continue
+  const ifs = Object.hasOwn(env, 'IFS') ? env.IFS : ' \t\n'
+  const positional = () => {
+    const count = Number.parseInt(getEnv(env, '#'), 10)
+    if (! Number.isSafeInteger(count) || count <= 0) return []
+    return Array.from({ length: count }, (_, index) => getEnv(env, String(index + 1)))
+  }
+  const escapeCharacterClass = (value: string) => value.replace(/[\\\]^\-]/g, '\\$&')
+  const splitFields = (value: string) => {
+    if (! value) return []
+    if (options.fieldSplitting === false || ! ifs) return [value]
+    const chars = [...new Set(Array.from(ifs))]
+    const whitespace = chars.filter(char => /\s/u.test(char)).join('')
+    const separators = chars.filter(char => ! /\s/u.test(char)).join('')
+    if (! separators) {
+      const pattern = new RegExp(`[${escapeCharacterClass(whitespace)}]+`, 'u')
+      return value.split(pattern).filter(Boolean)
     }
-    else {
-      const content =
-        token.type === 'text' ? token.content :
-          token.type === 'home' ? env.HOME :
-            token.type === 'variable' ? getEnv(env, token.content.slice(1)) :
-              ''
-      if (text) {
-        if (text.end + 1 === token.begin) {
-          text.content += content
-          text.end = token.end
-          continue
-        }
-        else {
-          expanded.push(text)
-        }
+    const whitespaceClass = escapeCharacterClass(whitespace)
+    const separatorClass = escapeCharacterClass(separators)
+    let normalized = value
+    if (whitespace) {
+      normalized = normalized
+        .replace(new RegExp(`[${whitespaceClass}]*([${separatorClass}])[${whitespaceClass}]*`, 'gu'), '$1')
+        .replace(new RegExp(`^[${whitespaceClass}]+|[${whitespaceClass}]+$`, 'gu'), '')
+    }
+    const delimiter = whitespace
+      ? new RegExp(`[${separatorClass}]|[${whitespaceClass}]+`, 'u')
+      : new RegExp(`[${separatorClass}]`, 'u')
+    return normalized.split(delimiter)
+  }
+  const expandWord = (word: HshToken[]) => {
+    const fields = ['']
+    let exists = false
+    const append = (parts: string[], force = false) => {
+      if (! parts.length) {
+        if (force) exists = true
+        return
       }
+      fields[fields.length - 1] += parts[0]
+      fields.push(...parts.slice(1))
+      exists = true
+    }
+    const appendScalar = (value: string, quoted: boolean) => {
+      append(quoted || options.fieldSplitting === false ? [value] : splitFields(value), quoted)
+    }
+    const appendPositional = (values: string[], quoted: boolean) => {
+      if (quoted) append(values, values.length > 0)
+      else append(values.flatMap(splitFields))
+    }
 
-      text = {
-        type: 'text',
-        content,
-        begin: token.begin,
-        end: token.end,
+    word.forEach((token) => {
+      switch (token.type) {
+        case 'text':
+          append([token.content], true)
+          break
+        case 'home':
+          append([env.HOME], true)
+          break
+        case 'variable': {
+          const name = token.content.slice(1)
+          if (name === '@') appendPositional(positional(), Boolean(token.isDq))
+          else if (name === '*') {
+            appendScalar(positional().join(Array.from(ifs)[0] ?? ''), Boolean(token.isDq))
+          }
+          else appendScalar(getEnv(env, name), Boolean(token.isDq))
+          break
+        }
+        case 'parameter': {
+          const expression = token.content.slice(2, - 1)
+          if (expression === '@') appendPositional(positional(), Boolean(token.isDq))
+          else if (expression === '*') {
+            appendScalar(positional().join(Array.from(ifs)[0] ?? ''), Boolean(token.isDq))
+          }
+          else appendScalar(expandParameter(expression, env, options), Boolean(token.isDq))
+          break
+        }
       }
-    }
+    })
+    return exists ? fields : []
   }
 
-  if (text) {
-    expanded.push(text)
+  splitTokenWords(expandBraces(tokens)).forEach((group) => {
+    if (! Array.isArray(group)) {
+      expanded.push(group)
+      return
+    }
+    const begin = group[0]?.begin ?? 0
+    const end = group.at(- 1)?.end ?? begin
+    expanded.push(...expandWord(group).map((content): HshExpandedTokenText => ({
+      type: 'text',
+      content,
+      begin,
+      end,
+    })))
+  })
+
+  return expanded
+}
+
+const isControlToken = (
+  token: HshToken,
+): token is HshTokenRedirect | HshTokenPipe | HshTokenBackground => (
+  token.type === 'redirect' || token.type === 'pipe' || token.type === 'background'
+)
+
+const splitTokenWords = (tokens: HshToken[]) => {
+  const groups: Array<HshToken[] | HshTokenRedirect | HshTokenPipe | HshTokenBackground> = []
+  let word: HshToken[] = []
+  const flushWord = () => {
+    if (word.length) groups.push(word)
+    word = []
   }
+  tokens.forEach((token) => {
+    if (isControlToken(token)) {
+      flushWord()
+      groups.push(token)
+      return
+    }
+    if (word.length && ! areWordTokensAdjacent(word.at(- 1) !, token)) flushWord()
+    word.push(token)
+  })
+  flushWord()
+  return groups
+}
+
+const looksLikeAssignmentWord = (tokens: HshToken[]) => (
+  parseEnvAssignment(tokens.map(token => token.content).join('')) !== null
+)
+
+const expandCommandLine = (
+  tokens: HshToken[],
+  env: Env,
+  options: HshExpansionOptions,
+) => {
+  const expanded: HshExpandedToken[] = []
+  let isCommandPrefix = true
+  let assignmentEnv = createEnv(env)
+
+  splitTokenWords(tokens).forEach((group) => {
+    if (! Array.isArray(group)) {
+      expanded.push(group)
+      if (group.type === 'pipe') {
+        isCommandPrefix = true
+        assignmentEnv = createEnv(env)
+      }
+      return
+    }
+
+    if (isCommandPrefix && looksLikeAssignmentWord(group)) {
+      const assignmentTokens = expand(group, assignmentEnv, {
+        fieldSplitting: false,
+        assignVariable: (name, value) => {
+          assignmentEnv[name] = value
+          if (options.assignVariable) options.assignVariable(name, value)
+          else env[name] = value
+        },
+      })
+      assignmentTokens.forEach((token) => {
+        if (token.type !== 'text') return
+        const assignment = parseEnvAssignment(token.content)
+        if (assignment) assignmentEnv[assignment.name] = assignment.value
+      })
+      expanded.push(...assignmentTokens)
+      return
+    }
+
+    isCommandPrefix = false
+    expanded.push(...expand(group, env, options))
+  })
 
   return expanded
 }
@@ -675,4 +932,8 @@ export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   return script
 }
 
-export const parseLine = (line: string, env: Env) => parse(expand(tokenize(line), env))
+export const parseLine = (
+  line: string,
+  env: Env,
+  options: HshExpansionOptions = {},
+) => parse(expandCommandLine(tokenize(line), env, options))

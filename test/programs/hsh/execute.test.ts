@@ -103,6 +103,27 @@ describe('hsh execution', () => {
     expect(process.env.SIDE_EFFECT).toBe('preserved')
   })
 
+  it('applies sequential command-prefix assignments to the command environment', async () => {
+    let observed: string[] | undefined
+    const { process } = createShellProcess(() => 0)
+    process.variables.set('a', 'outer')
+    process.variables.set('b', 'outer-b')
+    const inspect: Program = (proc, _self, ...args) => {
+      observed = [proc.env.a, proc.env.b, ...args]
+      return 0
+    }
+
+    await executeScript(
+      process,
+      parseLine('a=inner b=$a inspect $a $b', process.env),
+      { inspect },
+    )
+
+    expect(observed).toEqual(['inner', 'inner', 'outer', 'outer-b'])
+    expect(process.env.a).toBe('outer')
+    expect(process.env.b).toBe('outer-b')
+  })
+
   it('persists assignments without a command in the current shell', async () => {
     const { process } = createShellProcess(() => 0)
     process.env.first = 'old'
@@ -114,7 +135,7 @@ describe('hsh execution', () => {
     )
 
     expect(process.env.first).toBe('one')
-    expect(process.env.second).toBe('old')
+    expect(process.env.second).toBe('one')
     expect(process.env.EMPTY).toBe('')
     expect(process.env['?']).toBe('0')
     expect(process.fork({ name: 'child' }).env.first).toBeUndefined()

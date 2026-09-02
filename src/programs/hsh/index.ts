@@ -384,7 +384,9 @@ const executeLoop = async (
 
 const expandForWords = (proc: Process, statement: HshForStatement) => {
   if (! statement.wordsSource) return []
-  const tokens = expand(tokenize(statement.wordsSource), proc.env)
+  const tokens = expand(tokenize(statement.wordsSource), proc.env, {
+    assignVariable: (name, value) => proc.variables.set(name, value),
+  })
   return tokens.map((token) => {
     if (token.type !== 'text') throw new UserError(`Unexpected ${token.type} in for word list`)
     return token.content
@@ -422,7 +424,9 @@ const executeStatement = async (
 ): Promise<ProcessExit> => {
   switch (statement.type) {
     case 'simple':
-      return executeScript(proc, parseLine(statement.source, proc.env), builtins, {
+      return executeScript(proc, parseLine(statement.source, proc.env, {
+        assignVariable: (name, value) => proc.variables.set(name, value),
+      }), builtins, {
         source: statement.source,
       })
     case 'if': return executeIf(proc, statement, builtins)
@@ -499,7 +503,7 @@ export const getCompProvider = (
   const { ctx, env } = proc
 
   const tokens = tokenize(line.content, false)
-  const etokens = expand(tokens, env)
+  const etokens = expand(tokens, env, { assignVariable: () => {} })
 
   const getEmptyTokenEntry = (): [ number | null, HshTokenText ] => [
     tokens.length ? null : 0,

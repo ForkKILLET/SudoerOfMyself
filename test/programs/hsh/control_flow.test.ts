@@ -72,6 +72,14 @@ const run = async (source: string, builtins: Record<string, Program>) => {
 }
 
 describe('hsh control-flow execution', () => {
+  it('persists assignments performed by parameter expansion', async () => {
+    const result = await run('echo ${created:=value}', { echo })
+
+    expect(result.output.content).toBe('value\n')
+    expect(result.process.env.created).toBe('value')
+    expect(result.process.variables.isExported('created')).toBe(false)
+  })
+
   it('executes lists and short-circuits && and ||', async () => {
     const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
     const { output, status } = await run(

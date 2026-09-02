@@ -27,6 +27,22 @@ describe('hsh parser', () => {
     })
   })
 
+  it('expands command-prefix assignments from left to right without changing argv expansion', () => {
+    expect(parseLine('a=inner b=$a command $a $b', {
+      a: 'outer',
+      b: 'outer-b',
+    })).toEqual({
+      commands: [{
+        name: 'command',
+        args: ['outer', 'outer-b'],
+        assignments: [
+          { name: 'a', value: 'inner' },
+          { name: 'b', value: 'inner' },
+        ],
+      }],
+    })
+  })
+
   it('parses assignments without a command', () => {
     expect(parseLine('first=one second=$first EMPTY=', { first: 'old' })).toEqual({
       commands: [{
@@ -34,7 +50,7 @@ describe('hsh parser', () => {
         args: [],
         assignments: [
           { name: 'first', value: 'one' },
-          { name: 'second', value: 'old' },
+          { name: 'second', value: 'one' },
           { name: 'EMPTY', value: '' },
         ],
       }],
@@ -236,6 +252,7 @@ describe('hsh parser', () => {
       '#': '2',
       '0': 'script.hsh',
       '1': 'first',
+      '2': 'second',
       '*': 'first second',
       '@': 'first second',
       '-': '',
@@ -255,14 +272,49 @@ describe('hsh parser', () => {
         '2',
         'script.hsh',
         'first',
-        'first second',
-        'first second',
+        'first',
+        'second',
+        'first',
+        'second',
         '',
         'previous',
         '7',
         '99',
       ],
     }])
+  })
+
+  it('expands braced parameters, defaults, alternatives, and lengths', () => {
+    expect(parseLine(
+      'echo ${name}x ${missing:-fallback} "${empty-default}" ${empty:-default} '
+      + '${name:+alternate} "${missing:+wrong}" ${#unicode}',
+      { name: 'value', empty: '', unicode: '你好🙂' },
+    ).commands[0].args).toEqual([
+      'valuex',
+      'fallback',
+      '',
+      'default',
+      'alternate',
+      '',
+      '3',
+    ])
+  })
+
+  it('assigns parameter defaults and reports required missing parameters', () => {
+    const env: Record<string, string> = {}
+
+    expect(parseLine('echo ${created:=value}', env).commands[0].args).toEqual(['value'])
+    expect(env.created).toBe('value')
+    expect(() => parseLine('echo ${missing:?custom message}', env))
+      .toThrow('custom message')
+    expect(() => parseLine('echo ${missing:?}', env))
+      .toThrow('missing: parameter null or not set')
+  })
+
+  it('reports unmatched and invalid parameter expansions', () => {
+    expect(() => tokenize('echo ${unfinished')).toThrow('Unmatched parameter expansion')
+    expect(() => parseLine('echo ${name:invalid}', { name: 'value' }))
+      .toThrow('Bad substitution')
   })
 
   it('requires the background marker to terminate the command', () => {
@@ -287,6 +339,45 @@ describe('hsh parser', () => {
         args: ['', '', 'ab', ''],
       }],
     })
+  })
+
+  it('splits unquoted expansions on IFS and preserves quoted expansions', () => {
+    expect(parseLine('emit $WORDS "$WORDS" pre$WORDS-post $MISSING "$MISSING"', {
+      WORDS: 'one two',
+    })).toEqual({
+      commands: [{
+        name: 'emit',
+        args: ['one', 'two', 'one two', 'preone', 'two-post', ''],
+      }],
+    })
+    expect(parseLine('emit $VALUE', { IFS: ':', VALUE: 'one::three:' }))
+      .toEqual({
+        commands: [{ name: 'emit', args: ['one', '', 'three', ''] }],
+      })
+  })
+
+  it('expands quoted and unquoted positional parameters with shell field boundaries', () => {
+    const env = {
+      '#': '2',
+      '1': 'one',
+      '2': 'two words',
+      '@': 'one two words',
+      '*': 'one two words',
+    }
+
+    expect(parseLine('emit $@ "$@" "$*" pre"$@"post', env)).toEqual({
+      commands: [{
+        name: 'emit',
+        args: [
+          'one', 'two', 'words',
+          'one', 'two words',
+          'one two words',
+          'preone', 'two wordspost',
+        ],
+      }],
+    })
+    expect(parseLine('emit "$@" remaining', { '#': '0', '@': '', '*': '' }))
+      .toEqual({ commands: [{ name: 'emit', args: ['remaining'] }] })
   })
 
   it('only expands the current-user home marker at the start of a word', () => {
