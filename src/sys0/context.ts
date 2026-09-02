@@ -38,8 +38,8 @@ export class Context {
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
-    this.scheduler = new ProcessScheduler()
     this.time = time
+    this.scheduler = new ProcessScheduler({ now: () => time.monotonic.nowMs() })
     this.fs = new Fs(initialImage, {
       persistence: fsPersistence,
       getCwd: () => this.fgProc.cwd,
