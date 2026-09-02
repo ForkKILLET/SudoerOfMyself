@@ -219,6 +219,7 @@ export namespace FOp {
 
   export type RmResult = OperationResult<{ path: string }>
   export type RenameResult = OperationResult<{ path: string }>
+  export type TouchResult = OperationResult<{ inode: Inode }>
 
   export interface FindOptions<FT extends FileT = FileT> {
     allowedTypes?: readonly FT[]
@@ -568,6 +569,49 @@ export class Fs {
     return this.unwrap(this.stat(path, cwd), path)
   }
 
+  touch(path: string, cwd = this.cwd): FOp.TouchResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) return mount.fs.touch(mountedPath, '/')
+    if (this.isReadOnly) return this.readOnlyError()
+
+    const result = this.findInode(path, { cwd })
+    if (result.isOk) {
+      this.markInodeDirty(result.val.inode)
+      return FOp.ok({ inode: result.val.inode })
+    }
+    if (result.err.type !== FOp.T.NOT_FOUND) return result
+    if (Path.hasTrailingSlash(path)) return result
+
+    const { dirname, filename } = Path.getDirAndName(path)
+    if (! Path.isLegalFilename(filename)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
+    const parentResult = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd })
+    if (parentResult.isErr) return parentResult
+    const created = this.createAt(parentResult.val.inode, filename, Vfs.normal(''))
+    if (created.isErr) return created
+    return FOp.ok({ inode: created.val.inode })
+  }
+
+  touchU(path: string, cwd = this.cwd) {
+    return this.unwrap(this.touch(path, cwd), `Cannot touch '${path}'`)
+  }
+
+  setExecutable(
+    path: string,
+    executable: ExecutableDescriptor | undefined,
+    cwd = this.cwd,
+  ): FOp.OperationResult<void> {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) return mount.fs.setExecutable(mountedPath, executable, '/')
+    if (this.isReadOnly) return this.readOnlyError()
+    const result = this.findInode(path, { allowedTypes: [FileT.NORMAL], cwd })
+    if (result.isErr) return result
+
+    if (executable) result.val.inode.executable = structuredClone(executable)
+    else delete result.val.inode.executable
+    this.markInodeDirty(result.val.inode)
+    return FOp.ok(undefined)
+  }
+
   getChild(dir: DirFile, childName: string) {
     return this.getChildInode(dir, childName)?.file ?? null
   }
@@ -785,6 +829,7 @@ export class Fs {
     let inode: Inode<NormalFile>
     if (res.isErr) {
       if (mode === 'r' || res.err.type === FOp.T.NOT_ALLOWED_TYPE) return res
+      if (Path.hasTrailingSlash(path)) return res
       const { dirname, filename } = Path.getDirAndName(path)
 
       if (! filename) return FOp.err({ type: FOp.T.ILLEGAL_NAME })

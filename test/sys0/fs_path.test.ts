@@ -44,6 +44,10 @@ describe('file-system paths', () => {
     expect(file.isErr && file.err.type).toBe(FOp.T.NOT_DIR)
     const dir = fs.find('/dir/')
     expect(dir.isOk && dir.val.file.type).toBe(FileT.DIR)
+    expect(fs.open('/missing/', 'w').isErr).toBe(true)
+    expect(fs.touch('/also-missing/').isErr).toBe(true)
+    expect(fs.find('/missing').isErr).toBe(true)
+    expect(fs.find('/also-missing').isErr).toBe(true)
   })
 
   it('preserves trailing-slash requirements through mount resolution', () => {

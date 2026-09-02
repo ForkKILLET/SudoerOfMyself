@@ -1,12 +1,15 @@
 import { Program } from '@/sys0/program'
 
 import { cat } from './cat'
+import { cp } from './cp'
 import { fs_inodemap } from './fs_inodemap'
 import { fs_format } from './fs_format'
 import { ls } from './ls'
 import { mkdir } from './mkdir'
+import { mv } from './mv'
 import { pwd } from './pwd'
 import { rm } from './rm'
+import { rmdir } from './rmdir'
 
 import { cd } from './cd'
 import { echo } from './echo'
@@ -15,6 +18,7 @@ import { createHsh } from './hsh'
 import { createHelp } from './help'
 import { cpu_burn } from './cpu_burn'
 import { tee } from './tee'
+import { touch } from './touch'
 import { ps } from './ps'
 import { jobs } from './jobs'
 import { wait } from './wait'
@@ -72,16 +76,20 @@ export const help = createHelp(hsh)
 
 export const NATIVE_PROGRAMS: Record<string, Program> = {
   cat,
+  cp,
   cpu_burn,
   fs_inodemap,
   fs_format,
   ls,
   mkdir,
+  mv,
   ps,
   rm,
+  rmdir,
   sleep,
   stat,
   tee,
+  touch,
   hsh,
   help,
 }
