@@ -50,7 +50,7 @@ export namespace Vfs {
   export const create = <FB extends Vfile>(
     fs: InodeMaintainer,
     vroot: FB,
-    timestamp = Date.now(),
+    timestamp: number,
   ): FOp.CreateResult<FileFromT<FB['type']>> => {
     const queue: FsBuildStep[] = [{ vfile: vroot, entries: {}, name: '' }]
     const createdInodes: Inode[] = []

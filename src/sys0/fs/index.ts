@@ -370,6 +370,7 @@ export class Fs {
     const fs = new Fs(image, {
       persistence: new MemoryFsPersistence(),
       readOnly,
+      now: this.now,
     })
     const mounted: MountedFs = { path: normalizedPath, image, readOnly, fs, name, parent }
     this.mounts.push(mounted)

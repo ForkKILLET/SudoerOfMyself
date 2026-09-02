@@ -252,6 +252,7 @@ describe('Fs mutation consistency', () => {
     await firstBoot.flush()
     const mountedBoot = new Fs(image, {
       persistence,
+      now: () => 42,
       mounts: [{
         path: '/bin',
         image: Vfs.dir({ 'new-command': Vfs.nativeExe('new-command') }),
@@ -263,6 +264,10 @@ describe('Fs mutation consistency', () => {
     expect(mountedBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
       format: 'native',
       programId: 'new-command',
+    })
+    expect(mountedBoot.statU('/bin/new-command')).toMatchObject({
+      createdAt: 42,
+      modifiedAt: 42,
     })
     expect(mountedBoot.openU('/save', 'r').handle.read()).toBe('progress')
     expect(mountedBoot.getChildren(mountedBoot.root.file).map(({ name }) => name)).toContain('bin')
@@ -285,7 +290,7 @@ describe('Fs mutation consistency', () => {
       inodeBitmap: new Bitmap(2),
     }
 
-    const result = Vfs.create(maintainer, Vfs.dir({ child: Vfs.normal('data') }))
+    const result = Vfs.create(maintainer, Vfs.dir({ child: Vfs.normal('data') }), 123)
 
     expect(result.isErr).toBe(true)
     if (result.isErr) expect(result.err.type).toBe(FOp.T.OUT_OF_INODES)
@@ -302,12 +307,15 @@ describe('Fs mutation consistency', () => {
     const result = Vfs.create(maintainer, Vfs.dir({
       child: Vfs.normal('data'),
       nested: Vfs.dir({ leaf: Vfs.normal('value') }),
-    }))
+    }), 123)
 
     expect(result.isOk).toBe(true)
     if (result.isErr) return
     expect(result.val.createdInodes).toEqual([...maintainer.inodes.values()])
     expect(result.val.createdInodes.map(({ iid }) => iid)).toEqual([1, 2, 3, 4])
+    expect(result.val.createdInodes.every(inode => (
+      inode.metadata.createdAt === 123 && inode.metadata.modifiedAt === 123
+    ))).toBe(true)
   })
 
   it('resolves relative paths through the injected working directory', () => {
