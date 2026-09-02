@@ -1,6 +1,7 @@
 import { createEnv, Env, getEnv, isEnvName } from '@/sys0/env'
 import { UserError } from '@/utils/errors'
 import { expandArithmetic } from './arithmetic'
+import type { ShellPatternPart } from '../shell_pattern'
 
 const ESCAPES: Record<string, string> = {
   n: '\n',
@@ -33,7 +34,9 @@ export type HshToken =
   | HshTokenPipe
   | HshTokenRedirect
 
-export type HshExpandedTokenText = Omit<HshTokenText, 'isDq' | 'isSq'>
+export type HshExpandedTokenText = Omit<HshTokenText, 'isDq' | 'isSq'> & {
+  pattern: ShellPatternPart[]
+}
 
 export type HshExpandedToken =
   | HshExpandedTokenText
@@ -850,32 +853,50 @@ export const expand = (
     return normalized.split(delimiter)
   }
   const expandWord = (word: HshToken[]) => {
-    const fields = ['']
+    interface ExpandedField {
+      content: string
+      pattern: ShellPatternPart[]
+    }
+    const fields: ExpandedField[] = [{ content: '', pattern: [] }]
     let exists = false
-    const append = (parts: string[], force = false) => {
+    const appendPart = (field: ExpandedField, value: string, literal: boolean) => {
+      field.content += value
+      if (! value) return
+      const previous = field.pattern.at(- 1)
+      if (previous?.literal === literal) previous.value += value
+      else field.pattern.push({ value, literal })
+    }
+    const append = (parts: string[], literal: boolean, force = false) => {
       if (! parts.length) {
         if (force) exists = true
         return
       }
-      fields[fields.length - 1] += parts[0]
-      fields.push(...parts.slice(1))
+      appendPart(fields[fields.length - 1], parts[0], literal)
+      fields.push(...parts.slice(1).map((content): ExpandedField => ({
+        content,
+        pattern: content ? [{ value: content, literal }] : [],
+      })))
       exists = true
     }
     const appendScalar = (value: string, quoted: boolean) => {
-      append(quoted || options.fieldSplitting === false ? [value] : splitFields(value), quoted)
+      append(quoted || options.fieldSplitting === false ? [value] : splitFields(value), quoted, quoted)
     }
     const appendPositional = (values: string[], quoted: boolean) => {
-      if (quoted) append(values, values.length > 0)
-      else append(values.flatMap(splitFields))
+      if (quoted) append(values, true, values.length > 0)
+      else append(values.flatMap(splitFields), false)
     }
 
     word.forEach((token) => {
       switch (token.type) {
         case 'text':
-          append([token.content], true)
+          append(
+            [token.content],
+            Boolean(token.isDq || token.isSq || token.isPatternLiteral),
+            true,
+          )
           break
         case 'home':
-          append([env.HOME], true)
+          append([env.HOME], true, true)
           break
         case 'variable': {
           const name = token.content.slice(1)
@@ -919,9 +940,10 @@ export const expand = (
     const begin = group[0]?.begin ?? 0
     const end = group.at(- 1)?.end ?? begin
     const word = group[0]?.word ?? 0
-    expanded.push(...expandWord(group).map((content): HshExpandedTokenText => ({
+    expanded.push(...expandWord(group).map((field): HshExpandedTokenText => ({
       type: 'text',
-      content,
+      content: field.content,
+      pattern: field.pattern,
       begin,
       end,
       word,
@@ -1128,6 +1150,63 @@ export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   return script
 }
 
+export type PathnameExpander = (pattern: readonly ShellPatternPart[]) => readonly string[]
+
+const hasActivePattern = (pattern: readonly ShellPatternPart[]) => pattern.some(part => (
+  ! part.literal && /[*?[]/u.test(part.value)
+))
+
+export const expandPathnames = (
+  tokens: readonly HshExpandedToken[],
+  expandPathname?: PathnameExpander,
+  { commandLine = true }: { commandLine?: boolean } = {},
+): HshExpandedToken[] => {
+  if (! expandPathname) return [...tokens]
+
+  const expanded: HshExpandedToken[] = []
+  let commandPrefix = true
+  let redirectTarget = false
+
+  tokens.forEach((token) => {
+    if (token.type === 'pipe') {
+      expanded.push(token)
+      commandPrefix = true
+      redirectTarget = false
+      return
+    }
+    if (token.type === 'redirect') {
+      expanded.push(token)
+      redirectTarget = true
+      return
+    }
+    if (token.type !== 'text') {
+      expanded.push(token)
+      return
+    }
+
+    const assignment = commandLine && commandPrefix && parseEnvAssignment(token.content)
+    const matches = ! assignment && hasActivePattern(token.pattern)
+      ? [...expandPathname(token.pattern)]
+      : []
+    if (redirectTarget && matches.length > 1) {
+      throw new UserError(`Ambiguous redirect: ${token.content}`)
+    }
+    if (matches.length) {
+      expanded.push(...matches.map(content => ({
+        ...token,
+        content,
+        pattern: [{ value: content, literal: true }],
+      })))
+    }
+    else expanded.push(token)
+
+    redirectTarget = false
+    if (! assignment) commandPrefix = false
+  })
+
+  return expanded
+}
+
 export const parseLine = (
   line: string,
   env: Env,
@@ -1136,6 +1215,7 @@ export const parseLine = (
 
 export interface HshAsyncExpansionOptions extends HshExpansionOptions {
   substituteCommand: (source: string) => Promise<string>
+  expandPathname?: PathnameExpander
 }
 
 export const expandLineAsync = async (
@@ -1156,4 +1236,4 @@ export const parseLineAsync = async (
   line: string,
   env: Env,
   options: HshAsyncExpansionOptions,
-) => parse(await expandLineAsync(line, env, options))
+) => parse(expandPathnames(await expandLineAsync(line, env, options), options.expandPathname))

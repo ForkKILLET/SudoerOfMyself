@@ -224,6 +224,22 @@ describe('hsh control-flow execution', () => {
     expect(result.process.env.item).toBe('gamma')
   })
 
+  it('expands pathnames in for word lists', async () => {
+    const shell = createShell()
+    shell.process.ctx.fs.openU('/b.txt', 'w').handle.write('b')
+    shell.process.ctx.fs.openU('/a.txt', 'w').handle.write('a')
+    shell.process.ctx.fs.openU('/.hidden.txt', 'w').handle.write('hidden')
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+
+    await executeControlScript(
+      shell.process,
+      parseControlScript('for file in *.txt; do emit $file; done'),
+      { emit },
+    )
+
+    expect(shell.output.content).toBe('a.txt\nb.txt\n')
+  })
+
   it('expands variable brace ranges from the current loop environment', async () => {
     const emit: Program = (proc, _self, ...values) => proc.stdio.writeLn(values.join(' ')) ?? 0
     const result = await run(

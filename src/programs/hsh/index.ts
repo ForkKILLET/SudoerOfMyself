@@ -9,6 +9,7 @@ import { Stdio } from '@/sys0/stdio'
 
 import {
   expand,
+  expandPathnames,
   HSH_CHARS,
   HshAstCommand,
   HshAstScript,
@@ -54,6 +55,7 @@ import { evaluateDoubleBracketCondition } from './conditional'
 import { HSH_RESERVED_WORDS } from './reserved_words'
 import { renderPrompt } from './prompt'
 import { appendHistoryEntry, parseHistoryFile, parseHistoryLimit } from './history'
+import { expandPathname } from './pathname'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -389,9 +391,13 @@ const executeLoop = async (
 
 const expandForWords = (proc: Process, statement: HshForStatement) => {
   if (! statement.wordsSource) return []
-  const tokens = expand(tokenize(statement.wordsSource), proc.env, {
-    assignVariable: (name, value) => proc.variables.set(name, value),
-  })
+  const tokens = expandPathnames(
+    expand(tokenize(statement.wordsSource), proc.env, {
+      assignVariable: (name, value) => proc.variables.set(name, value),
+    }),
+    pattern => expandPathname(proc.ctx.fs, proc.cwd, pattern),
+    { commandLine: false },
+  )
   return tokens.map((token) => {
     if (token.type !== 'text') throw new UserError(`Unexpected ${token.type} in for word list`)
     return token.content
@@ -432,6 +438,7 @@ const executeStatement = async (
       const parsed = await parseLineAsync(statement.source, proc.env, {
         assignVariable: (name, value) => proc.variables.set(name, value),
         substituteCommand: source => executeCommandSubstitution(proc, source, builtins),
+        expandPathname: pattern => expandPathname(proc.ctx.fs, proc.cwd, pattern),
       })
       return executeScript(proc, parsed, builtins, {
         source: statement.source,
