@@ -7,7 +7,16 @@ import { Path } from '@/sys0/fs/path'
 import { CompCandidate, CompProvider, Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdio } from '@/sys0/stdio'
 
-import { expand, HSH_CHARS, HshAstCommand, HshAstScript, HshTokenText, parseLine, tokenize } from './parse'
+import {
+  expand,
+  HSH_CHARS,
+  HshAstCommand,
+  HshAstScript,
+  HshTokenText,
+  parseEnvAssignment,
+  parseLine,
+  tokenize,
+} from './parse'
 import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
@@ -66,6 +75,16 @@ export const execute = async (
 ): Promise<ProcessExit> => {
   const { name, args } = command
   const { ctx, env } = proc
+  const assignmentEnv = command.assignments
+    ? Object.fromEntries(command.assignments.map(({ name, value }) => [name, value]))
+    : undefined
+
+  if (! name) {
+    command.assignments?.forEach(({ name, value }) => {
+      env[name] = value
+    })
+    return normalExit(0)
+  }
 
   const getStdio = () => {
     const fds = proc.stdio.fds.fork()
@@ -112,11 +131,22 @@ export const execute = async (
       return proc.spawn(builtins[name], {
         name,
         stdio: commandStdio,
+        env: assignmentEnv,
         processGroup: options.processGroup,
         foreground: options.foreground,
       }, ...args)
     }
 
+    const previousAssignments = new Map<string, { existed: boolean, value?: string }>()
+    command.assignments?.forEach(({ name, value }) => {
+      if (! previousAssignments.has(name)) {
+        previousAssignments.set(name, {
+          existed: Object.hasOwn(env, name),
+          value: env[name],
+        })
+      }
+      env[name] = value
+    })
     const originalStdio = proc.stdio
     const originalName = proc.name
     proc.stdio = commandStdio
@@ -129,13 +159,20 @@ export const execute = async (
       return normalExit(1)
     }
     finally {
+      previousAssignments.forEach(({ existed, value }, name) => {
+        if (existed) env[name] = value !
+        else delete env[name]
+      })
       proc.stdio = originalStdio
       commandStdio.close()
       proc.name = originalName
     }
   }
   else {
-    const exeRes = ctx.exec.resolve(name, { envPath: env.PATH, cwd: env.PWD })
+    const exeRes = ctx.exec.resolve(name, {
+      envPath: assignmentEnv?.PATH ?? env.PATH,
+      cwd: env.PWD,
+    })
     if (exeRes.isErr) {
       try {
         switch (exeRes.err.type) {
@@ -163,6 +200,7 @@ export const execute = async (
     return proc.spawn(exeRes.val.program, {
       name,
       stdio: commandStdio,
+      env: assignmentEnv,
       processGroup: options.processGroup,
       foreground: options.foreground,
     }, ...args)
@@ -246,7 +284,7 @@ export const executeScript = async (
       proc.env['!'] = processGroup.pgid?.toString() ?? ''
       proc.env['?'] = '0'
       const lastCommand = pipeline.at(- 1)
-      if (lastCommand) updateLastArgument(proc, lastCommand)
+      if (lastCommand?.name) updateLastArgument(proc, lastCommand)
       proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
       return normalExit(0)
     }
@@ -262,7 +300,7 @@ export const executeScript = async (
     lastStatus = interruptStatus ?? exitStatuses.at(- 1) ?? normalExit(0)
     proc.env['?'] = lastStatus.code.toString()
     const lastCommand = pipeline.at(- 1)
-    if (lastCommand) updateLastArgument(proc, lastCommand)
+    if (lastCommand?.name) updateLastArgument(proc, lastCommand)
     const exitRequest = getShellExitRequest(proc)
     if (exitRequest) return exitRequest
     if (interruptStatus) return interruptStatus
@@ -466,10 +504,10 @@ export const getCompProvider = (
     },
   ]
 
-  const [tokenIndex, token] = [...tokens.entries()]
+  const [, token] = [...tokens.entries()]
     .find(([, token]) => isBetween(line.cursor - 1, token.begin, token.end))
     ?? getEmptyTokenEntry()
-  const [, etoken] = [...etokens.entries()]
+  const [expandedTokenIndex, etoken] = [...etokens.entries()]
     .find(([, etoken]) => isBetween(line.cursor - 1, etoken.begin, etoken.end))
     ?? getEmptyTokenEntry()
 
@@ -495,11 +533,27 @@ export const getCompProvider = (
 
   const isExplicitPath = Path.isAbsOrRel(token.content)
 
-  const isCommandToken = tokenIndex === 0 || (
-    tokenIndex !== null && tokens[tokenIndex - 1]?.type === 'pipe'
-  )
+  let previousPipeIndex = - 1
+  if (expandedTokenIndex !== null) {
+    for (let index = expandedTokenIndex - 1; index >= 0; index --) {
+      if (etokens[index].type !== 'pipe') continue
+      previousPipeIndex = index
+      break
+    }
+  }
+  const commandPrefix = expandedTokenIndex === null
+    ? []
+    : etokens.slice(previousPipeIndex + 1, expandedTokenIndex)
+  const isAssignment = etoken.type === 'text' && parseEnvAssignment(etoken.content)
+  const isCommandToken = ! isAssignment
+    && commandPrefix.every(token => token.type === 'text' && parseEnvAssignment(token.content))
   if (isCommandToken && ! isExplicitPath) {
-    const installedPrograms = ctx.exec.listInPath(env.PATH, env.PWD)
+    const commandEnv = Object.fromEntries(commandPrefix.flatMap((token) => {
+      if (token.type !== 'text') return []
+      const assignment = parseEnvAssignment(token.content)
+      return assignment ? [[assignment.name, assignment.value]] : []
+    }))
+    const installedPrograms = ctx.exec.listInPath(commandEnv.PATH ?? env.PATH, env.PWD)
     return getCandidates([...installedPrograms, ...Object.keys(builtins)].map(name => ({ value: name })))
   }
 

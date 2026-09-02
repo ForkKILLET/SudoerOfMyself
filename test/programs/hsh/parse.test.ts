@@ -14,6 +14,33 @@ describe('hsh parser', () => {
     })
   })
 
+  it('parses command-prefix environment assignments after expanding their values', () => {
+    expect(parseLine('var=$var EMPTY= command "$var"', { var: 'before' })).toEqual({
+      commands: [{
+        name: 'command',
+        args: ['before'],
+        assignments: [
+          { name: 'var', value: 'before' },
+          { name: 'EMPTY', value: '' },
+        ],
+      }],
+    })
+  })
+
+  it('parses assignments without a command', () => {
+    expect(parseLine('first=one second=$first EMPTY=', { first: 'old' })).toEqual({
+      commands: [{
+        name: '',
+        args: [],
+        assignments: [
+          { name: 'first', value: 'one' },
+          { name: 'second', value: 'old' },
+          { name: 'EMPTY', value: '' },
+        ],
+      }],
+    })
+  })
+
   it('expands brace alternatives with prefixes, suffixes, and adjacent variables', () => {
     expect(parseLine('echo pre{a,b,c}post x{1,2}{a,b} $HEAD{left,right}$TAIL', {
       HEAD: '<',

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Err, Ok } from 'fk-result'
 import { execute, executeScript } from '@/programs/hsh'
+import { parseLine } from '@/programs/hsh/parse'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
@@ -79,6 +80,66 @@ describe('hsh execution', () => {
 
     expect(process.env['?']).toBe('130')
     expect(output.content).toBe('')
+  })
+
+  it('temporarily applies command-prefix assignments to builtins', async () => {
+    let observed: [string, string] | undefined
+    const { process } = createShellProcess(() => 0)
+    process.env.var = 'outer'
+    const inspect: Program = (proc, _self, argument) => {
+      observed = [proc.env.var, argument]
+      proc.env.SIDE_EFFECT = 'preserved'
+      return 0
+    }
+
+    await executeScript(
+      process,
+      parseLine('var=temporary inspect $var', process.env),
+      { inspect },
+    )
+
+    expect(observed).toEqual(['temporary', 'outer'])
+    expect(process.env.var).toBe('outer')
+    expect(process.env.SIDE_EFFECT).toBe('preserved')
+  })
+
+  it('persists assignments without a command in the current shell', async () => {
+    const { process } = createShellProcess(() => 0)
+    process.env.first = 'old'
+
+    await executeScript(
+      process,
+      parseLine('first=one second=$first EMPTY=', process.env),
+      {},
+    )
+
+    expect(process.env.first).toBe('one')
+    expect(process.env.second).toBe('old')
+    expect(process.env.EMPTY).toBe('')
+    expect(process.env['?']).toBe('0')
+  })
+
+  it('uses command-prefix assignments for executable lookup and child environments', async () => {
+    let childPath: string | undefined
+    const { process } = createShellProcess((child) => {
+      childPath = child.env.PATH
+      return 0
+    })
+    const resolve = vi.fn(process.ctx.exec.resolve.bind(process.ctx.exec))
+    process.ctx.exec.resolve = resolve
+
+    await executeScript(
+      process,
+      parseLine('PATH=/temporary/bin external', process.env),
+      {},
+    )
+
+    expect(resolve).toHaveBeenCalledWith('external', {
+      envPath: '/temporary/bin',
+      cwd: '/',
+    })
+    expect(childPath).toBe('/temporary/bin')
+    expect(process.env.PATH).toBe('/bin')
   })
 
   it('redirects stderr independently from stdout', async () => {

@@ -1,4 +1,4 @@
-import { Env, getEnv } from '@/sys0/env'
+import { Env, getEnv, isEnvName } from '@/sys0/env'
 import { UserError } from '@/utils/errors'
 
 const ESCAPES: Record<string, string> = {
@@ -557,9 +557,15 @@ export interface HshAstScript {
   background?: true
 }
 
+export interface HshEnvAssignment {
+  name: string
+  value: string
+}
+
 export interface HshAstCommand {
   name: string
   args: string[]
+  assignments?: HshEnvAssignment[]
   pipeToNext?: true
   redirections?: HshAstRedirection[]
 }
@@ -570,6 +576,14 @@ export type HshAstRedirection =
   | { fd: number, type: 'duplicate', sourceFd: number }
   | { fd: number, type: 'close' }
 
+export const parseEnvAssignment = (word: string): HshEnvAssignment | null => {
+  const separator = word.indexOf('=')
+  if (separator === - 1) return null
+  const name = word.slice(0, separator)
+  if (! isEnvName(name)) return null
+  return { name, value: word.slice(separator + 1) }
+}
+
 export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   const script: HshAstScript = {
     commands: [],
@@ -577,6 +591,18 @@ export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
   let cursor = 0
 
   while (cursor < tokens.length) {
+    const assignments: HshEnvAssignment[] = []
+    while (tokens[cursor]?.type === 'text') {
+      const assignment = parseEnvAssignment(tokens[cursor].content)
+      if (! assignment) break
+      assignments.push(assignment)
+      cursor ++
+    }
+    if (cursor >= tokens.length) {
+      script.commands.push({ name: '', args: [], assignments })
+      break
+    }
+
     const firstToken = tokens[cursor]
     if (firstToken.type === 'pipe') throw new UserError('Expected command before pipe')
     if (firstToken.type === 'background') throw new UserError('Expected command before background marker')
@@ -586,6 +612,7 @@ export const parse = (tokens: readonly HshExpandedToken[]): HshAstScript => {
     const command: HshAstCommand = {
       name,
       args: [],
+      ...(assignments.length ? { assignments } : {}),
     }
 
     while (cursor < tokens.length) {
