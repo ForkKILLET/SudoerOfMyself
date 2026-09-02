@@ -137,6 +137,9 @@ export namespace FOp {
     ALREADY_EXISTS,
     OUT_OF_INODES,
     READ_ONLY_FILE_SYSTEM,
+    DIRECTORY_NOT_EMPTY,
+    CROSS_DEVICE,
+    INVALID_ARGUMENT,
     AGGREGATED_ERROR,
   }
 
@@ -151,6 +154,9 @@ export namespace FOp {
     | { type: T.ALREADY_EXISTS }
     | { type: T.OUT_OF_INODES }
     | { type: T.READ_ONLY_FILE_SYSTEM }
+    | { type: T.DIRECTORY_NOT_EMPTY }
+    | { type: T.CROSS_DEVICE }
+    | { type: T.INVALID_ARGUMENT }
     | { type: T.AGGREGATED_ERROR, errors: Error[] }
 
   export type OperationResult<T> = Result<T, Error>
@@ -180,6 +186,12 @@ export namespace FOp {
         return `Out of Inodes`
       case T.READ_ONLY_FILE_SYSTEM:
         return `Read-only file system`
+      case T.DIRECTORY_NOT_EMPTY:
+        return `Directory not empty`
+      case T.CROSS_DEVICE:
+        return `Invalid cross-device operation`
+      case T.INVALID_ARGUMENT:
+        return `Invalid argument`
       case T.AGGREGATED_ERROR:
         return `Got multiple errors:\n${err.errors.map(err => '  ' + displayError(err)).join('\n')}`
     }
@@ -206,6 +218,7 @@ export namespace FOp {
   }>
 
   export type RmResult = OperationResult<{ path: string }>
+  export type RenameResult = OperationResult<{ path: string }>
 
   export interface FindOptions<FT extends FileT = FileT> {
     allowedTypes?: readonly FT[]
@@ -684,6 +697,72 @@ export class Fs {
 
   rmU(path: string) {
     return this.unwrap(this.rm(path), `Cannot remove '${path}'`)
+  }
+
+  rename(sourcePath: string, targetPath: string, cwd = this.cwd): FOp.RenameResult {
+    const source = this.resolveMountedPath(sourcePath, cwd)
+    const target = this.resolveMountedPath(targetPath, cwd)
+    if (source.mount || target.mount) {
+      if (! source.mount || source.mount !== target.mount) {
+        return FOp.err({ type: FOp.T.CROSS_DEVICE })
+      }
+      return source.mount.fs.rename(source.mountedPath, target.mountedPath, '/')
+    }
+    if (this.isReadOnly) return this.readOnlyError()
+
+    const sourceResult = this.findInode(source.absolute, { cwd: '/' })
+    if (sourceResult.isErr) return sourceResult
+    const { inode, parentInode: sourceParent, filename: sourceName } = sourceResult.val
+    if (inode === this.root) return FOp.err({ type: FOp.T.IS_ROOT })
+    if (source.absolute === target.absolute) return FOp.ok({ path: target.absolute })
+    if (Path.hasTrailingSlash(targetPath)) {
+      const trailingTarget = this.findInode(targetPath, { cwd })
+      if (trailingTarget.isErr) return trailingTarget
+    }
+    if (inode.file.type === FileT.DIR && target.absolute.startsWith(`${source.absolute}/`)) {
+      return FOp.err({ type: FOp.T.INVALID_ARGUMENT })
+    }
+
+    const { dirname, filename: targetName } = Path.getDirAndName(target.absolute)
+    if (! Path.isLegalFilename(targetName)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
+    const parentResult = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd: '/' })
+    if (parentResult.isErr) return parentResult
+    const targetParent = parentResult.val.inode
+    const replaced = this.getChildInode(targetParent.file, targetName)
+
+    if (replaced) {
+      if (inode.file.type === FileT.NORMAL && replaced.file.type === FileT.DIR) {
+        return FOp.err({ type: FOp.T.IS_A_DIR })
+      }
+      if (inode.file.type === FileT.DIR && replaced.file.type === FileT.NORMAL) {
+        return FOp.err({ type: FOp.T.NOT_DIR })
+      }
+      if (replaced.file.type === FileT.DIR && ! this.isEmptyDir(replaced.file)) {
+        return FOp.err({ type: FOp.T.DIRECTORY_NOT_EMPTY })
+      }
+    }
+
+    delete sourceParent.file.entries[sourceName]
+    targetParent.file.entries[targetName] = inode.iid
+    const timestamp = this.now()
+    sourceParent.metadata.modifiedAt = timestamp
+    targetParent.metadata.modifiedAt = timestamp
+
+    let delta = createPutsDelta(new Set([sourceParent, targetParent]))
+    if (replaced) {
+      this.inodes.delete(replaced.iid)
+      this.inodeBitmap.set(replaced.iid, 0)
+      delta = mergeFsDelta(createDeleteDelta(replaced.iid), delta)
+    }
+    this.markDirty(delta)
+    return FOp.ok({ path: target.absolute })
+  }
+
+  renameU(sourcePath: string, targetPath: string, cwd = this.cwd) {
+    return this.unwrap(
+      this.rename(sourcePath, targetPath, cwd),
+      `Cannot move '${sourcePath}' to '${targetPath}'`,
+    )
   }
 
   private markInodeDirty = (inode: Inode) => {

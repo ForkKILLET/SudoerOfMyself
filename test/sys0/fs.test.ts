@@ -146,6 +146,72 @@ describe('Fs mutation consistency', () => {
     expect(fs.find('/empty').isErr).toBe(true)
   })
 
+  it('atomically renames across directories and replaces a file', async () => {
+    let timestamp = 10
+    const persistence = new RecordingPersistence()
+    const fs = new Fs(Vfs.dir({
+      source: Vfs.dir({ file: Vfs.normal('source') }),
+      target: Vfs.dir({ file: Vfs.normal('target') }),
+    }), { persistence, now: () => timestamp })
+    persistence.deltas.length = 0
+    const sourceIid = fs.findInodeU('/source/file').inode.iid
+    const replacedIid = fs.findInodeU('/target/file').inode.iid
+    const sourceParentIid = fs.findInodeU('/source').inode.iid
+    const targetParentIid = fs.findInodeU('/target').inode.iid
+
+    timestamp = 20
+    const result = fs.rename('/source/file', '/target/file')
+    await fs.flush()
+
+    expect(result.isOk && result.val.path).toBe('/target/file')
+    expect(fs.find('/source/file').isErr).toBe(true)
+    expect(fs.findInodeU('/target/file').inode.iid).toBe(sourceIid)
+    expect(fs.openU('/target/file', 'r').handle.read()).toBe('source')
+    expect(fs.statU('/source').modifiedAt).toBe(20)
+    expect(fs.statU('/target').modifiedAt).toBe(20)
+    expect(persistence.deltas.at(- 1)?.deletes).toEqual(new Set([replacedIid]))
+    expect(new Set(persistence.deltas.at(- 1)?.puts.keys())).toEqual(
+      new Set([sourceParentIid, targetParentIid]),
+    )
+  })
+
+  it('enforces directory replacement and ancestry rules while renaming', () => {
+    const fs = new Fs(Vfs.dir({
+      tree: Vfs.dir({ child: Vfs.dir() }),
+      empty: Vfs.dir(),
+      occupied: Vfs.dir({ file: Vfs.normal('data') }),
+      file: Vfs.normal('data'),
+    }), { persistence: new MemoryFsPersistence() })
+
+    const descendant = fs.rename('/tree', '/tree/child/moved')
+    expect(descendant.isErr && descendant.err.type).toBe(FOp.T.INVALID_ARGUMENT)
+
+    const occupied = fs.rename('/empty', '/occupied')
+    expect(occupied.isErr && occupied.err.type).toBe(FOp.T.DIRECTORY_NOT_EMPTY)
+
+    const mismatch = fs.rename('/file', '/empty')
+    expect(mismatch.isErr && mismatch.err.type).toBe(FOp.T.IS_A_DIR)
+  })
+
+  it('rejects cross-mount renames and writes inside read-only mounts', () => {
+    const fs = new Fs(Vfs.dir({
+      bin: Vfs.dir(),
+      local: Vfs.normal('data'),
+    }), {
+      persistence: new MemoryFsPersistence(),
+      mounts: [{
+        path: '/bin',
+        image: Vfs.dir({ one: Vfs.normal('one'), two: Vfs.normal('two') }),
+        readOnly: true,
+      }],
+    })
+
+    const crossing = fs.rename('/local', '/bin/local')
+    expect(crossing.isErr && crossing.err.type).toBe(FOp.T.CROSS_DEVICE)
+    const readOnly = fs.rename('/bin/one', '/bin/two')
+    expect(readOnly.isErr && readOnly.err.type).toBe(FOp.T.READ_ONLY_FILE_SYSTEM)
+  })
+
   it('refuses to remove a non-empty directory directly', () => {
     const { fs } = createFs()
     const result = fs.rm('/nested')
