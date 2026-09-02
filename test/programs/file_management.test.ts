@@ -92,6 +92,14 @@ describe('file-management commands', () => {
     expect(fs.find('/nested').isErr).toBe(true)
   })
 
+  it('rm accepts merged short options', async () => {
+    const { fs, process } = createProcess()
+
+    await expect(rm(process, 'rm', '-rf', '/nested', '/missing')).resolves.toBe(0)
+
+    expect(fs.find('/nested').isErr).toBe(true)
+  })
+
   it('stat displays supported metadata and continues after missing files', async () => {
     const { error, output, process } = createProcess()
 

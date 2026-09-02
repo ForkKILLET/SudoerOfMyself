@@ -75,6 +75,9 @@ export class Command<O = Record<never, never>> {
       }
       else if (form.startsWith('-')) {
         const shortForm = form.slice(1)
+        if (shortForm.length !== 1) {
+          throw new UserError(`option: Short option must be one character: '${form}'`)
+        }
         that.shortOptions[shortForm] = name
         this.optionShortForms[name] = shortForm
       }
@@ -151,6 +154,37 @@ export class Command<O = Record<never, never>> {
         }
         throw new Error(`Unsupported option type: ${type}`)
       }
+      interface ParsedOption {
+        name: OptionName
+        type: OptionType
+        value?: string
+        booleanValue?: boolean
+      }
+      const applyOption = (option: ParsedOption) => {
+        if (option.type === 'boolean') {
+          const value = option.booleanValue ?? true
+          if (option.name === this.helpOption && value) return true
+          options[option.name] = value
+          return false
+        }
+
+        const optionArg = option.value
+        if (optionArg === undefined) throw new Error('Parsed option argument is missing')
+        if (option.type.endsWith('[]')) {
+          const currentValue = options[option.name]
+          const arr = Array.isArray(currentValue) ? currentValue : []
+          options[option.name] = arr
+          arr.push(validateOption(
+            `${option.name}[${arr.length}]`,
+            option.type.slice(0, - 2) as BasicOptionType,
+            optionArg,
+          ))
+        }
+        else {
+          options[option.name] = validateOption(option.name, option.type as BasicOptionType, optionArg)
+        }
+        return false
+      }
 
       while (i < rawArgs.length) {
         const arg = rawArgs[i ++]
@@ -164,9 +198,9 @@ export class Command<O = Record<never, never>> {
           args.push(arg)
           continue
         }
-        let booleanValue = true
-        let optionName: string
         if (arg.startsWith('--')) {
+          let booleanValue = true
+          let optionName: string
           if (arg.startsWith('--no-')) {
             booleanValue = false
             optionName = this.longOptions[arg.slice(5)]
@@ -174,44 +208,79 @@ export class Command<O = Record<never, never>> {
           else {
             optionName = this.longOptions[arg.slice(2)]
           }
-        }
-        else {
-          optionName = this.shortOptions[arg.slice(1)]
-        }
-
-        if (! optionName) {
-          switch (this.actionWhenUnknownOption) {
-            case 'throw':
-              throw new UserError(`Unknown option: ${arg}`)
-            case 'ignore':
-              continue
-            case 'make-arg':
-              args.push(arg)
-              continue
+          if (! optionName) {
+            switch (this.actionWhenUnknownOption) {
+              case 'throw':
+                throw new UserError(`Unknown option: ${arg}`)
+              case 'ignore':
+                continue
+              case 'make-arg':
+                args.push(arg)
+                continue
+            }
           }
-        }
-        const optionType = this.optionTypes[optionName]
+          const optionType = this.optionTypes[optionName]
 
-        if (optionType === 'boolean') {
-          if (optionName === this.helpOption) {
-            return this.runHelp(proc)
+          if (optionType === 'boolean') {
+            if (applyOption({ name: optionName, type: optionType, booleanValue })) {
+              return this.runHelp(proc)
+            }
+            continue
           }
+          if (! booleanValue) throw new UserError(`Unknown option: ${arg}`)
+          if (i === rawArgs.length) throw new UserError(`Option ${arg} requires an argument`)
 
-          options[optionName] = booleanValue
+          applyOption({ name: optionName, type: optionType, value: rawArgs[i ++] })
           continue
         }
 
-        if (i === rawArgs.length) throw new UserError(`Option ${arg} requires an argument`)
+        const cluster = arg.slice(1)
+        const parsed: ParsedOption[] = []
+        let makeArgument = false
+        let consumeNextArgument = false
 
-        const optionArg = rawArgs[i ++]
-        if (optionType.endsWith('[]')) {
-          const currentValue = options[optionName]
-          const arr = Array.isArray(currentValue) ? currentValue : []
-          options[optionName] = arr
-          arr.push(validateOption(`${optionName}[${arr.length}]`, optionType.slice(0, - 2) as BasicOptionType, optionArg))
+        for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex ++) {
+          const shortForm = cluster[clusterIndex]
+          const optionName = this.shortOptions[shortForm]
+          if (! optionName) {
+            switch (this.actionWhenUnknownOption) {
+              case 'throw':
+                throw new UserError(`Unknown option: -${shortForm}`)
+              case 'ignore':
+                continue
+              case 'make-arg':
+                makeArgument = true
+                break
+            }
+          }
+          if (makeArgument) break
+
+          const optionType = this.optionTypes[optionName]
+          if (optionType === 'boolean') {
+            parsed.push({ name: optionName, type: optionType })
+            continue
+          }
+
+          const attachedValue = cluster.slice(clusterIndex + 1)
+          if (attachedValue) {
+            parsed.push({ name: optionName, type: optionType, value: attachedValue })
+          }
+          else {
+            if (i === rawArgs.length) throw new UserError(`Option -${shortForm} requires an argument`)
+            parsed.push({ name: optionName, type: optionType, value: rawArgs[i] })
+            consumeNextArgument = true
+          }
+          break
         }
-        else {
-          options[optionName] = validateOption(optionName, optionType as BasicOptionType, optionArg)
+
+        if (makeArgument) {
+          args.push(arg)
+          continue
+        }
+        if (consumeNextArgument) i ++
+
+        for (const option of parsed) {
+          if (applyOption(option)) return this.runHelp(proc)
         }
       }
 
