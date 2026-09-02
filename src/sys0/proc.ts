@@ -9,6 +9,7 @@ import { normalizeExit, normalExit, ProcessExit, ProcessSignal } from './process
 import { Pid } from './process_table'
 import type { JobTable, ProcessGroup } from './job'
 import { defaultProcessScheduler } from './process_scheduler'
+import { ProcessAccounting } from './process_usage'
 
 export interface ProcessEvents extends Events {
   signal: [ProcessSignal]
@@ -42,6 +43,7 @@ export class Process extends Emitter<ProcessEvents> {
   exitStatus: ProcessExit | null = null
   jobTable: JobTable | null
   readonly startedAtMs: number
+  readonly accounting = new ProcessAccounting()
 
   // TODO: Replace elapsed wall time with scheduler-owned CPU accounting once
   // Worker execution can be dynamically instrumented.
@@ -121,7 +123,14 @@ export class Process extends Emitter<ProcessEvents> {
   private startProgram<T>(run: () => T) {
     if (this.state !== 'ready') throw new Error('Only a ready process can be started')
     this.state = 'running'
-    const result = run()
+    const startedAt = this.monotonicNow()
+    let result: T
+    try {
+      result = run()
+    }
+    finally {
+      this.accounting.addUser(this.monotonicNow() - startedAt)
+    }
     const pendingSignals = this.pendingSignals
     this.pendingSignals = []
     pendingSignals.forEach(signal => this.emit('signal', signal))
@@ -144,6 +153,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.exitStatus = exitStatus
     this.stdio.close()
     this.emit('exit', exitStatus)
+    this.parent?.accounting.addChild(this.accounting.totalUsage)
     this.processGroup?.remove(this)
     this.ctx.processes.unregister(this)
   }

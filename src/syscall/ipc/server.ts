@@ -21,6 +21,11 @@ const handlerError = (name: string, error: unknown): SyscallHandlerError => ({
   ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
 })
 
+export interface SyscallServerTimingOptions {
+  now?: () => number
+  onHandlerTime?: (milliseconds: number) => void
+}
+
 export class SyscallServer<Schema> {
   private readonly memory: SyscallMemory
   private isHandling = false
@@ -29,6 +34,7 @@ export class SyscallServer<Schema> {
     descriptor: SyscallChannelDescriptor,
     private readonly handlers: SyscallHandlers<Schema>,
     private readonly onTransportError?: (error: SyscallTransportError) => void,
+    private readonly timing: SyscallServerTimingOptions = {},
   ) {
     this.memory = new SyscallMemory(descriptor)
   }
@@ -89,7 +95,16 @@ export class SyscallServer<Schema> {
 
     let result: Result<unknown, unknown>
     try {
-      result = await handler(...request.args) as Result<unknown, unknown>
+      const now = this.timing.now ?? performance.now.bind(performance)
+      const startedAt = now()
+      let pendingResult: unknown
+      try {
+        pendingResult = handler(...request.args)
+      }
+      finally {
+        this.timing.onHandlerTime?.(Math.max(0, now() - startedAt))
+      }
+      result = await pendingResult as Result<unknown, unknown>
     }
     catch (error) {
       result = Err(handlerError(request.name, error))

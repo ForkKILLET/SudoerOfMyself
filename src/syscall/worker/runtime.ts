@@ -23,11 +23,23 @@ export const startWorkerProgram = (
     hasStarted = true
 
     const { channel, name, args } = event.data
-    const client = new SyncSyscallClient<GameSyscallSchema>(channel, scope)
+    const startedAt = performance.now()
+    let syscallMs = 0
+    const client = new SyncSyscallClient<GameSyscallSchema>(channel, scope, {
+      onCallTime: (milliseconds) => { syscallMs += milliseconds },
+    })
     const process = new WorkerProcessApi(client)
     try {
       const exitCode = program(process, name, ...args)
-      scope.postMessage({ type: 'sudoer:worker-exit', exitCode })
+      const elapsedMs = Math.max(0, performance.now() - startedAt)
+      scope.postMessage({
+        type: 'sudoer:worker-exit',
+        exitCode,
+        usage: {
+          userMs: Math.max(0, elapsedMs - syscallMs),
+          syscallMs,
+        },
+      })
     }
     catch (error) {
       const failure: WorkerFailureMessage = {

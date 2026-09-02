@@ -2,6 +2,7 @@ import type { Process } from './proc'
 import type { ProcessExit, ProcessSignal } from './process_exit'
 import type { Pid } from './process_table'
 import { Emitter, type Events } from '@/utils/emitter'
+import { addProcessUsage, emptyProcessUsage, type ProcessUsage } from './process_usage'
 
 export type JobId = number
 export type JobState = 'running' | 'completed'
@@ -9,6 +10,7 @@ export type JobState = 'running' | 'completed'
 export class ProcessGroup {
   private readonly members = new Map<Pid, Process>()
   private leaderPid: Pid | null = null
+  private completedUsage = emptyProcessUsage()
 
   get pgid() {
     return this.leaderPid
@@ -25,8 +27,16 @@ export class ProcessGroup {
 
   remove(process: Process) {
     if (this.members.get(process.pid) === process) {
+      this.completedUsage = addProcessUsage(this.completedUsage, process.accounting.selfUsage)
       this.members.delete(process.pid)
     }
+  }
+
+  get usage(): ProcessUsage {
+    return this.values().reduce(
+      (usage, process) => addProcessUsage(usage, process.accounting.selfUsage),
+      { ...this.completedUsage },
+    )
   }
 
   values() {

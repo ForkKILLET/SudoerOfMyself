@@ -21,6 +21,27 @@ type TestSchema = {
 const createDescriptor = (capacity = 4096) => createSyscallChannel(capacity, 'test-channel').unwrap()
 
 describe('SyncSyscallClient', () => {
+  it('reports the time spent inside a synchronous syscall', () => {
+    const descriptor = createDescriptor()
+    const serverMemory = new SyscallMemory(descriptor)
+    let now = 10
+    let callTime = 0
+    const client = new SyncSyscallClient<TestSchema>(descriptor, {
+      postMessage() {
+        serverMemory.takeRequest<SyscallRequest>().unwrap()
+        now = 25
+        serverMemory.respond({ ok: true, value: 42 } satisfies SyscallResponse).unwrap()
+      },
+    }, {
+      now: () => now,
+      onCallTime: (milliseconds) => { callTime += milliseconds },
+    })
+
+    client.call('add', 20, 22)
+
+    expect(callTime).toBe(15)
+  })
+
   it('does not lose a response delivered before Atomics.wait begins', () => {
     const descriptor = createDescriptor()
     const serverMemory = new SyscallMemory(descriptor)
@@ -104,6 +125,28 @@ describe('SyscallServer', () => {
       handled: true,
       response: { ok: false, error: { code: 'denied' } },
     })
+  })
+
+  it('reports synchronous handler service time without counting awaited time', async () => {
+    const descriptor = createDescriptor()
+    const memory = new SyscallMemory(descriptor)
+    let now = 10
+    let handlerTime = 0
+    const server = new SyscallServer<TestSchema>(descriptor, {
+      ...handlers,
+      add: (left, right) => {
+        now = 14
+        return Ok(left + right)
+      },
+    }, undefined, {
+      now: () => now,
+      onHandlerTime: (milliseconds) => { handlerTime += milliseconds },
+    })
+    memory.beginRequest({ name: 'add', args: [1, 2] }).unwrap()
+
+    await server.handleSignal({ type: 'sudoer:syscall', channelId: descriptor.channelId })
+
+    expect(handlerTime).toBe(4)
   })
 
   it('serializes unexpected handler exceptions', async () => {

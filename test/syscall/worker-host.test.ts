@@ -8,6 +8,7 @@ import { WorkerInitMessage, WorkerStatusMessage } from '@/syscall/worker/protoco
 import { normalExit, PROCESS_SIGNALS, signalExit } from '@/sys0/process_exit'
 import { ProcessTable } from '@/sys0/process_table'
 import { ProcessGroup } from '@/sys0/job'
+import { TimeService } from '@/sys0/time'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -74,7 +75,10 @@ class FakeWorker implements WorkerLike {
 
 const createRootProcess = () => {
   const output = new MemoryOutput()
-  const context = { processes: new ProcessTable() } as Context
+  const context = {
+    processes: new ProcessTable(),
+    time: new TimeService({ monotonic: { nowMs: () => 0 } }),
+  } as Context
   const root = new Process(context, null, {
     name: 'init',
     env: { HOME: '/', PATH: '/bin', PWD: '/' },
@@ -94,6 +98,7 @@ describe('Worker process host', () => {
     worker.onInit = () => queueMicrotask(() => worker.emitMessage({
       type: 'sudoer:worker-exit',
       exitCode: 5,
+      usage: { userMs: 12, syscallMs: 5 },
     }))
     const processGroup = new ProcessGroup()
 
@@ -115,6 +120,8 @@ describe('Worker process host', () => {
     expect(root.subProcesses).toEqual([])
     expect(root.ctx.processes.size).toBe(1)
     expect(processGroup.size).toBe(0)
+    expect(processGroup.usage).toEqual({ userMs: 12, systemMs: 0, blockedMs: 5 })
+    expect(root.accounting.childUsage).toEqual({ userMs: 12, systemMs: 0, blockedMs: 5 })
     expect(worker.terminated).toBe(true)
   })
 

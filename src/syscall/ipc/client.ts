@@ -11,12 +11,18 @@ import {
   transportError,
 } from './types'
 
+export interface SyncSyscallClientTimingOptions {
+  now?: () => number
+  onCallTime?: (milliseconds: number) => void
+}
+
 export class SyncSyscallClient<Schema> {
   private readonly memory: SyscallMemory
 
   constructor(
     descriptor: SyscallChannelDescriptor,
     private readonly sink: SyscallMessageSink,
+    private readonly timing: SyncSyscallClientTimingOptions = {},
   ) {
     this.memory = new SyscallMemory(descriptor)
   }
@@ -24,6 +30,20 @@ export class SyncSyscallClient<Schema> {
   call<Name extends keyof Schema & string>(
     name: Name,
     ...args: SyscallArgs<Schema, Name>
+  ): Result<SyscallReturn<Schema, Name>, SyscallError<Schema, Name>> {
+    const now = this.timing.now ?? performance.now.bind(performance)
+    const startedAt = now()
+    try {
+      return this.callUnchecked(name, args)
+    }
+    finally {
+      this.timing.onCallTime?.(Math.max(0, now() - startedAt))
+    }
+  }
+
+  private callUnchecked<Name extends keyof Schema & string>(
+    name: Name,
+    args: SyscallArgs<Schema, Name>,
   ): Result<SyscallReturn<Schema, Name>, SyscallError<Schema, Name>> {
     const request: SyscallRequest = { name, args: [...args] }
     const begun = this.memory.beginRequest(request)

@@ -29,11 +29,17 @@ export const runWorkerProgram = (
     throw new Error(error.message)
   })
   const worker = definition.createWorker()
+  const monotonicNow = () => process.ctx.time?.monotonic.nowMs() ?? performance.now()
+  const workerStartedAt = monotonicNow()
   const abortController = new AbortController()
   const server = new SyscallServer(
     channel,
     createGameSyscallHandlers(process, abortController.signal),
     error => process.error(error.message),
+    {
+      now: monotonicNow,
+      onHandlerTime: milliseconds => process.accounting.addSystem(milliseconds),
+    },
   )
   const serverSubscription = server.attach(worker)
 
@@ -53,17 +59,33 @@ export const runWorkerProgram = (
     }
     const onMessage = (event: MessageEvent<unknown>) => {
       if (! isWorkerStatusMessage(event.data)) return
-      if (event.data.type === 'sudoer:worker-exit') finish(normalExit(event.data.exitCode))
+      if (event.data.type === 'sudoer:worker-exit') {
+        const usage = event.data.usage
+        if (usage) {
+          process.accounting.addUser(usage.userMs)
+          process.accounting.addBlocked(Math.max(
+            0,
+            usage.syscallMs - process.accounting.selfUsage.systemMs,
+          ))
+        }
+        else process.accounting.addUser(monotonicNow() - workerStartedAt)
+        finish(normalExit(event.data.exitCode))
+      }
       else {
+        process.accounting.addUser(monotonicNow() - workerStartedAt)
         process.error(event.data.stack ?? event.data.message)
         finish(normalExit(128))
       }
     }
     const onError = (event: ErrorEvent) => {
+      process.accounting.addUser(monotonicNow() - workerStartedAt)
       process.error(errorMessage(event.error ?? event.message))
       finish(normalExit(128))
     }
-    const signalSubscription = process.on('signal', signal => finish(signalExit(signal)))
+    const signalSubscription = process.on('signal', (signal) => {
+      process.accounting.addUser(monotonicNow() - workerStartedAt)
+      finish(signalExit(signal))
+    })
 
     worker.addEventListener('message', onMessage)
     worker.addEventListener('error', onError)
