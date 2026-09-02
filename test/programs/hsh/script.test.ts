@@ -5,6 +5,11 @@ import {
 } from '@/programs/hsh/script'
 
 describe('hsh control-flow parser', () => {
+  it('rejects reserved words outside their grammar position', () => {
+    expect(() => parseControlScript('in value')).toThrow('Unexpected \'in\'')
+    expect(() => parseControlScript('then echo value')).toThrow('Unexpected \'then\'')
+  })
+
   it('parses command lists and logical connectors without expanding command text', () => {
     expect(parseControlScript('first $VALUE; second && third || fourth')).toEqual({
       entries: [

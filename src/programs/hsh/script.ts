@@ -1,5 +1,6 @@
 import { UserError } from '@/utils/errors'
 import { findShellParenthesisEnd } from './parse'
+import { HSH_RESERVED_WORDS } from './reserved_words'
 
 type ScriptToken =
   | { type: 'word', value: string, begin: number, end: number }
@@ -148,8 +149,6 @@ const lexScript = (source: string) => {
   return tokens
 }
 
-const TERMINATORS = new Set(['then', 'elif', 'else', 'fi', 'do', 'done'])
-
 class ScriptParser {
   private cursor = 0
 
@@ -221,7 +220,7 @@ class ScriptParser {
       case 'until': return this.parseLoop('until')
       case 'for': return this.parseFor()
       default:
-        if (TERMINATORS.has(token.value)) throw new UserError(`Unexpected '${token.value}'`)
+        if (HSH_RESERVED_WORDS.has(token.value)) throw new UserError(`Unexpected '${token.value}'`)
         return this.parseSimple()
     }
   }

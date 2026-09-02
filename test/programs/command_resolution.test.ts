@@ -73,13 +73,27 @@ describe('shell command introspection', () => {
     )
   })
 
+  it('type identifies shell reserved words before command lookup', async () => {
+    const { output, shell } = createShell()
+    const { type } = createCommands()
+
+    await expect(type(shell, 'type', 'if', 'then', 'in')).resolves.toBe(0)
+
+    expect(output.content).toBe(
+      'if is a reserved word\n' +
+      'then is a reserved word\n' +
+      'in is a reserved word\n',
+    )
+  })
+
   it('type reports resolution failures and returns a failure status', async () => {
     const { error, shell } = createShell()
     const { type } = createCommands()
 
-    await expect(type(shell, 'type', 'missing', 'unavailable', 'plain')).resolves.toBe(1)
+    await expect(type(shell, 'type', 'missing', 'toString', 'unavailable', 'plain')).resolves.toBe(1)
 
     expect(error.content).toContain('missing: not found')
+    expect(error.content).toContain('toString: not found')
     expect(error.content).toContain('native program \'unavailable\' is unavailable')
     expect(error.content).toContain('/bin/plain: not executable')
   })
@@ -92,5 +106,14 @@ describe('shell command introspection', () => {
 
     expect(output.content).toBe('echo\n/bin/tool\n')
     expect(error.content).toBe('')
+  })
+
+  it('command -v prints reserved words verbatim', async () => {
+    const { output, shell } = createShell()
+    const { command } = createCommands()
+
+    await expect(command(shell, 'command', '-v', 'if', 'do', 'done')).resolves.toBe(0)
+
+    expect(output.content).toBe('if\ndo\ndone\n')
   })
 })

@@ -2,6 +2,7 @@ import { createCommand } from '@/sys0/program'
 import { ExecError, ExecErrorT } from '@/sys0/exec'
 import { FOp } from '@/sys0/fs'
 import { UserError } from '@/utils/errors'
+import { HSH_RESERVED_WORDS } from './hsh/reserved_words'
 import { BuiltinRegistryProvider, resolveShellCommand } from './resolve_command'
 
 const displayResolutionError = (name: string, error: ExecError) => {
@@ -24,15 +25,23 @@ export const createTypeCommand = (getBuiltins: BuiltinRegistryProvider) => (
       if (! names.length) throw new UserError('Missing command name')
       let hasError = false
       names.forEach((name) => {
-        const resolved = resolveShellCommand(proc, name, getBuiltins())
+        const resolved = resolveShellCommand(proc, name, getBuiltins(), HSH_RESERVED_WORDS)
         if (resolved.isErr) {
           proc.error(displayResolutionError(name, resolved.err))
           hasError = true
           return
         }
-        proc.stdio.writeLn(resolved.val.kind === 'builtin'
-          ? `${name} is a shell builtin`
-          : `${name} is ${resolved.val.path}`)
+        switch (resolved.val.kind) {
+          case 'reserved':
+            proc.stdio.writeLn(`${name} is a reserved word`)
+            break
+          case 'builtin':
+            proc.stdio.writeLn(`${name} is a shell builtin`)
+            break
+          case 'executable':
+            proc.stdio.writeLn(`${name} is ${resolved.val.path}`)
+            break
+        }
       })
       return hasError ? 1 : 0
     })
