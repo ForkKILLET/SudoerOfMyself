@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sudoer Of Myself | beta</title>
+    <script type="module" crossorigin src="./assets/index-CevRI39-.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D_vClB6O.css">
+  </head>
+  <body>
+    <div id="app">
+      <div id="xterm-container"></div>
+      <main id="recovery" class="recovery" hidden>
+        <p id="recovery-eyebrow" class="recovery__eyebrow">RECOVERY MODE</p>
+        <h1 id="recovery-title">HumanOS could not start</h1>
+        <p id="recovery-description">
+          The local save may be damaged. Export it for inspection before resetting,
+          or reload the page to try again without changing it.
+        </p>
+        <pre id="recovery-error" class="recovery__error"></pre>
+        <div id="recovery-actions" class="recovery__actions">
+          <button id="recovery-export" type="button">Export save</button>
+          <button id="recovery-reset" class="recovery__reset" type="button">Reset save and reload</button>
+        </div>
+        <p id="recovery-status" class="recovery__status" aria-live="polite"></p>
+      </main>
+    </div>
+  </body>
+</html>
