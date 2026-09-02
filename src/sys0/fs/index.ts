@@ -363,10 +363,7 @@ export class Fs {
   }
 
   private absolutePath(path: string, cwd = this.cwd) {
-    let resolved = path
-    if (! Path.isAbsOrRel(resolved)) resolved = `./${resolved}`
-    if (! Path.isAbs(resolved)) resolved = Path.join(cwd, resolved)
-    return Path.normalize(resolved)
+    return Path.resolve(path, cwd)
   }
 
   private resolveMountedPath(path: string, cwd = this.cwd) {
@@ -443,6 +440,9 @@ export class Fs {
     if (mount) {
       const result = mount.fs.findInode(mountedPath, { allowedTypes, cwd: '/' })
       if (result.isErr) return result
+      if (Path.hasTrailingSlash(path) && result.val.inode.file.type !== FileT.DIR) {
+        return FOp.err({ type: FOp.T.NOT_DIR })
+      }
       return FOp.ok({
         ...result.val,
         path: absolute,
@@ -451,7 +451,6 @@ export class Fs {
       })
     }
     const parts = Path.split(absolute)
-    if (! parts[0]) parts.shift()
 
     const inodeStack: Inode[] = [this.root]
     const partStack = ['']
@@ -478,6 +477,9 @@ export class Fs {
 
     const inode = inodeStack.pop()
     if (! inode) return FOp.err({ type: FOp.T.DANGLING_INODE })
+    if (Path.hasTrailingSlash(path) && inode.file.type !== FileT.DIR) {
+      return FOp.err({ type: FOp.T.NOT_DIR })
+    }
     if (allowedTypes && ! this.isInodeOfType(inode, allowedTypes)) {
       return FOp.err({ type: FOp.T.NOT_ALLOWED_TYPE, allowedTypes })
     }
