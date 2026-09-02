@@ -1,4 +1,6 @@
 import { UserError } from '@/utils/errors'
+import type { ConditionExpression } from '../condition'
+import { parseDoubleBracketCondition } from './conditional'
 import { findShellParenthesisEnd } from './parse'
 import { HSH_RESERVED_WORDS } from './reserved_words'
 
@@ -25,6 +27,7 @@ export type HshStatement =
   | HshIfStatement
   | HshLoopStatement
   | HshForStatement
+  | HshConditionalStatement
 
 export interface HshSimpleStatement {
   type: 'simple'
@@ -53,6 +56,11 @@ export interface HshForStatement {
   name: string
   wordsSource: string
   body: HshControlScript
+}
+
+export interface HshConditionalStatement {
+  type: 'conditional'
+  expression: ConditionExpression<string>
 }
 
 export class IncompleteHshScriptError extends UserError {}
@@ -215,6 +223,7 @@ class ScriptParser {
     if (! token) throw new IncompleteHshScriptError('Expected command')
     if (token.type !== 'word') throw new UserError(`Unexpected token: ${this.displayToken(token)}`)
     switch (token.value) {
+      case '[[': return this.parseConditional()
       case 'if': return this.parseIf()
       case 'while': return this.parseLoop('while')
       case 'until': return this.parseLoop('until')
@@ -223,6 +232,23 @@ class ScriptParser {
         if (HSH_RESERVED_WORDS.has(token.value)) throw new UserError(`Unexpected '${token.value}'`)
         return this.parseSimple()
     }
+  }
+
+  private parseConditional(): HshConditionalStatement {
+    const open = this.peek() !
+    this.requireWord('[[')
+    while (this.cursor < this.tokens.length) {
+      const token = this.peek() !
+      if (token.type === 'word' && token.value === ']]') {
+        const expression = parseDoubleBracketCondition(
+          this.source.slice(open.end, token.begin),
+        )
+        this.cursor ++
+        return { type: 'conditional', expression }
+      }
+      this.cursor ++
+    }
+    throw new IncompleteHshScriptError('Expected \']]\'')
   }
 
   private parseSimple(): HshSimpleStatement {

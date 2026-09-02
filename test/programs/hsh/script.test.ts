@@ -10,6 +10,23 @@ describe('hsh control-flow parser', () => {
     expect(() => parseControlScript('then echo value')).toThrow('Unexpected \'then\'')
   })
 
+  it('parses double-bracket expressions as one conditional statement', () => {
+    expect(parseControlScript('[[ "$VALUE" == "hello world" && 4 -gt 2 ]] && echo yes'))
+      .toMatchObject({
+        entries: [
+          { condition: 'always', statement: { type: 'conditional' } },
+          { condition: 'success', statement: { type: 'simple', source: 'echo yes' } },
+        ],
+      })
+  })
+
+  it('keeps double-bracket input incomplete until the closing word', () => {
+    expect(() => parseControlScript('[[ value == value'))
+      .toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('[[ value == value\n'))
+      .toThrow('Expected \']]\'')
+  })
+
   it('parses command lists and logical connectors without expanding command text', () => {
     expect(parseControlScript('first $VALUE; second && third || fourth')).toEqual({
       entries: [

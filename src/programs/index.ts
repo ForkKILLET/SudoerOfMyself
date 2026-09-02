@@ -33,9 +33,11 @@ import { shift } from './shift'
 import { createEnvCommand } from './env'
 import { printenv } from './printenv'
 import { readonly } from './readonly'
+import { bracket, test } from './test'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
+  ['[']: bracket,
   break: breakLoop,
   cd,
   command: createCommandBuiltin(() => BUILTINS),
@@ -54,6 +56,7 @@ export const BUILTINS: Record<string, Program> = {
   readonly,
   set,
   shift,
+  test,
   type: createTypeCommand(() => BUILTINS),
   unset,
   true: succeed,

@@ -33,6 +33,7 @@ import {
 } from './control'
 import { initializeShellParameters, updateLastArgument } from './parameters'
 import { errorMessage, UserError } from '@/utils/errors'
+import { displayConditionError } from '../condition'
 import {
   displayFdError,
   type FdError,
@@ -41,6 +42,7 @@ import {
 } from '@/sys0/fd'
 import {
   type HshControlScript,
+  type HshConditionalStatement,
   type HshForStatement,
   type HshIfStatement,
   type HshLoopStatement,
@@ -48,6 +50,8 @@ import {
   IncompleteHshScriptError,
   parseControlScript,
 } from './script'
+import { evaluateDoubleBracketCondition } from './conditional'
+import { HSH_RESERVED_WORDS } from './reserved_words'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -431,11 +435,29 @@ const executeStatement = async (
         source: statement.source,
       })
     }
+    case 'conditional': return executeConditional(proc, statement, builtins)
     case 'if': return executeIf(proc, statement, builtins)
     case 'while':
     case 'until': return executeLoop(proc, statement, builtins)
     case 'for': return executeFor(proc, statement, builtins)
   }
+}
+
+const executeConditional = async (
+  proc: Process,
+  statement: HshConditionalStatement,
+  builtins: ProgramRegistry,
+) => {
+  const evaluated = await evaluateDoubleBracketCondition(
+    proc,
+    statement.expression,
+    source => executeCommandSubstitution(proc, source, builtins),
+  )
+  if (evaluated.isErr) {
+    proc.error(displayConditionError(evaluated.err))
+    return normalExit(2)
+  }
+  return normalExit(evaluated.val ? 0 : 1)
 }
 
 const executeCommandSubstitution = async (
@@ -591,7 +613,12 @@ export const getCompProvider = (
       return assignment ? [[assignment.name, assignment.value]] : []
     }))
     const installedPrograms = ctx.exec.listInPath(commandEnv.PATH ?? env.PATH, env.PWD)
-    return getCandidates([...installedPrograms, ...Object.keys(builtins)].map(name => ({ value: name })))
+    const commandNames = new Set([
+      ...installedPrograms,
+      ...Object.keys(builtins),
+      ...HSH_RESERVED_WORDS,
+    ])
+    return getCandidates([...commandNames].map(name => ({ value: name })))
   }
 
   const { dirname, filename } = Path.getDirAndName(etoken.content, true)

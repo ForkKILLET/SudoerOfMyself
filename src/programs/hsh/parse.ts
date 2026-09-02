@@ -54,6 +54,7 @@ export interface HshTokenText extends HshTokenBase {
   isDq?: boolean
   isSq?: boolean
   isBraceLiteral?: boolean
+  isPatternLiteral?: boolean
 }
 
 export interface HshTokenVariable extends HshTokenBase {
@@ -94,7 +95,7 @@ export interface HshTokenBackground extends HshTokenBase {
   type: 'background'
 }
 
-const findParameterEnd = (line: string, openIndex: number) => {
+export const findParameterEnd = (line: string, openIndex: number) => {
   let depth = 1
   let isEscaped = false
   let isSingleQuoted = false
@@ -212,7 +213,7 @@ export const tokenize = (line: string, isStrict = true) => {
         now += '\\'
         break
       }
-      if (ch === '{' || ch === '}') {
+      if (ch === '{' || ch === '}' || '*?[]'.includes(ch)) {
         if (now) {
           tokens.push({
             type: 'text',
@@ -231,7 +232,8 @@ export const tokenize = (line: string, isStrict = true) => {
           begin: i - 2,
           end: i,
           word,
-          isBraceLiteral: true,
+          isBraceLiteral: ch === '{' || ch === '}',
+          isPatternLiteral: '*?[]'.includes(ch),
         })
         begin = i
         continue
@@ -1040,7 +1042,7 @@ export interface HshAsyncExpansionOptions extends HshExpansionOptions {
   substituteCommand: (source: string) => Promise<string>
 }
 
-export const parseLineAsync = async (
+export const expandLineAsync = async (
   line: string,
   env: Env,
   options: HshAsyncExpansionOptions,
@@ -1051,5 +1053,11 @@ export const parseLineAsync = async (
     if (token.type !== 'substitution') continue
     commandResults.set(token.begin, await options.substituteCommand(token.content))
   }
-  return parse(expandCommandLine(tokens, env, { ...options, commandResults }))
+  return expandCommandLine(tokens, env, { ...options, commandResults })
 }
+
+export const parseLineAsync = async (
+  line: string,
+  env: Env,
+  options: HshAsyncExpansionOptions,
+) => parse(await expandLineAsync(line, env, options))

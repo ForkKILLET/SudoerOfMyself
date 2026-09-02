@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import stripAnsi from 'strip-ansi'
 import { parseControlScript } from '@/programs/hsh/script'
 import { createHsh, executeControlScript } from '@/programs/hsh'
 import { echo } from '@/programs/echo'
+import { bracket } from '@/programs/test'
 import { breakLoop, continueLoop } from '@/programs/loop_control'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
@@ -72,6 +73,80 @@ const run = async (source: string, builtins: Record<string, Program>) => {
 }
 
 describe('hsh control-flow execution', () => {
+  it('uses the bracket builtin as an if condition', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      if [ 3 -gt 2 ]; then emit yes; fi
+      if [ "" ]; then emit no; else emit fallback; fi
+    `, { '[': bracket, emit })
+
+    expect(result.output.content).toBe('yes\nfallback\n')
+    expect(result.error.content).toBe('')
+  })
+
+  it('executes double-bracket conditions with shell logical operators', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      VALUE="hello world"
+      [[ "$VALUE" == "hello world" && ( 4 -gt 2 || -n "$MISSING" ) ]] && emit yes
+      [[ -z "$VALUE" ]] || emit fallback
+    `, { emit })
+
+    expect(result.output.content).toBe('yes\nfallback\n')
+    expect(result.error.content).toBe('')
+    expect(result.status.code).toBe(0)
+  })
+
+  it('does not split unquoted double-bracket variable expansions', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      VALUE="two words"
+      [[ $VALUE == "two words" ]] && emit preserved
+    `, { emit })
+
+    expect(result.output.content).toBe('preserved\n')
+    expect(result.status.code).toBe(0)
+  })
+
+  it('matches unquoted double-bracket patterns and quotes literal fragments', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      VALUE=foobar
+      PATTERN='foo*'
+      [[ $VALUE == foo* ]] && emit star
+      [[ $VALUE == $PATTERN ]] && emit variable
+      [[ $VALUE != "$PATTERN" ]] && emit quoted-variable
+      [[ 'foo*' == foo\\* ]] && emit escaped-star
+      [[ b == [a-c] ]] && emit class
+      [[ d == [!a-c] ]] && emit negated-class
+      [[ preXpost == pre"X"p* ]] && emit partial
+      [[ "\${MISSING:-a b}" == 'a b' ]] && emit parameter-word
+    `, { emit })
+
+    expect(result.output.content).toBe(
+      'star\n' +
+      'variable\n' +
+      'quoted-variable\n' +
+      'escaped-star\n' +
+      'class\n' +
+      'negated-class\n' +
+      'partial\n' +
+      'parameter-word\n',
+    )
+    expect(result.error.content).toBe('')
+  })
+
+  it('short-circuits double-bracket operand expansion', async () => {
+    const sideEffect = vi.fn(() => 0)
+    const result = await run(`
+      [[ yes == yes || $(side-effect) ]]
+      [[ no == yes && $(side-effect) ]]
+    `, { 'side-effect': sideEffect })
+
+    expect(sideEffect).not.toHaveBeenCalled()
+    expect(result.error.content).toBe('')
+  })
+
   it('persists assignments performed by parameter expansion', async () => {
     const result = await run('echo ${created:=value}', { echo })
 
@@ -340,6 +415,38 @@ describe('hsh control-flow execution', () => {
 
     await expect(hsh(process, 'hsh')).resolves.toBe(0)
     expect(stripAnsi(output.content).match(/> /g)).toHaveLength(4)
+    expect(output.content).toContain('yes\n')
+    expect(error.content).toBe('')
+  })
+
+  it('continues double-bracket input until the closing word', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const term = {
+      buffer: { active: { cursorX: 0 } },
+      cols: 80,
+      doEcho: true,
+      getStringWidth: (value: string) => value.length,
+    } as unknown as Term
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      term,
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/', PATH: '/bin', PWD: '/' },
+      stdio: new Stdio(new KeyInput([
+        '[[', '\r',
+        'value == value', '\r',
+        ']] && echo yes', '\r',
+        '\x04',
+      ]), output, error),
+    })
+    const hsh = createHsh({ builtins: { echo } })
+
+    await expect(hsh(process, 'hsh')).resolves.toBe(0)
+    expect(stripAnsi(output.content).match(/> /g)).toHaveLength(2)
     expect(output.content).toContain('yes\n')
     expect(error.content).toBe('')
   })
