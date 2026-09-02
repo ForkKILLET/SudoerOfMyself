@@ -14,7 +14,7 @@ import {
   HshAstScript,
   HshTokenText,
   parseEnvAssignment,
-  parseLine,
+  parseLineAsync,
   tokenize,
 } from './parse'
 import { MakeOptional } from '@/utils/types'
@@ -423,17 +423,43 @@ const executeStatement = async (
   builtins: ProgramRegistry,
 ): Promise<ProcessExit> => {
   switch (statement.type) {
-    case 'simple':
-      return executeScript(proc, parseLine(statement.source, proc.env, {
+    case 'simple': {
+      const parsed = await parseLineAsync(statement.source, proc.env, {
         assignVariable: (name, value) => proc.variables.set(name, value),
-      }), builtins, {
+        substituteCommand: source => executeCommandSubstitution(proc, source, builtins),
+      })
+      return executeScript(proc, parsed, builtins, {
         source: statement.source,
       })
+    }
     case 'if': return executeIf(proc, statement, builtins)
     case 'while':
     case 'until': return executeLoop(proc, statement, builtins)
     case 'for': return executeFor(proc, statement, builtins)
   }
+}
+
+const executeCommandSubstitution = async (
+  proc: Process,
+  source: string,
+  builtins: ProgramRegistry,
+) => {
+  const capture = createPipe()
+  const fds = proc.stdio.fds.fork()
+  const replaced = fds.replace(1, writableFileTarget(capture.writer))
+  if (replaced.isErr) {
+    fds.closeAll()
+    throw new UserError(displayFdError(replaced.err))
+  }
+  await proc.spawn(
+    child => executeControlScript(child, parseControlScript(source), builtins),
+    {
+      name: 'hsh',
+      stdio: new Stdio(fds),
+      inheritShellVariables: true,
+    },
+  )
+  return (await capture.reader.read()).replace(/\n+$/u, '')
 }
 
 const createBackgroundStdio = (proc: Process) => {

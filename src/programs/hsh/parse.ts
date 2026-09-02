@@ -1,5 +1,6 @@
 import { createEnv, Env, getEnv, isEnvName } from '@/sys0/env'
 import { UserError } from '@/utils/errors'
+import { expandArithmetic } from './arithmetic'
 
 const ESCAPES: Record<string, string> = {
   n: '\n',
@@ -25,6 +26,8 @@ export type HshToken =
   | HshTokenText
   | HshTokenVariable
   | HshTokenParameter
+  | HshTokenCommandSubstitution
+  | HshTokenArithmetic
   | HshTokenHome
   | HshTokenBackground
   | HshTokenPipe
@@ -58,6 +61,16 @@ export interface HshTokenVariable extends HshTokenBase {
 
 export interface HshTokenParameter extends HshTokenBase {
   type: 'parameter'
+  isDq?: boolean
+}
+
+export interface HshTokenCommandSubstitution extends HshTokenBase {
+  type: 'commandSubstitution'
+  isDq?: boolean
+}
+
+export interface HshTokenArithmetic extends HshTokenBase {
+  type: 'arithmetic'
   isDq?: boolean
 }
 
@@ -105,6 +118,36 @@ const findParameterEnd = (line: string, openIndex: number) => {
     if (isSingleQuoted || isDoubleQuoted) continue
     if (char === '{') depth ++
     else if (char === '}' && -- depth === 0) return index
+  }
+  return - 1
+}
+
+export const findShellParenthesisEnd = (line: string, openIndex: number) => {
+  let depth = 1
+  let isEscaped = false
+  let isSingleQuoted = false
+  let isDoubleQuoted = false
+  for (let index = openIndex + 1; index < line.length; index ++) {
+    const char = line[index]
+    if (isEscaped) {
+      isEscaped = false
+      continue
+    }
+    if (char === '\\' && ! isSingleQuoted) {
+      isEscaped = true
+      continue
+    }
+    if (char === '\'' && ! isDoubleQuoted) {
+      isSingleQuoted = ! isSingleQuoted
+      continue
+    }
+    if (char === '"' && ! isSingleQuoted) {
+      isDoubleQuoted = ! isDoubleQuoted
+      continue
+    }
+    if (isSingleQuoted || isDoubleQuoted) continue
+    if (char === '(') depth ++
+    else if (char === ')' && -- depth === 0) return index
   }
   return - 1
 }
@@ -387,6 +430,27 @@ export const tokenize = (line: string, isStrict = true) => {
       })
       begin = i
     }
+    else if (! isSq && ch === '$' && line[i] === '(') {
+      consumeNow()
+      const end = findShellParenthesisEnd(line, i)
+      if (end === - 1) {
+        if (isStrict) throw new UserError('Unmatched command or arithmetic expansion')
+        now += line.slice(i - 1)
+        break
+      }
+      const isArithmetic = line[i + 1] === '(' && line[end - 1] === ')'
+      tokens.push({
+        type: isArithmetic ? 'arithmetic' : 'commandSubstitution',
+        content: isArithmetic
+          ? line.slice(i + 2, end - 1)
+          : line.slice(i + 1, end),
+        begin: i - 1,
+        end,
+        isDq,
+      })
+      i = end + 1
+      begin = i
+    }
     else if (! isSq && ch === '$' && line[i] === '{') {
       consumeNow()
       const end = findParameterEnd(line, i)
@@ -575,6 +639,7 @@ const expandBraces = (tokens: HshToken[]) => {
 export interface HshExpansionOptions {
   assignVariable?: (name: string, value: string) => void
   fieldSplitting?: boolean
+  commandResults?: ReadonlyMap<number, string>
 }
 
 const PARAMETER_NAME = /^([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[?!$#*@_-])(.*)$/s
@@ -712,6 +777,17 @@ export const expand = (
           else appendScalar(expandParameter(expression, env, options), Boolean(token.isDq))
           break
         }
+        case 'commandSubstitution': {
+          const result = options.commandResults?.get(token.begin)
+          if (result === undefined) {
+            throw new UserError('Command substitution requires asynchronous shell expansion')
+          }
+          appendScalar(result, Boolean(token.isDq))
+          break
+        }
+        case 'arithmetic':
+          appendScalar(expandArithmetic(token.content, env), Boolean(token.isDq))
+          break
       }
     })
     return exists ? fields : []
@@ -937,3 +1013,21 @@ export const parseLine = (
   env: Env,
   options: HshExpansionOptions = {},
 ) => parse(expandCommandLine(tokenize(line), env, options))
+
+export interface HshAsyncExpansionOptions extends HshExpansionOptions {
+  substituteCommand: (source: string) => Promise<string>
+}
+
+export const parseLineAsync = async (
+  line: string,
+  env: Env,
+  options: HshAsyncExpansionOptions,
+) => {
+  const tokens = tokenize(line)
+  const commandResults = new Map<number, string>()
+  for (const token of tokens) {
+    if (token.type !== 'commandSubstitution') continue
+    commandResults.set(token.begin, await options.substituteCommand(token.content))
+  }
+  return parse(expandCommandLine(tokens, env, { ...options, commandResults }))
+}

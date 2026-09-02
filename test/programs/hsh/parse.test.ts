@@ -380,6 +380,14 @@ describe('hsh parser', () => {
       .toEqual({ commands: [{ name: 'emit', args: ['remaining'] }] })
   })
 
+  it('expands integer arithmetic without evaluating JavaScript', () => {
+    expect(parseLine('emit $((count + 2 * 3)) "$((count > 3))"', { count: '4' }))
+      .toEqual({
+        commands: [{ name: 'emit', args: ['10', '1'] }],
+      })
+    expect(() => parseLine('emit $((1 / 0))', {})).toThrow('Division by zero')
+  })
+
   it('only expands the current-user home marker at the start of a word', () => {
     expect(parseLine('echo ~ ~/file prefix~ ~someone', { HOME: '/home/sudoer' })).toEqual({
       commands: [{

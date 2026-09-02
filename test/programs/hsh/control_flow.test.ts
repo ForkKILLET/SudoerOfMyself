@@ -80,6 +80,19 @@ describe('hsh control-flow execution', () => {
     expect(result.process.variables.isExported('created')).toBe(false)
   })
 
+  it('captures command substitution output in an isolated subshell', async () => {
+    const emit: Program = (proc, _self, ...args) => proc.stdio.writeLn(args.join(' ')) ?? 0
+    const result = await run(`
+      VALUE=outer
+      emit "$(VALUE=inner; emit $VALUE; emit second)"
+      emit $(emit "two words")
+      emit $VALUE
+    `, { emit })
+
+    expect(result.output.content).toBe('inner\nsecond\ntwo words\nouter\n')
+    expect(result.process.env.VALUE).toBe('outer')
+  })
+
   it('executes lists and short-circuits && and ||', async () => {
     const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
     const { output, status } = await run(

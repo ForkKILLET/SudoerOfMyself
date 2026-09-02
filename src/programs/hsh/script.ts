@@ -1,4 +1,5 @@
 import { UserError } from '@/utils/errors'
+import { findShellParenthesisEnd } from './parse'
 
 type ScriptToken =
   | { type: 'word', value: string, begin: number, end: number }
@@ -99,6 +100,15 @@ const lexScript = (source: string) => {
     let isEscaped = false
     while (index < source.length) {
       const wordChar = source[index]
+      if (! isSingleQuoted && source.startsWith('$(', index)) {
+        const end = findShellParenthesisEnd(source, index + 1)
+        if (end === - 1) {
+          index = source.length
+          break
+        }
+        index = end + 1
+        continue
+      }
       if (isEscaped) {
         isEscaped = false
         index ++
