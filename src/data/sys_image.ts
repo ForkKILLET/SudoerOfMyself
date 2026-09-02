@@ -7,7 +7,7 @@ export const getRootImage = () => Vfs.dir({
     '.profile': Vfs.normal(DEFAULT_PROFILE),
     'test': Vfs.dir(Object.fromEntries(
       range(1, 30)
-        .map(i => [`file-${i.toString().padStart(3 + Math.trunc(i / 3), '0')}.txt`, Vfs.normal(`${i}`)]),
+        .map(i => [`file-${i.toString().padStart(3, '0')}.txt`, Vfs.normal(`${i}`)]),
     )),
     'hello.txt': Vfs.normal('Hello, world!'),
   }),
