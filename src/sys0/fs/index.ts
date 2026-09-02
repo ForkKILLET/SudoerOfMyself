@@ -36,9 +36,14 @@ export const displayFileT = (type: FileT) => {
 }
 
 export type InodeId = number
+export interface InodeMetadata {
+  createdAt: number
+  modifiedAt: number
+}
 export interface Inode<F extends File = File> {
   iid: InodeId
   file: F
+  metadata: InodeMetadata
   executable?: ExecutableDescriptor
 }
 export type Inodes = Map<InodeId, Inode>
@@ -109,6 +114,15 @@ const SAVE_DEBOUNCE_MS = 25
 export interface InodeMaintainer {
   inodes: Inodes
   inodeBitmap: Bitmap
+}
+
+export interface FileStat {
+  iid: InodeId
+  type: FileT
+  size: number
+  createdAt: number
+  modifiedAt: number
+  executable: boolean
 }
 
 export namespace FOp {
@@ -185,6 +199,7 @@ export namespace FOp {
   }>
   export type MkdirResult = OperationResult<{ dir: DirFile }>
   export type OpenResult<FM extends FileMode> = OperationResult<{ handle: FileHandleFromMode<FM> }>
+  export type StatResult = OperationResult<FileStat>
   export type CreateResult<F extends File = File> = OperationResult<{
     inode: Inode<F>
     createdInodes: Inode[]
@@ -226,6 +241,7 @@ export class Fs {
   readonly persistence: FsPersistence
   readonly isReadOnly: boolean
   private readonly getCwd: () => string
+  private readonly now: () => number
   private readonly mounts: MountedFs[] = []
   private readonly mountsByParent = new WeakMap<DirFile, Map<string, MountedFs>>()
   private saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -238,15 +254,18 @@ export class Fs {
       getCwd = () => '/',
       mounts = [],
       readOnly = false,
+      now = Date.now,
     }: {
       persistence?: FsPersistence
       getCwd?: () => string
       mounts?: readonly FsMount[]
       readOnly?: boolean
+      now?: () => number
     } = {},
   ) {
     this.persistence = persistence
     this.getCwd = getCwd
+    this.now = now
     this.isReadOnly = readOnly
     this.load()
     mounts.forEach(mount => this.mount(mount))
@@ -354,10 +373,11 @@ export class Fs {
 
   private freezeFiles() {
     this.inodes.forEach((inode) => {
-      const { file, executable } = inode
+      const { file, executable, metadata } = inode
       if (file.type === FileT.DIR) Object.freeze(file.entries)
       Object.freeze(file)
       if (executable) Object.freeze(executable)
+      Object.freeze(metadata)
       Object.freeze(inode)
     })
   }
@@ -401,7 +421,7 @@ export class Fs {
   }
 
   private createUnchecked<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
-    const result = Vfs.create(this, tree)
+    const result = Vfs.create(this, tree, this.now())
     if (result.isOk) {
       result.val.createdInodes.forEach((inode) => {
         FILE_SYSTEM_OWNER.set(inode.file, this)
@@ -419,6 +439,7 @@ export class Fs {
     if (createRes.isErr) return createRes
 
     parent.file.entries[name] = createRes.val.inode.iid
+    parent.metadata.modifiedAt = this.now()
     this.markDirty(createPutsDelta([
       parent,
       ...createRes.val.createdInodes,
@@ -512,6 +533,26 @@ export class Fs {
 
   findU<FT extends FileT = FileT>(path: string, options: FOp.FindOptions<FT> = {}) {
     return this.unwrap(this.find(path, options), path)
+  }
+
+  stat(path: string, cwd = this.cwd): FOp.StatResult {
+    const result = this.findInode(path, { cwd })
+    if (result.isErr) return result
+    const { inode } = result.val
+    return FOp.ok({
+      iid: inode.iid,
+      type: inode.file.type,
+      size: inode.file.type === FileT.NORMAL
+        ? new TextEncoder().encode(inode.file.content).byteLength
+        : 0,
+      createdAt: inode.metadata.createdAt,
+      modifiedAt: inode.metadata.modifiedAt,
+      executable: inode.executable !== undefined,
+    })
+  }
+
+  statU(path: string, cwd = this.cwd) {
+    return this.unwrap(this.stat(path, cwd), path)
   }
 
   getChild(dir: DirFile, childName: string) {
@@ -613,6 +654,7 @@ export class Fs {
     this.inodes.delete(iid)
     this.inodeBitmap.set(iid, 0)
     delete parentInode.file.entries[filename]
+    parentInode.metadata.modifiedAt = this.now()
 
     this.markDirty(mergeFsDelta(
       createDeleteDelta(iid),
@@ -646,6 +688,7 @@ export class Fs {
 
   private markInodeDirty = (inode: Inode) => {
     if (this.inodes.get(inode.iid) !== inode) return
+    inode.metadata.modifiedAt = this.now()
     this.markDirty(createPutDelta(inode))
   }
 
@@ -681,7 +724,7 @@ export class Fs {
 
     if (mode === 'w' || mode === 'rw') {
       inode.file.content = ''
-      this.markDirty(createPutDelta(inode))
+      this.markInodeDirty(inode)
     }
 
     return FOp.ok({

@@ -1,7 +1,7 @@
 import type { Inode, InodeId } from '.'
 
 export const FILE_SYSTEM_IMAGE_FORMAT = 'sudoer-of-myself/file-system'
-export const FILE_SYSTEM_IMAGE_VERSION = 1
+export const FILE_SYSTEM_IMAGE_VERSION = 2
 
 export interface FileSystemImage {
   format: typeof FILE_SYSTEM_IMAGE_FORMAT
@@ -47,12 +47,21 @@ export function assertFileSystemImage(value: unknown): asserts value is FileSyst
   const inodes = image.inodes as unknown[]
   inodes.forEach((candidate: unknown, index: number) => {
     if (! isRecord(candidate)) invalidImage(`inode ${index} is not an object`)
-    const { iid, file, executable } = candidate as Record<string, unknown>
+    const { iid, file, metadata, executable } = candidate as Record<string, unknown>
     if (! Number.isSafeInteger(iid) || (iid as number) < 1) {
       invalidImage(`inode ${index} has an invalid id`)
     }
     if (inodeIds.has(iid as number)) invalidImage(`duplicate inode ${String(iid)}`)
     inodeIds.add(iid as number)
+
+    if (! isRecord(metadata)) invalidImage(`inode ${String(iid)} has invalid metadata`)
+    const { createdAt, modifiedAt } = metadata as Record<string, unknown>
+    if (! Number.isFinite(createdAt) || (createdAt as number) < 0) {
+      invalidImage(`inode ${String(iid)} has an invalid creation time`)
+    }
+    if (! Number.isFinite(modifiedAt) || (modifiedAt as number) < 0) {
+      invalidImage(`inode ${String(iid)} has an invalid modification time`)
+    }
 
     if (! isRecord(file)) invalidImage(`inode ${String(iid)} has no file`)
     const fileRecord = file as Record<string, unknown>

@@ -16,11 +16,13 @@ import {
   type FsDelta,
 } from '@/sys0/fs/image'
 
+const metadata = { createdAt: 0, modifiedAt: 0 }
+
 const createReplacement = (): FileSystemReplacement => ({
   format: FILE_SYSTEM_IMAGE_FORMAT,
   version: FILE_SYSTEM_IMAGE_VERSION,
   rootIid: 1,
-  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
+  inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} }, metadata }],
 })
 
 const createImage = (revision: number): FileSystemImage => ({
@@ -42,7 +44,7 @@ describe('QueuedFsPersistence', () => {
     const persistence = await QueuedFsPersistence.create(store)
 
     persistence.commit(createReplaceAllDelta(createReplacement()))
-    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} }, metadata }))
     expect(persistence.load()?.revision).toBe(1)
     await persistence.flush()
 
@@ -87,7 +89,7 @@ describe('QueuedFsPersistence', () => {
     persistence.commit(createReplaceAllDelta(createReplacement()))
 
     await expect(persistence.flush()).rejects.toBe(conflict)
-    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} }, metadata }))
     await expect(persistence.flush()).rejects.toBe(conflict)
     expect(attempts).toBe(1)
   })
@@ -104,7 +106,7 @@ describe('QueuedFsPersistence', () => {
     }
     const persistence = await QueuedFsPersistence.create(store)
 
-    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} } }))
+    persistence.commit(createPutDelta({ iid: 1, file: { type: FileT.DIR, entries: {} }, metadata }))
     await persistence.flush()
 
     expect(expectedRevisions).toEqual([7])

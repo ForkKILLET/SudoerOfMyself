@@ -20,6 +20,7 @@ import { jobs } from './jobs'
 import { wait } from './wait'
 import { kill } from './kill'
 import { sleep } from './sleep'
+import { stat } from './stat'
 import { exit } from './exit'
 import { exportEnv } from './export'
 import { read } from './read'
@@ -79,6 +80,7 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   ps,
   rm,
   sleep,
+  stat,
   tee,
   hsh,
   help,

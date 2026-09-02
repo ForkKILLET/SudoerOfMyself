@@ -13,9 +13,12 @@ import {
   mergeFsDelta,
 } from '@/sys0/fs/image'
 
+const metadata = { createdAt: 0, modifiedAt: 0 }
+
 const normalInode = (iid: number, content: string): Inode => ({
   iid,
   file: { type: FileT.NORMAL, content },
+  metadata,
 })
 
 const replacement = (content: string): FileSystemReplacement => ({
@@ -23,7 +26,7 @@ const replacement = (content: string): FileSystemReplacement => ({
   version: FILE_SYSTEM_IMAGE_VERSION,
   rootIid: 1,
   inodes: [
-    { iid: 1, file: { type: FileT.DIR as const, entries: { file: 2 } } },
+    { iid: 1, file: { type: FileT.DIR as const, entries: { file: 2 } }, metadata },
     normalInode(2, content),
   ],
 })
@@ -114,6 +117,22 @@ describe('FsDelta application', () => {
 })
 
 describe('FileSystemImage validation', () => {
+  it('requires valid inode timestamps', () => {
+    const image = { ...replacement('data'), revision: 1 }
+    const missingMetadata = structuredClone(image) as unknown as {
+      inodes: Array<Record<string, unknown>>
+    }
+    delete missingMetadata.inodes[0].metadata
+
+    expect(() => assertFileSystemImage(missingMetadata)).toThrow('invalid metadata')
+    expect(() => assertFileSystemImage({
+      ...image,
+      inodes: image.inodes.map(inode => inode.iid === 2
+        ? { ...inode, metadata: { ...metadata, modifiedAt: - 1 } }
+        : inode),
+    })).toThrow('invalid modification time')
+  })
+
   it('rejects invalid revisions and dangling inode references', () => {
     expect(() => assertFileSystemImage({
       ...replacement('data'),
@@ -122,7 +141,7 @@ describe('FileSystemImage validation', () => {
     expect(() => assertFileSystemImage({
       ...replacement('data'),
       revision: 1,
-      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: { missing: 9 } } }],
+      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: { missing: 9 } }, metadata }],
     })).toThrow('dangling inode reference 9')
   })
 })

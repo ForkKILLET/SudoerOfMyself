@@ -78,6 +78,37 @@ describe('Fs file handles', () => {
 })
 
 describe('Fs mutation consistency', () => {
+  it('tracks inode timestamps and reports UTF-8 file sizes', () => {
+    let timestamp = 10
+    const fs = new Fs(Vfs.dir({ file: Vfs.normal('old') }), {
+      persistence: new MemoryFsPersistence(),
+      now: () => timestamp,
+    })
+
+    expect(fs.statU('/file')).toMatchObject({
+      size: 3,
+      createdAt: 10,
+      modifiedAt: 10,
+    })
+
+    timestamp = 20
+    fs.openU('/file', 'a').handle.write('🙂')
+    expect(fs.statU('/file')).toMatchObject({
+      size: 7,
+      createdAt: 10,
+      modifiedAt: 20,
+    })
+
+    timestamp = 30
+    fs.mkdirU('/new')
+    expect(fs.statU('/new')).toMatchObject({ createdAt: 30, modifiedAt: 30 })
+    expect(fs.statU('/').modifiedAt).toBe(30)
+
+    timestamp = 40
+    fs.rmU('/new')
+    expect(fs.statU('/').modifiedAt).toBe(40)
+  })
+
   it('registers exact inode puts, deletes, and full replacements', async () => {
     const persistence = new RecordingPersistence()
     const fs = new Fs(Vfs.dir({ file: Vfs.normal('old') }), { persistence })

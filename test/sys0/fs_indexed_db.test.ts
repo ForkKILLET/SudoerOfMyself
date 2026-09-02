@@ -19,13 +19,15 @@ import {
   type FileSystemReplacement,
 } from '@/sys0/fs/image'
 
+const metadata = { createdAt: 0, modifiedAt: 0 }
+
 const replacement: FileSystemReplacement = {
   format: FILE_SYSTEM_IMAGE_FORMAT,
   version: FILE_SYSTEM_IMAGE_VERSION,
   rootIid: 1,
   inodes: [
-    { iid: 1, file: { type: FileT.DIR, entries: { file: 2 } } },
-    { iid: 2, file: { type: FileT.NORMAL, content: 'initial' } },
+    { iid: 1, file: { type: FileT.DIR, entries: { file: 2 } }, metadata },
+    { iid: 2, file: { type: FileT.NORMAL, content: 'initial' }, metadata },
   ],
 }
 
@@ -103,6 +105,7 @@ describe('IndexedDbFileSystemStore', () => {
     const update = createPutDelta({
       iid: 2,
       file: { type: FileT.NORMAL, content: 'updated' },
+      metadata,
     })
     await expect(store.commit(update, 0)).rejects.toBeInstanceOf(FileSystemRevisionConflictError)
     expect((await store.load())?.inodes).toEqual(replacement.inodes)
@@ -128,7 +131,7 @@ describe('IndexedDbFileSystemStore', () => {
     await store.commit(createReplaceAllDelta(replacement), 0)
     const emptyReplacement: FileSystemReplacement = {
       ...replacement,
-      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} } }],
+      inodes: [{ iid: 1, file: { type: FileT.DIR, entries: {} }, metadata }],
     }
 
     await store.commit(createReplaceAllDelta(emptyReplacement), 1)

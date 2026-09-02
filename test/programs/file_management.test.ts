@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir } from '@/programs/mkdir'
 import { rm } from '@/programs/rm'
+import { stat } from '@/programs/stat'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
@@ -84,5 +85,16 @@ describe('file-management commands', () => {
     await expect(rm(process, 'rm', '-r', '/nested')).resolves.toBe(0)
 
     expect(fs.find('/nested').isErr).toBe(true)
+  })
+
+  it('stat displays supported metadata and continues after missing files', async () => {
+    const { error, output, process } = createProcess()
+
+    await expect(stat(process, 'stat', '/file', '/missing')).resolves.toBe(1)
+
+    expect(output.content).toContain('File: /file')
+    expect(output.content).toContain('Size: 8')
+    expect(output.content).toContain('Type: normal file')
+    expect(error.content).toContain('Cannot stat \'/missing\'')
   })
 })
