@@ -2,6 +2,39 @@ import { describe, expect, it } from 'vitest'
 import { expand, parse, parseLine, tokenize } from '@/programs/hsh/parse'
 
 describe('hsh parser', () => {
+  it('reports half-open source ranges for every token kind', () => {
+    const source = 'echo "$USER"x 2>>out | \\{a\\} $(cmd) ${name} $((1 + 2)) &'
+    const tokens = tokenize(source)
+
+    expect(tokens.map(token => ({
+      type: token.type,
+      range: [token.begin, token.end],
+      source: source.slice(token.begin, token.end),
+    }))).toEqual([
+      { type: 'text', range: [0, 4], source: 'echo' },
+      { type: 'variable', range: [6, 11], source: '$USER' },
+      { type: 'text', range: [12, 13], source: 'x' },
+      { type: 'redirect', range: [14, 17], source: '2>>' },
+      { type: 'text', range: [17, 20], source: 'out' },
+      { type: 'pipe', range: [21, 22], source: '|' },
+      { type: 'text', range: [23, 25], source: '\\{' },
+      { type: 'text', range: [25, 26], source: 'a' },
+      { type: 'text', range: [26, 28], source: '\\}' },
+      { type: 'substitution', range: [29, 35], source: '$(cmd)' },
+      { type: 'parameter', range: [36, 43], source: '${name}' },
+      { type: 'arithmetic', range: [44, 54], source: '$((1 + 2))' },
+      { type: 'background', range: [55, 56], source: '&' },
+    ])
+  })
+
+  it('keeps expanded tokens adjacent across closing double quotes', () => {
+    expect(parseLine('emit "$VALUE"x "$(cmd)"y "$((1 + 1))"z', { VALUE: 'v' }, {
+      commandResults: new Map([[16, 'command']]),
+    })).toEqual({
+      commands: [{ name: 'emit', args: ['vx', 'commandy', '2z'] }],
+    })
+  })
+
   it('expands variables and quoted text into one argument', () => {
     const tokens = tokenize('echo "hello $USER"')
     const expanded = expand(tokens, { USER: 'sudoer' })

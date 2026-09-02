@@ -42,6 +42,7 @@ export type HshExpandedToken =
   | HshTokenRedirect
 
 export interface HshTokenBase {
+  /** UTF-16 source offsets using the half-open range [begin, end). */
   begin: number
   end: number
   content: string
@@ -65,7 +66,7 @@ export interface HshTokenParameter extends HshTokenBase {
 }
 
 export interface HshTokenCommandSubstitution extends HshTokenBase {
-  type: 'commandSubstitution'
+  type: 'substitution'
   isDq?: boolean
 }
 
@@ -174,7 +175,7 @@ export const tokenize = (line: string, isStrict = true) => {
         type: 'text',
         content: now,
         begin,
-        end: i - 1 + d,
+        end: i + d,
         isDq,
         isSq,
       })
@@ -215,7 +216,7 @@ export const tokenize = (line: string, isStrict = true) => {
             type: 'text',
             content: now,
             begin,
-            end: i - 3,
+            end: i - 2,
             isDq,
             isSq,
           })
@@ -225,7 +226,7 @@ export const tokenize = (line: string, isStrict = true) => {
           type: 'text',
           content: ch,
           begin: i - 2,
-          end: i - 1,
+          end: i,
           isBraceLiteral: true,
         })
         begin = i
@@ -256,7 +257,7 @@ export const tokenize = (line: string, isStrict = true) => {
             type: 'variable',
             content: '$' + ch,
             begin,
-            end: i - 1,
+            end: i,
             isDq,
           })
           isVar = false
@@ -282,7 +283,7 @@ export const tokenize = (line: string, isStrict = true) => {
             type: 'variable',
             content: '$' + vnow,
             begin,
-            end: i - 2,
+            end: i - 1,
             isDq,
           })
           begin = i - 1
@@ -307,7 +308,7 @@ export const tokenize = (line: string, isStrict = true) => {
       tokens.push({
         type: 'background',
         begin: i - 1,
-        end: i - 1,
+        end: i,
         content: ch,
       })
       begin = i
@@ -318,7 +319,7 @@ export const tokenize = (line: string, isStrict = true) => {
       tokens.push({
         type: 'pipe',
         begin: i - 1,
-        end: i - 1,
+        end: i,
         content: ch,
       })
       begin = i
@@ -344,7 +345,7 @@ export const tokenize = (line: string, isStrict = true) => {
           fd: explicitFd ?? (ch === '<' ? 0 : 1),
           mode: ch === '<' ? 'duplicate-read' : 'duplicate-write',
           begin,
-          end: i,
+          end: i + 1,
           content: `${explicitFd ?? ''}${ch}&`,
         })
         i ++
@@ -355,7 +356,7 @@ export const tokenize = (line: string, isStrict = true) => {
           fd: explicitFd ?? 1,
           mode: 'append',
           begin,
-          end: i,
+          end: i + 1,
           content: `${explicitFd ?? ''}>>`,
         })
         i ++
@@ -366,7 +367,7 @@ export const tokenize = (line: string, isStrict = true) => {
           fd: explicitFd ?? (ch === '<' ? 0 : 1),
           mode: ch === '<' ? 'read' : 'write',
           begin,
-          end: i - 1,
+          end: i,
           content: `${explicitFd ?? ''}${ch}`,
         })
       }
@@ -382,7 +383,7 @@ export const tokenize = (line: string, isStrict = true) => {
             type: 'text',
             content: '',
             begin,
-            end: i - 1,
+            end: i,
             isSq: true,
           })
         }
@@ -402,7 +403,7 @@ export const tokenize = (line: string, isStrict = true) => {
             type: 'text',
             content: '',
             begin,
-            end: i - 1,
+            end: i,
             isDq: true,
           })
         }
@@ -425,7 +426,7 @@ export const tokenize = (line: string, isStrict = true) => {
       tokens.push({
         type: 'home',
         begin,
-        end: i - 1,
+        end: i,
         content: '~',
       })
       begin = i
@@ -440,12 +441,12 @@ export const tokenize = (line: string, isStrict = true) => {
       }
       const isArithmetic = line[i + 1] === '(' && line[end - 1] === ')'
       tokens.push({
-        type: isArithmetic ? 'arithmetic' : 'commandSubstitution',
+        type: isArithmetic ? 'arithmetic' : 'substitution',
         content: isArithmetic
           ? line.slice(i + 2, end - 1)
           : line.slice(i + 1, end),
         begin: i - 1,
-        end,
+        end: end + 1,
         isDq,
       })
       i = end + 1
@@ -463,7 +464,7 @@ export const tokenize = (line: string, isStrict = true) => {
         type: 'parameter',
         content: line.slice(i - 1, end + 1),
         begin: i - 1,
-        end,
+        end: end + 1,
         isDq,
       })
       i = end + 1
@@ -588,11 +589,12 @@ const expandBraceContent = (content: string): string[] => {
 }
 
 const areWordTokensAdjacent = (previous: HshToken, next: HshToken) => (
-  previous.end + 1 === next.begin
+  previous.end === next.begin
   || (
-    (previous.type === 'variable' || previous.type === 'parameter')
+    previous.type !== 'text'
+    && 'isDq' in previous
     && previous.isDq
-    && previous.end + 2 === next.begin
+    && previous.end + 1 === next.begin
   )
 )
 
@@ -777,7 +779,7 @@ export const expand = (
           else appendScalar(expandParameter(expression, env, options), Boolean(token.isDq))
           break
         }
-        case 'commandSubstitution': {
+        case 'substitution': {
           const result = options.commandResults?.get(token.begin)
           if (result === undefined) {
             throw new UserError('Command substitution requires asynchronous shell expansion')
@@ -1026,7 +1028,7 @@ export const parseLineAsync = async (
   const tokens = tokenize(line)
   const commandResults = new Map<number, string>()
   for (const token of tokens) {
-    if (token.type !== 'commandSubstitution') continue
+    if (token.type !== 'substitution') continue
     commandResults.set(token.begin, await options.substituteCommand(token.content))
   }
   return parse(expandCommandLine(tokens, env, { ...options, commandResults }))

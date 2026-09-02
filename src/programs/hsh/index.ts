@@ -541,10 +541,10 @@ export const getCompProvider = (
   ]
 
   const [, token] = [...tokens.entries()]
-    .find(([, token]) => isBetween(line.cursor - 1, token.begin, token.end))
+    .find(([, token]) => isBetween(line.cursor - 1, token.begin, token.end - 1))
     ?? getEmptyTokenEntry()
   const [expandedTokenIndex, etoken] = [...etokens.entries()]
-    .find(([, etoken]) => isBetween(line.cursor - 1, etoken.begin, etoken.end))
+    .find(([, etoken]) => isBetween(line.cursor - 1, etoken.begin, etoken.end - 1))
     ?? getEmptyTokenEntry()
 
   const getCandidates = (
