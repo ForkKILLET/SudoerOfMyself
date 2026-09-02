@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createHsh } from '@/programs/hsh'
+import { set } from '@/programs/set'
+import { shift } from '@/programs/shift'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
@@ -76,5 +78,52 @@ describe('hsh special parameters', () => {
 
     expect(captured['?']).toBe('7')
     expect(captured['_']).toBe('last')
+  })
+
+  it('replaces and shifts positional parameters while preserving argument boundaries', async () => {
+    const shell = createShell()
+    let capturedArgs: string[] = []
+    let capturedEnv: Record<string, string> = {}
+    const hsh = createHsh({
+      builtins: {
+        set,
+        shift,
+        capture: (process, _self, ...args) => {
+          capturedArgs = args
+          capturedEnv = { ...process.env }
+          return 0
+        },
+      },
+    })
+
+    await hsh(
+      shell,
+      'hsh',
+      '-c',
+      'set -- alpha "two words" three; shift; capture "$#" "$1" "$2" "$@" "$*"',
+    )
+
+    expect(capturedArgs).toEqual([
+      '2',
+      'two words',
+      'three',
+      'two words',
+      'three',
+      'two words three',
+    ])
+    expect(capturedEnv['#']).toBe('2')
+    expect(capturedEnv['1']).toBe('two words')
+    expect(capturedEnv['2']).toBe('three')
+    expect(capturedEnv['3']).toBeUndefined()
+  })
+
+  it('rejects shifting past the available positional parameters', async () => {
+    const shell = createShell()
+    const hsh = createHsh({ builtins: { set, shift } })
+
+    await expect(hsh(shell, 'hsh', '-c', 'set -- one; shift 2'))
+      .resolves.toBe(1)
+    expect(shell.env['1']).toBe('one')
+    expect(shell.env['#']).toBe('1')
   })
 })

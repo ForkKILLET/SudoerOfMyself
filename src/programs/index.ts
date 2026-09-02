@@ -28,6 +28,8 @@ import { createTypeCommand } from './type'
 import { createCommandBuiltin } from './command'
 import { breakLoop, continueLoop } from './loop_control'
 import { fail, succeed } from './status'
+import { set } from './set'
+import { shift } from './shift'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -44,6 +46,8 @@ export const BUILTINS: Record<string, Program> = {
   kill,
   pwd,
   read,
+  set,
+  shift,
   type: createTypeCommand(() => BUILTINS),
   unset,
   true: succeed,
