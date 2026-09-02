@@ -46,6 +46,7 @@ export interface HshTokenBase {
   begin: number
   end: number
   content: string
+  word: number
 }
 
 export interface HshTokenText extends HshTokenBase {
@@ -160,9 +161,9 @@ export const tokenize = (line: string, isStrict = true) => {
   let isSq = false
   let isDq = false
   let quoteTokenCount = 0
-  let quoteBufferedLength = 0
   let isVar = false
   let isWh = true
+  let word = 0
   let now = ''
   let enow = ''
   let vnow = ''
@@ -176,6 +177,7 @@ export const tokenize = (line: string, isStrict = true) => {
         content: now,
         begin,
         end: i + d,
+        word,
         isDq,
         isSq,
       })
@@ -217,6 +219,7 @@ export const tokenize = (line: string, isStrict = true) => {
             content: now,
             begin,
             end: i - 2,
+            word,
             isDq,
             isSq,
           })
@@ -227,6 +230,7 @@ export const tokenize = (line: string, isStrict = true) => {
           content: ch,
           begin: i - 2,
           end: i,
+          word,
           isBraceLiteral: true,
         })
         begin = i
@@ -258,6 +262,7 @@ export const tokenize = (line: string, isStrict = true) => {
             content: '$' + ch,
             begin,
             end: i,
+            word,
             isDq,
           })
           isVar = false
@@ -284,6 +289,7 @@ export const tokenize = (line: string, isStrict = true) => {
             content: '$' + vnow,
             begin,
             end: i - 1,
+            word,
             isDq,
           })
           begin = i - 1
@@ -298,6 +304,7 @@ export const tokenize = (line: string, isStrict = true) => {
       if (! isWh) {
         consumeNow()
         isWh = true
+        word ++
       }
       begin ++
       continue
@@ -310,7 +317,9 @@ export const tokenize = (line: string, isStrict = true) => {
         begin: i - 1,
         end: i,
         content: ch,
+        word,
       })
+      word ++
       begin = i
       isWh = true
     }
@@ -321,7 +330,9 @@ export const tokenize = (line: string, isStrict = true) => {
         begin: i - 1,
         end: i,
         content: ch,
+        word,
       })
+      word ++
       begin = i
       isWh = true
     }
@@ -347,6 +358,7 @@ export const tokenize = (line: string, isStrict = true) => {
           begin,
           end: i + 1,
           content: `${explicitFd ?? ''}${ch}&`,
+          word,
         })
         i ++
       }
@@ -358,6 +370,7 @@ export const tokenize = (line: string, isStrict = true) => {
           begin,
           end: i + 1,
           content: `${explicitFd ?? ''}>>`,
+          word,
         })
         i ++
       }
@@ -369,8 +382,10 @@ export const tokenize = (line: string, isStrict = true) => {
           begin,
           end: i,
           content: `${explicitFd ?? ''}${ch}`,
+          word,
         })
       }
+      word ++
       begin = i
       isWh = true
     }
@@ -378,40 +393,42 @@ export const tokenize = (line: string, isStrict = true) => {
     else if (ch === '\'' && ! isDq) {
       if (isSq) {
         if (now) consumeNow(0)
-        else if (tokens.length === quoteTokenCount && now.length === quoteBufferedLength) {
+        else if (tokens.length === quoteTokenCount) {
           tokens.push({
             type: 'text',
             content: '',
             begin,
             end: i,
+            word,
             isSq: true,
           })
         }
         begin = i
       }
       else {
+        if (now) consumeNow()
         quoteTokenCount = tokens.length
-        quoteBufferedLength = now.length
       }
       isSq = ! isSq
     }
     else if (ch === '"' && ! isSq) {
       if (isDq) {
         if (now) consumeNow(0)
-        else if (tokens.length === quoteTokenCount && now.length === quoteBufferedLength) {
+        else if (tokens.length === quoteTokenCount) {
           tokens.push({
             type: 'text',
             content: '',
             begin,
             end: i,
+            word,
             isDq: true,
           })
         }
         begin = i
       }
       else {
+        if (now) consumeNow()
         quoteTokenCount = tokens.length
-        quoteBufferedLength = now.length
       }
       isDq = ! isDq
     }
@@ -428,6 +445,7 @@ export const tokenize = (line: string, isStrict = true) => {
         begin,
         end: i,
         content: '~',
+        word,
       })
       begin = i
     }
@@ -447,6 +465,7 @@ export const tokenize = (line: string, isStrict = true) => {
           : line.slice(i + 1, end),
         begin: i - 1,
         end: end + 1,
+        word,
         isDq,
       })
       i = end + 1
@@ -465,6 +484,7 @@ export const tokenize = (line: string, isStrict = true) => {
         content: line.slice(i - 1, end + 1),
         begin: i - 1,
         end: end + 1,
+        word,
         isDq,
       })
       i = end + 1
@@ -588,19 +608,14 @@ const expandBraceContent = (content: string): string[] => {
   return expanded
 }
 
-const areWordTokensAdjacent = (previous: HshToken, next: HshToken) => (
-  previous.end === next.begin
-  || (
-    previous.type !== 'text'
-    && 'isDq' in previous
-    && previous.isDq
-    && previous.end + 1 === next.begin
-  )
+const belongToSameWord = (previous: HshToken, next: HshToken) => (
+  previous.word === next.word
 )
 
 const expandBraces = (tokens: HshToken[]) => {
   const expanded: HshToken[] = []
   let word: HshToken[] = []
+  let nextExpandedWord = Math.max(- 1, ...tokens.map(token => token.word)) + 1
 
   const flushWord = () => {
     if (! word.length) return
@@ -620,7 +635,10 @@ const expandBraces = (tokens: HshToken[]) => {
         token.type === 'text' ? { ...token, content } : token,
       ]))
     }
-    expanded.push(...variants.flat())
+    variants.forEach((variant) => {
+      const expandedWord = nextExpandedWord ++
+      expanded.push(...variant.map(token => ({ ...token, word: expandedWord })))
+    })
     word = []
   }
 
@@ -631,7 +649,7 @@ const expandBraces = (tokens: HshToken[]) => {
       continue
     }
     const previous = word.at(- 1)
-    if (previous && ! areWordTokensAdjacent(previous, token)) flushWord()
+    if (previous && ! belongToSameWord(previous, token)) flushWord()
     word.push(token)
   }
   flushWord()
@@ -802,11 +820,13 @@ export const expand = (
     }
     const begin = group[0]?.begin ?? 0
     const end = group.at(- 1)?.end ?? begin
+    const word = group[0]?.word ?? 0
     expanded.push(...expandWord(group).map((content): HshExpandedTokenText => ({
       type: 'text',
       content,
       begin,
       end,
+      word,
     })))
   })
 
@@ -832,7 +852,7 @@ const splitTokenWords = (tokens: HshToken[]) => {
       groups.push(token)
       return
     }
-    if (word.length && ! areWordTokensAdjacent(word.at(- 1) !, token)) flushWord()
+    if (word.length && ! belongToSameWord(word.at(- 1) !, token)) flushWord()
     word.push(token)
   })
   flushWord()

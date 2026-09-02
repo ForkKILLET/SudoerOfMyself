@@ -112,6 +112,32 @@ describe('hsh parser', () => {
     })
   })
 
+  it('expands unquoted brace fragments inside a partly quoted word', () => {
+    expect(parseLine(
+      'echo "["{1..5}"]" "{"{a,b}"}" pre"{x,y}"post "pre"{x,y}"post"',
+      {},
+    )).toEqual({
+      commands: [{
+        name: 'echo',
+        args: [
+          '[1]', '[2]', '[3]', '[4]', '[5]',
+          '{a}', '{b}',
+          'pre{x,y}post',
+          'prexpost', 'preypost',
+        ],
+      }],
+    })
+  })
+
+  it('keeps adjacent quoted and unquoted fragments in the same word', () => {
+    expect(parseLine(
+      'emit a"$VALUE"b "$LEFT""$RIGHT" \'x\'"$VALUE"y',
+      { VALUE: 'v', LEFT: 'l', RIGHT: 'r' },
+    )).toEqual({
+      commands: [{ name: 'emit', args: ['avb', 'lr', 'xvy'] }],
+    })
+  })
+
   it('expands ascending, descending, padded, and character ranges', () => {
     expect(parseLine('echo {1..3} {3..1} {-1..1} {01..3} {a..c} {C..A}', {}))
       .toEqual({

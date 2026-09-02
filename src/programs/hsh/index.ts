@@ -537,6 +537,7 @@ export const getCompProvider = (
       content: '',
       begin: - 1,
       end: - 1,
+      word: 0,
     },
   ]
 
