@@ -1,8 +1,5 @@
 import type { Env } from '@/sys0/env'
 
-export const DEFAULT_PS1 = String.raw`\[\e[94m\]\w\[\e[39m\] \[\e[92m\]\$\[\e[39m\] `
-export const DEFAULT_PS2 = String.raw`\[\e[92m\]>\[\e[39m\] `
-
 export interface PromptRenderContext {
   env: Env
   jobs?: number

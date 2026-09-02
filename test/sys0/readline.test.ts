@@ -4,7 +4,7 @@ import { Context } from '@/sys0/context'
 import { FRead } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
 import { ProcessTable } from '@/sys0/process_table'
-import { Readline } from '@/sys0/readline'
+import { Readline, ReadlineHistory } from '@/sys0/readline'
 import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 import { Term } from '@/sys0/term'
 
@@ -111,6 +111,18 @@ const completions = [
 ]
 
 describe('readline completion editing', () => {
+  it('limits retained entries using the current HISTSIZE value', () => {
+    let maxSize = 2
+    const history = new ReadlineHistory(['one', 'two', 'three', ''], () => maxSize)
+
+    expect(history.hist).toEqual(['two', 'three', ''])
+    history.current = 'four'
+    maxSize = 1
+    history.commit()
+
+    expect(history.hist).toEqual(['four', ''])
+  })
+
   it.each([
     ['Alt + Backspace', '\x1B\x7F'],
     ['Alt + W', '\x1Bw'],

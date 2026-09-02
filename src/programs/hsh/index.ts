@@ -52,7 +52,8 @@ import {
 } from './script'
 import { evaluateDoubleBracketCondition } from './conditional'
 import { HSH_RESERVED_WORDS } from './reserved_words'
-import { DEFAULT_PS1, DEFAULT_PS2, renderPrompt } from './prompt'
+import { renderPrompt } from './prompt'
+import { appendHistoryEntry, parseHistoryFile, parseHistoryLimit } from './history'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -706,20 +707,48 @@ export const createHsh = ({
     }
 
     else if (! path) {
-      const historyFile = ctx.fs.openU('.hsh_history', 'ra').handle
       let pendingSource = ''
       let commandNumber = 1
 
-      if (! proc.variables.has('PS1')) {
-        proc.variables.set('PS1', DEFAULT_PS1, { exported: false })
+      const profilePath = Path.join(env.HOME, '.profile')
+      const profile = ctx.fs.open(profilePath, 'r', proc.cwd)
+      if (profile.isOk) {
+        await executeSource(proc, profile.val.handle.read())
       }
-      if (! proc.variables.has('PS2')) {
-        proc.variables.set('PS2', DEFAULT_PS2, { exported: false })
+      else if (profile.err.type !== FOp.T.NOT_FOUND) {
+        proc.error(`${profilePath}: ${FOp.displayError(profile.err)}`)
       }
 
+      const readHistoryContent = () => {
+        const path = env.HISTFILE
+        if (! path) return ''
+        const result = ctx.fs.open(path, 'r', proc.cwd)
+        if (result.isOk) return result.val.handle.read()
+        if (result.err.type !== FOp.T.NOT_FOUND) {
+          proc.error(`${path}: ${FOp.displayError(result.err)}`)
+        }
+        return ''
+      }
+      const writeHistoryEntry = (line: string) => {
+        const path = env.HISTFILE
+        if (! path || ! line.trim()) return
+        const content = readHistoryContent()
+        const saveSize = parseHistoryLimit(env.SAVEHIST, 1_000)
+        const result = ctx.fs.open(path, 'w', proc.cwd)
+        if (result.isErr) {
+          proc.error(`${path}: ${FOp.displayError(result.err)}`)
+          return
+        }
+        result.val.handle.write(appendHistoryEntry(content, line, saveSize))
+      }
       const readline = new Readline(proc, stdio, ctx.term)
-      const history = new ReadlineHistory(historyFile.read().split('\n'))
-      const getPrompt = (name: 'PS1' | 'PS2') => renderPrompt(env[name] ?? '', {
+      const history = new ReadlineHistory(
+        [...parseHistoryFile(readHistoryContent()), ''],
+        () => parseHistoryLimit(env.HISTSIZE, 1_000),
+      )
+      const getPrompt = (name: 'PS1' | 'PS2') => renderPrompt(env[name] ?? (
+        name === 'PS1' ? String.raw`\w $ ` : '> '
+      ), {
         env,
         jobs: proc.jobTable?.values().filter(job => job.state === 'running').length,
         historyNumber: history.size,
@@ -746,7 +775,7 @@ export const createHsh = ({
             loop.stop()
             return
           }
-          historyFile.appendLn(line)
+          writeHistoryEntry(line)
           const source = pendingSource ? `${pendingSource}\n${line}` : line
           const parseResult = Result.wrap(() => parseControlScript(source))
           if (parseResult.isErr && parseResult.err instanceof IncompleteHshScriptError) {

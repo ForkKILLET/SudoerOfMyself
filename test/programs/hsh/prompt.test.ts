@@ -1,10 +1,9 @@
 import stripAnsi from 'strip-ansi'
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_PS1,
-  DEFAULT_PS2,
   renderPrompt,
 } from '@/programs/hsh/prompt'
+import { DEFAULT_PS1, DEFAULT_PS2 } from '@/data/profile'
 
 describe('hsh prompt rendering', () => {
   it('renders the default prompts from PS1 and PS2 values', () => {

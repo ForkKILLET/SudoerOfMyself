@@ -15,6 +15,7 @@ import { Program } from '@/sys0/program'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
 import { Term } from '@/sys0/term'
+import { DEFAULT_PROFILE } from '@/data/profile'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -471,7 +472,9 @@ describe('hsh control-flow execution', () => {
       getStringWidth: (value: string) => value.length,
     } as unknown as Term
     const context = {
-      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      fs: new Fs(Vfs.dir({
+        home: Vfs.dir({ '.profile': Vfs.normal(DEFAULT_PROFILE) }),
+      }), { persistence: new MemoryFsPersistence() }),
       processes: new ProcessTable(),
       term,
     } as Context
@@ -486,7 +489,55 @@ describe('hsh control-flow execution', () => {
 
     expect(process.env.PS1).toContain('\\w')
     expect(process.env.PS2).toContain('>')
+    expect(process.env.HISTFILE).toBe('/home/.hsh_history')
+    expect(process.env.HISTSIZE).toBe('1000')
+    expect(process.env.SAVEHIST).toBe('1000')
     expect(stripAnsi(output.content)).toMatch(/^~ \$ /)
+  })
+
+  it('loads and saves the history file configured by profile variables', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const term = {
+      buffer: { active: { cursorX: 0 } },
+      cols: 80,
+      doEcho: true,
+      getStringWidth: (value: string) => value.length,
+    } as unknown as Term
+    const profile = [
+      `PS1=''`,
+      `PS2=''`,
+      'HISTFILE=$HOME/custom_history',
+      'HISTSIZE=2',
+      'SAVEHIST=2',
+    ].join('\n')
+    const fs = new Fs(Vfs.dir({
+      home: Vfs.dir({
+        '.profile': Vfs.normal(profile),
+        'custom_history': Vfs.normal('old command\n'),
+      }),
+    }), { persistence: new MemoryFsPersistence() })
+    const context = {
+      fs,
+      processes: new ProcessTable(),
+      term,
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/home', PATH: '/bin', PWD: '/home' },
+      stdio: new Stdio(new KeyInput([
+        'echo one', '\r',
+        'echo two', '\r',
+        '\x04',
+      ]), output, error),
+    })
+    const hsh = createHsh({ builtins: { echo } })
+
+    await expect(hsh(process, 'hsh')).resolves.toBe(0)
+
+    expect(fs.openU('/home/custom_history', 'r').handle.read())
+      .toBe('echo one\necho two\n')
+    expect(error.content).toBe('')
   })
 
   it('continues double-bracket input until the closing word', async () => {

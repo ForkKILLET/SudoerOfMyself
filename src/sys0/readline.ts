@@ -35,9 +35,13 @@ export interface ReadlineReadLnOptions {
 export class ReadlineHistory {
   index: number
 
-  constructor(public hist: string[] = []) {
+  constructor(
+    public hist: string[] = [],
+    private readonly maxSize?: Computed<number>,
+  ) {
     if (! hist.length) this.hist = ['']
     this.index = this.hist.length - 1
+    this.trim()
   }
 
   get size() {
@@ -63,6 +67,16 @@ export class ReadlineHistory {
   commit() {
     this.hist.push('')
     this.index ++
+    this.trim()
+  }
+
+  private trim() {
+    if (this.maxSize === undefined) return
+    const maxSize = Math.max(0, Math.floor(compute(this.maxSize)))
+    const excess = Math.max(0, this.hist.length - 1 - maxSize)
+    if (! excess) return
+    this.hist.splice(0, excess)
+    this.index -= excess
   }
 }
 

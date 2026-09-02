@@ -15,8 +15,9 @@ describe('system file-system images', () => {
     })
 
     expect(fs.find('/home/hello.txt').isOk).toBe(true)
+    expect(fs.openU('/home/.profile', 'r').handle.read()).toContain('HISTFILE=$HOME/.hsh_history')
     expect(fs.findInodeU('/bin/one').inode.executable?.programId).toBe('one')
     expect(fs.findInodeU('/bin/two').inode.executable?.programId).toBe('two')
-    expect(fs.inodes.size).toBe(33)
+    expect(fs.inodes.size).toBe(34)
   })
 })
