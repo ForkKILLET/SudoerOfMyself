@@ -8,12 +8,20 @@ import {
   FILE_SYSTEM_IMAGE_VERSION,
   type FsDelta,
 } from './image'
+import {
+  GAME_CLOCK_IMAGE_FORMAT,
+  GAME_CLOCK_IMAGE_VERSION,
+  type GameClockImage,
+  GameClockRevisionConflictError,
+} from '../time_persistence'
+import type { GameClockState } from '../time'
 
 export const FILE_SYSTEM_DATABASE_NAME = 'sudoer-of-myself'
 export const FILE_SYSTEM_DATABASE_VERSION = 3
 export const FILE_SYSTEM_META_OBJECT_STORE = 'meta'
 export const FILE_SYSTEM_INODES_OBJECT_STORE = 'inodes'
 export const FILE_SYSTEM_META_KEY = 'file-system'
+export const GAME_CLOCK_META_KEY = 'game-clock'
 const LEGACY_FILE_SYSTEM_OBJECT_STORE = 'file-system'
 
 interface StoredFileSystemMetadata {
@@ -26,6 +34,7 @@ interface StoredFileSystemMetadata {
 export interface RawIndexedDbFileSystem {
   metadata: unknown
   inodes: unknown[]
+  gameClock: unknown
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -98,16 +107,61 @@ export class IndexedDbFileSystemStore implements AsyncFileSystemStore {
       FILE_SYSTEM_INODES_OBJECT_STORE,
     ], 'readonly')
     const completion = transactionCompletion(transaction)
-    const [metadata, inodes] = await Promise.all([
+    const [metadata, inodes, gameClock] = await Promise.all([
       requestResult(
         transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).get(FILE_SYSTEM_META_KEY),
       ) as Promise<unknown>,
       requestResult(
         transaction.objectStore(FILE_SYSTEM_INODES_OBJECT_STORE).getAll(),
       ) as Promise<unknown[]>,
+      requestResult(
+        transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).get(GAME_CLOCK_META_KEY),
+      ) as Promise<unknown>,
     ])
     await completion
-    return { metadata, inodes }
+    return { metadata, inodes, gameClock }
+  }
+
+  async loadGameClock() {
+    const transaction = this.database.transaction(FILE_SYSTEM_META_OBJECT_STORE, 'readonly')
+    const completion = transactionCompletion(transaction)
+    const result = await requestResult(
+      transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE).get(GAME_CLOCK_META_KEY),
+    ) as unknown
+    await completion
+    return result
+  }
+
+  async commitGameClock(state: GameClockState, expectedRevision: number) {
+    const transaction = this.database.transaction(FILE_SYSTEM_META_OBJECT_STORE, 'readwrite')
+    const completion = transactionCompletion(transaction)
+    const store = transaction.objectStore(FILE_SYSTEM_META_OBJECT_STORE)
+    const request = store.get(GAME_CLOCK_META_KEY)
+    let operationError: Error | undefined
+
+    request.addEventListener('success', () => {
+      const current = request.result as GameClockImage | undefined
+      const actualRevision = current?.revision ?? 0
+      if (actualRevision !== expectedRevision) {
+        operationError = new GameClockRevisionConflictError(expectedRevision, actualRevision)
+        transaction.abort()
+        return
+      }
+      store.put({
+        format: GAME_CLOCK_IMAGE_FORMAT,
+        version: GAME_CLOCK_IMAGE_VERSION,
+        revision: actualRevision + 1,
+        ...state,
+      } satisfies GameClockImage, GAME_CLOCK_META_KEY)
+    }, { once: true })
+
+    try {
+      await completion
+    }
+    catch (error) {
+      throw operationError ?? error
+    }
+    return expectedRevision + 1
   }
 
   async commit(delta: FsDelta, expectedRevision: number) {

@@ -21,6 +21,21 @@ export interface GameClockState {
   timezone: string
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null
+)
+
+export const assertGameClockState: (value: unknown) => asserts value is GameClockState = (value) => {
+  if (! isRecord(value)) throw new TypeError('Invalid game-clock state')
+  validateFinite(value.worldTimeMs as number, 'Game time')
+  validateFinite(value.rate as number, 'Game clock rate')
+  if ((value.rate as number) < 0) throw new RangeError('Game clock rate cannot be negative')
+  if (typeof value.running !== 'boolean') throw new TypeError('Invalid game-clock running state')
+  if (typeof value.timezone !== 'string' || ! value.timezone) {
+    throw new TypeError('Invalid game-clock timezone')
+  }
+}
+
 export const DEFAULT_GAME_CLOCK_STATE: Readonly<GameClockState> = {
   worldTimeMs: Date.parse('2099-07-13T23:30:05.000Z'),
   rate: 1,

@@ -1,4 +1,4 @@
-import { serializeFileSystemSave } from '@/sys0/fs/save'
+import { serializeGameSave } from '@/sys0/save'
 import { deleteIndexedDbFileSystem, IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { errorMessage } from '@/utils/errors'
 
@@ -18,7 +18,7 @@ const getElement = <E extends HTMLElement>(id: string) => {
 const downloadFileSystemSave = async () => {
   const store = await IndexedDbFileSystemStore.open({ databaseVersion: null })
   try {
-    const serialized = serializeFileSystemSave(await store.exportRaw())
+    const serialized = serializeGameSave(await store.exportRaw())
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const url = URL.createObjectURL(new Blob([serialized], { type: 'application/json' }))
     const anchor = document.createElement('a')

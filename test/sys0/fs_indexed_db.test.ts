@@ -6,6 +6,7 @@ import {
   FILE_SYSTEM_META_OBJECT_STORE,
   IndexedDbFileSystemStore,
 } from '@/sys0/fs/indexed_db'
+import type { GameClockState } from '@/sys0/time'
 import {
   FileSystemRevisionConflictError,
   QueuedFsPersistence,
@@ -20,6 +21,12 @@ import {
 } from '@/sys0/fs/image'
 
 const metadata = { createdAt: 0, modifiedAt: 0 }
+const gameClock: GameClockState = {
+  worldTimeMs: 1_000,
+  rate: 1,
+  running: true,
+  timezone: 'UTC',
+}
 
 const replacement: FileSystemReplacement = {
   format: FILE_SYSTEM_IMAGE_FORMAT,
@@ -100,6 +107,7 @@ describe('IndexedDbFileSystemStore', () => {
         rootIid: 1,
       },
       inodes: replacement.inodes,
+      gameClock: undefined,
     })
 
     const update = createPutDelta({
@@ -119,6 +127,25 @@ describe('IndexedDbFileSystemStore', () => {
     await store.clear()
     expect(await store.load()).toBeUndefined()
 
+    store.close()
+  })
+
+  it('persists the game clock in the metadata store', async () => {
+    const indexedDB = new IDBFactory()
+    const store = await IndexedDbFileSystemStore.open({
+      indexedDB,
+      databaseName: 'game-clock-indexed-db-test',
+    })
+
+    expect(await store.loadGameClock()).toBeUndefined()
+    await expect(store.commitGameClock(gameClock, 0)).resolves.toBe(1)
+    expect(await store.loadGameClock()).toEqual({
+      format: 'sudoer-of-myself/game-clock',
+      version: 1,
+      revision: 1,
+      ...gameClock,
+    })
+    await expect(store.commitGameClock(gameClock, 0)).rejects.toThrow('revision conflict')
     store.close()
   })
 
