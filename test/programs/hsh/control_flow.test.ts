@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import stripAnsi from 'strip-ansi'
 import { parseControlScript } from '@/programs/hsh/script'
 import { createHsh, executeControlScript } from '@/programs/hsh'
+import { echo } from '@/programs/echo'
 import { breakLoop, continueLoop } from '@/programs/loop_control'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
 import { MemoryFsPersistence } from '@/sys0/fs/persistence'
 import { Vfs } from '@/sys0/fs/vfs'
 import { Process } from '@/sys0/proc'
+import { signalExit } from '@/sys0/process_exit'
 import { Program } from '@/sys0/program'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
@@ -123,6 +125,32 @@ describe('hsh control-flow execution', () => {
 
     expect(result.output.content).toBe('alpha\nbeta\ngamma\n')
     expect(result.process.env.item).toBe('gamma')
+  })
+
+  it('stops a foreground for loop when its current command receives SIGINT', async () => {
+    const started = deferred<void>()
+    const shell = createShell()
+    const sleep: Program = proc => new Promise((resolve) => {
+      const subscription = proc.on('signal', (signal) => {
+        subscription.dispose()
+        resolve(signalExit(signal))
+      })
+      started.resolve()
+    })
+    const running = executeControlScript(
+      shell.process,
+      parseControlScript('for i in {1..5}; do echo $i; sleep 1; done'),
+      { echo, sleep },
+    )
+
+    await started.promise
+    shell.process.signalForeground('SIGINT')
+    const status = await running
+
+    expect(status).toEqual(signalExit('SIGINT'))
+    expect(shell.process.env['?']).toBe('130')
+    expect(shell.process.env.i).toBe('1')
+    expect(shell.output.content).toBe('1\n\n')
   })
 
   it('stops the current body for break and continue', async () => {

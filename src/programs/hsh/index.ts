@@ -42,6 +42,10 @@ import {
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
+const isInterruptExit = (status: ProcessExit) => (
+  status.reason === 'signal' && status.signal === 'SIGINT'
+)
+
 export interface HshConfig {
   builtins: ProgramRegistry
 }
@@ -251,15 +255,17 @@ export const executeScript = async (
       processGroup,
       foreground: true,
     })
-    if (exitStatuses.some(status => status.reason === 'signal' && status.signal === 'SIGINT')) {
+    const interruptStatus = exitStatuses.find(isInterruptExit)
+    if (interruptStatus) {
       proc.stdio.writeLn('')
     }
-    lastStatus = exitStatuses.at(- 1) ?? normalExit(0)
+    lastStatus = interruptStatus ?? exitStatuses.at(- 1) ?? normalExit(0)
     proc.env['?'] = lastStatus.code.toString()
     const lastCommand = pipeline.at(- 1)
     if (lastCommand) updateLastArgument(proc, lastCommand)
     const exitRequest = getShellExitRequest(proc)
     if (exitRequest) return exitRequest
+    if (interruptStatus) return interruptStatus
   }
   return lastStatus
 }
@@ -276,7 +282,11 @@ const executeIf = async (
 ): Promise<ProcessExit> => {
   for (const branch of statement.branches) {
     const conditionStatus = await executeControlScript(proc, branch.condition, builtins)
-    if (getShellExitRequest(proc) || getLoopControlRequest(proc)) return conditionStatus
+    if (
+      isInterruptExit(conditionStatus)
+      || getShellExitRequest(proc)
+      || getLoopControlRequest(proc)
+    ) return conditionStatus
     if (conditionStatus.code === 0) {
       return executeControlScript(proc, branch.body, builtins)
     }
@@ -304,7 +314,7 @@ const executeLoop = async (
   try {
     while (true) {
       const conditionStatus = await executeControlScript(proc, statement.condition, builtins)
-      if (getShellExitRequest(proc)) return conditionStatus
+      if (isInterruptExit(conditionStatus) || getShellExitRequest(proc)) return conditionStatus
       const conditionAction = consumeLoopControlAtBoundary(proc)
       if (conditionAction) {
         if (conditionAction === 'continue') continue
@@ -317,7 +327,7 @@ const executeLoop = async (
 
       const iteration = await executeLoopIteration(proc, statement.body, builtins)
       lastStatus = iteration.status
-      if (getShellExitRequest(proc)) return lastStatus
+      if (isInterruptExit(lastStatus) || getShellExitRequest(proc)) return lastStatus
       if (iteration.action === 'continue') continue
       if (iteration.action) break
     }
@@ -350,7 +360,7 @@ const executeFor = async (
       proc.env[statement.name] = word
       const iteration = await executeLoopIteration(proc, statement.body, builtins)
       lastStatus = iteration.status
-      if (getShellExitRequest(proc)) return lastStatus
+      if (isInterruptExit(lastStatus) || getShellExitRequest(proc)) return lastStatus
       if (iteration.action === 'continue') continue
       if (iteration.action) break
     }
@@ -432,6 +442,7 @@ export const executeControlScript = async (
     lastStatus = entry.background
       ? executeBackgroundStatement(proc, entry.statement, builtins, entry.source)
       : await executeStatement(proc, entry.statement, builtins)
+    if (isInterruptExit(lastStatus)) return setLastStatus(proc, lastStatus)
   }
   return setLastStatus(proc, lastStatus)
 }
