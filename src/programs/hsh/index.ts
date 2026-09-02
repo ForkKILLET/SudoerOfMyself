@@ -761,6 +761,7 @@ export const createHsh = ({
         historyNumber: history.size,
         commandNumber,
         now: new Date(ctx.time?.game.nowMs() ?? Date.now()),
+        timezone: ctx.time?.game.timezone ?? 'UTC',
       })
       const loop = readline.createLoop({
         history,

@@ -39,6 +39,7 @@ import { createEnvCommand } from './env'
 import { printenv } from './printenv'
 import { readonly } from './readonly'
 import { bracket, test } from './test'
+import { date } from './date'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -78,6 +79,7 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   cat,
   cp,
   cpu_burn,
+  date,
   fs_inodemap,
   fs_format,
   ls,

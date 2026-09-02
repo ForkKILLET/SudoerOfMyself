@@ -1,4 +1,5 @@
 import type { Env } from '@/sys0/env'
+import { formatStrftime, getDateTimeParts } from '@/sys0/time_format'
 
 export interface PromptRenderContext {
   env: Env
@@ -6,20 +7,8 @@ export interface PromptRenderContext {
   historyNumber?: number
   commandNumber?: number
   now?: Date
+  timezone?: string
 }
-
-const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const WEEKDAYS_LONG = [
-  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
-]
-const MONTHS_SHORT = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-]
-const MONTHS_LONG = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
 
 const pad2 = (value: number) => value.toString().padStart(2, '0')
 
@@ -35,30 +24,6 @@ const basename = (path: string) => {
   return path.replace(/\/+$/, '').split('/').at(- 1) ?? path
 }
 
-const formatStrftime = (format: string, date: Date) => format.replace(
-  /%[%aAbBdeHImMpSyY]/g,
-  (sequence) => {
-    switch (sequence) {
-      case '%%': return '%'
-      case '%a': return WEEKDAYS_SHORT[date.getDay()]
-      case '%A': return WEEKDAYS_LONG[date.getDay()]
-      case '%b': return MONTHS_SHORT[date.getMonth()]
-      case '%B': return MONTHS_LONG[date.getMonth()]
-      case '%d': return pad2(date.getDate())
-      case '%e': return date.getDate().toString().padStart(2, ' ')
-      case '%H': return pad2(date.getHours())
-      case '%I': return pad2(date.getHours() % 12 || 12)
-      case '%m': return pad2(date.getMonth() + 1)
-      case '%M': return pad2(date.getMinutes())
-      case '%p': return date.getHours() < 12 ? 'AM' : 'PM'
-      case '%S': return pad2(date.getSeconds())
-      case '%y': return pad2(date.getFullYear() % 100)
-      case '%Y': return date.getFullYear().toString()
-      default: return sequence
-    }
-  },
-)
-
 export const renderPrompt = (
   source: string,
   {
@@ -67,16 +32,19 @@ export const renderPrompt = (
     historyNumber = 1,
     commandNumber = 1,
     now = new Date(),
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
   }: PromptRenderContext,
 ) => {
   const cwd = abbreviateHome(env.PWD ?? '/', env.HOME ?? '')
   const hostname = env.HOSTNAME ?? ''
   const username = env.USER ?? env.LOGNAME ?? ''
   const shellName = basename(env['0'] ?? 'hsh')
-  const hour12 = now.getHours() % 12 || 12
+  const nowMs = now.getTime()
+  const date = getDateTimeParts(nowMs, timezone)
+  const hour12 = date.hour % 12 || 12
   const escapes: Record<string, () => string> = {
     'a': () => '\x07',
-    'd': () => `${WEEKDAYS_SHORT[now.getDay()]} ${MONTHS_SHORT[now.getMonth()]} ${now.getDate()}`,
+    'd': () => `${date.weekdayShort} ${date.monthShort} ${date.day}`,
     'e': () => '\x1B',
     'h': () => hostname.split('.')[0],
     'H': () => hostname,
@@ -84,10 +52,10 @@ export const renderPrompt = (
     'n': () => '\n',
     'r': () => '\r',
     's': () => shellName,
-    't': () => `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`,
-    'T': () => `${pad2(hour12)}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`,
-    '@': () => `${pad2(hour12)}:${pad2(now.getMinutes())} ${now.getHours() < 12 ? 'am' : 'pm'}`,
-    'A': () => `${pad2(now.getHours())}:${pad2(now.getMinutes())}`,
+    't': () => `${pad2(date.hour)}:${pad2(date.minute)}:${pad2(date.second)}`,
+    'T': () => `${pad2(hour12)}:${pad2(date.minute)}:${pad2(date.second)}`,
+    '@': () => `${pad2(hour12)}:${pad2(date.minute)} ${date.hour < 12 ? 'am' : 'pm'}`,
+    'A': () => `${pad2(date.hour)}:${pad2(date.minute)}`,
     'u': () => username,
     'w': () => cwd,
     'W': () => cwd === '~' ? '~' : basename(cwd),
@@ -115,7 +83,7 @@ export const renderPrompt = (
     if (escape === 'D' && source[index + 1] === '{') {
       const end = source.indexOf('}', index + 2)
       if (end !== - 1) {
-        rendered += formatStrftime(source.slice(index + 2, end), now)
+        rendered += formatStrftime(source.slice(index + 2, end), nowMs, timezone)
         index = end
         continue
       }
