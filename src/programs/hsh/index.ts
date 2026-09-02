@@ -81,7 +81,7 @@ export const execute = async (
 
   if (! name) {
     command.assignments?.forEach(({ name, value }) => {
-      env[name] = value
+      proc.variables.set(name, value)
     })
     return normalExit(0)
   }
@@ -132,20 +132,26 @@ export const execute = async (
         name,
         stdio: commandStdio,
         env: assignmentEnv,
+        inheritShellVariables: true,
         processGroup: options.processGroup,
         foreground: options.foreground,
       }, ...args)
     }
 
-    const previousAssignments = new Map<string, { existed: boolean, value?: string }>()
+    const previousAssignments = new Map<string, {
+      existed: boolean
+      exported: boolean
+      value?: string
+    }>()
     command.assignments?.forEach(({ name, value }) => {
       if (! previousAssignments.has(name)) {
         previousAssignments.set(name, {
           existed: Object.hasOwn(env, name),
+          exported: proc.variables.isExported(name),
           value: env[name],
         })
       }
-      env[name] = value
+      proc.variables.set(name, value, { exported: true })
     })
     const originalStdio = proc.stdio
     const originalName = proc.name
@@ -159,9 +165,9 @@ export const execute = async (
       return normalExit(1)
     }
     finally {
-      previousAssignments.forEach(({ existed, value }, name) => {
-        if (existed) env[name] = value !
-        else delete env[name]
+      previousAssignments.forEach(({ existed, exported, value }, name) => {
+        if (existed) proc.variables.set(name, value !, { exported })
+        else proc.variables.unset(name)
       })
       proc.stdio = originalStdio
       commandStdio.close()
@@ -281,8 +287,8 @@ export const executeScript = async (
         .map(({ name, args }) => [name, ...args].join(' '))
         .join(' | ') + ' &'
       const job = proc.jobTable.create(processGroup, command, completion)
-      proc.env['!'] = processGroup.pgid?.toString() ?? ''
-      proc.env['?'] = '0'
+      proc.variables.set('!', processGroup.pgid?.toString() ?? '', { exported: false })
+      proc.variables.set('?', '0', { exported: false })
       const lastCommand = pipeline.at(- 1)
       if (lastCommand?.name) updateLastArgument(proc, lastCommand)
       proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
@@ -298,7 +304,7 @@ export const executeScript = async (
       proc.stdio.writeLn('')
     }
     lastStatus = interruptStatus ?? exitStatuses.at(- 1) ?? normalExit(0)
-    proc.env['?'] = lastStatus.code.toString()
+    proc.variables.set('?', lastStatus.code.toString(), { exported: false })
     const lastCommand = pipeline.at(- 1)
     if (lastCommand?.name) updateLastArgument(proc, lastCommand)
     const exitRequest = getShellExitRequest(proc)
@@ -309,7 +315,7 @@ export const executeScript = async (
 }
 
 const setLastStatus = (proc: Process, status: ProcessExit) => {
-  proc.env['?'] = status.code.toString()
+  proc.variables.set('?', status.code.toString(), { exported: false })
   return status
 }
 
@@ -395,7 +401,7 @@ const executeFor = async (
   enterShellLoop(proc)
   try {
     for (const word of words) {
-      proc.env[statement.name] = word
+      proc.variables.set(statement.name, word)
       const iteration = await executeLoopIteration(proc, statement.body, builtins)
       lastStatus = iteration.status
       if (isInterruptExit(lastStatus) || getShellExitRequest(proc)) return lastStatus
@@ -452,6 +458,7 @@ const executeBackgroundStatement = (
       stdio: createBackgroundStdio(proc),
       processGroup,
       foreground: false,
+      inheritShellVariables: true,
     },
   )
   proc.jobTable ??= new JobTable()
@@ -460,7 +467,7 @@ const executeBackgroundStatement = (
     `${source ?? statement.type} &`,
     completion,
   )
-  proc.env['!'] = processGroup.pgid?.toString() ?? ''
+  proc.variables.set('!', processGroup.pgid?.toString() ?? '', { exported: false })
   proc.stdio.writeLn(`[${job.id}] ${processGroup.pgid ?? '-'}`)
   return setLastStatus(proc, normalExit(0))
 }
@@ -606,7 +613,7 @@ export const createHsh = ({
       })
       if (parseResult.isErr) {
         proc.error(parseResult.err)
-        proc.env['?'] = '2'
+        proc.variables.set('?', '2', { exported: false })
         return false
       }
       await executeControlScript(proc, parseResult.val, builtins)
@@ -643,7 +650,7 @@ export const createHsh = ({
             if (pendingSource) {
               const result = Result.wrap(() => parseControlScript(pendingSource))
               if (result.isErr) proc.error(result.err)
-              proc.env['?'] = '2'
+              proc.variables.set('?', '2', { exported: false })
               pendingSource = ''
               return
             }
@@ -661,7 +668,7 @@ export const createHsh = ({
           pendingSource = ''
           if (parseResult.isErr) {
             proc.error(parseResult.err)
-            proc.env['?'] = '2'
+            proc.variables.set('?', '2', { exported: false })
           }
           else {
             await executeControlScript(proc, parseResult.val, builtins)

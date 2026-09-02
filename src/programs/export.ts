@@ -5,8 +5,7 @@ export const exportEnv = createCommand('export', '[NAME[=VALUE]...]', 'Set envir
   .help('help')
   .program(({ proc }, ...assignments) => {
     if (! assignments.length) {
-      Object.entries(proc.env)
-        .filter(([name]) => isEnvName(name))
+      proc.variables.exportedEntries()
         .sort(([left], [right]) => left.localeCompare(right))
         .forEach(([name, value]) => proc.stdio.writeLn(`export ${name}=${value}`))
       return 0
@@ -21,8 +20,10 @@ export const exportEnv = createCommand('export', '[NAME[=VALUE]...]', 'Set envir
         hasError = true
         return
       }
-      if (separator !== - 1) proc.env[name] = assignment.slice(separator + 1)
-      else proc.env[name] ??= ''
+      if (separator !== - 1) {
+        proc.variables.set(name, assignment.slice(separator + 1), { exported: true })
+      }
+      else proc.variables.export(name)
     })
     return hasError ? 1 : 0
   })

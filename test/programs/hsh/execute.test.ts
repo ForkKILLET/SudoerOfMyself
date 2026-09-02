@@ -117,6 +117,7 @@ describe('hsh execution', () => {
     expect(process.env.second).toBe('old')
     expect(process.env.EMPTY).toBe('')
     expect(process.env['?']).toBe('0')
+    expect(process.fork({ name: 'child' }).env.first).toBeUndefined()
   })
 
   it('uses command-prefix assignments for executable lookup and child environments', async () => {

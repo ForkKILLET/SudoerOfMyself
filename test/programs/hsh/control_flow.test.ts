@@ -202,8 +202,10 @@ describe('hsh control-flow execution', () => {
     const release = deferred<number>()
     const started = deferred<Process>()
     const shell = createShell()
+    shell.process.variables.set('LOCAL_ONLY', 'visible in subshell')
     const mutate: Program = async (child) => {
       expect(await child.stdio.read()).toBe('')
+      expect(child.env.LOCAL_ONLY).toBe('visible in subshell')
       child.stdio.writeLn('compound output')
       child.env.CHILD_ONLY = 'yes'
       started.resolve(child)

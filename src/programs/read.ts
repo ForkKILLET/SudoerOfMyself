@@ -1,18 +1,22 @@
 import { createCommand } from '@/sys0/program'
 import { isEnvName } from '@/sys0/env'
+import { Process } from '@/sys0/proc'
 import { ProcessSignal, signalExit } from '@/sys0/process_exit'
 
-const assignFields = (line: string, names: string[], env: Record<string, string>) => {
+const assignFields = (line: string, names: string[], proc: Process) => {
   if (names.length === 1) {
-    env[names[0]] = line
+    proc.variables.set(names[0], line)
     return
   }
 
   const fields = line.trim().split(/\s+/).filter(Boolean)
   names.forEach((name, index) => {
-    env[name] = index === names.length - 1
-      ? fields.slice(index).join(' ')
-      : fields[index] ?? ''
+    proc.variables.set(
+      name,
+      index === names.length - 1
+        ? fields.slice(index).join(' ')
+        : fields[index] ?? '',
+    )
   })
 }
 
@@ -51,6 +55,6 @@ export const read = createCommand('read', '[NAME...]', 'Read a line and assign e
       signalSubscription.dispose()
     }
 
-    assignFields(line, names, proc.env)
+    assignFields(line, names, proc)
     return reachedEof ? 1 : 0
   })

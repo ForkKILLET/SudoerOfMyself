@@ -2,7 +2,7 @@ import { Context } from './context'
 import { Stdio } from './stdio'
 import { Emitter, Events } from '@/utils/emitter'
 import { Program } from './program'
-import { createEnv, Env } from './env'
+import { Env, ShellVariables } from './env'
 import { liftArray } from '@/utils'
 import { errorMessage } from '@/utils/errors'
 import { normalizeExit, normalExit, ProcessExit, ProcessSignal } from './process_exit'
@@ -24,6 +24,7 @@ export interface CreateProcOptions {
   stdio?: Stdio
   processGroup?: ProcessGroup | null
   foreground?: boolean
+  inheritShellVariables?: boolean
 }
 
 export class Process extends Emitter<ProcessEvents> {
@@ -32,7 +33,8 @@ export class Process extends Emitter<ProcessEvents> {
   readonly isForeground: boolean
   name: string
   staticName?: string
-  env: Env
+  readonly variables: ShellVariables
+  readonly env: Env
   stdio: Stdio
   state: ProcessState = 'running'
   exitCode: number | null = null
@@ -57,7 +59,8 @@ export class Process extends Emitter<ProcessEvents> {
   }
 
   set cwd(cwd: string) {
-    this._cwd = this.env.PWD = cwd
+    this._cwd = cwd
+    this.variables.set('PWD', cwd)
   }
 
   constructor(
@@ -68,7 +71,13 @@ export class Process extends Emitter<ProcessEvents> {
     super()
 
     this.name = options.name
-    this.env = createEnv({ ...parent?.env, ...options.env })
+    this.variables = parent && options.inheritShellVariables
+      ? parent.variables.clone()
+      : new ShellVariables(parent?.variables.environment())
+    Object.entries(options.env ?? {}).forEach(([name, value]) => {
+      this.variables.set(name, value, { exported: true })
+    })
+    this.env = this.variables.values
     this.cwd = options.cwd ?? parent?.cwd ?? '/'
     this.stdio = options.stdio ?? parent?.stdio.fork() ?? Stdio.fromTerm(ctx.term)
     this.processGroup = options.processGroup === undefined

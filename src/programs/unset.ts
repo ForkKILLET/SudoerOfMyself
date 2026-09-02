@@ -11,7 +11,7 @@ export const unset = createCommand('unset', 'NAME...', 'Remove environment varia
         hasError = true
         return
       }
-      delete proc.env[name]
+      proc.variables.unset(name)
     })
     return hasError ? 1 : 0
   })

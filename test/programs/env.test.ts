@@ -47,6 +47,25 @@ describe('environment builtins', () => {
     expect(child.env.TOKEN).toBe('left=right')
   })
 
+  it('does not pass unexported shell variables to children', () => {
+    const { shell } = createShell()
+    shell.variables.set('LOCAL_ONLY', 'secret')
+
+    const child = shell.fork({ name: 'child' })
+
+    expect(shell.env.LOCAL_ONLY).toBe('secret')
+    expect(child.env.LOCAL_ONLY).toBeUndefined()
+  })
+
+  it('exports an existing shell variable without replacing its value', async () => {
+    const { shell } = createShell()
+    shell.variables.set('EXISTING', 'value')
+
+    await expect(exportEnv(shell, 'export', 'EXISTING')).resolves.toBe(0)
+
+    expect(shell.fork({ name: 'child' }).env.EXISTING).toBe('value')
+  })
+
   it('unsets values and reports invalid names', async () => {
     const { error, shell } = createShell()
     shell.env.REMOVE_ME = 'yes'
