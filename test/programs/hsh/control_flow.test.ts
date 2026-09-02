@@ -223,6 +223,16 @@ describe('hsh control-flow execution', () => {
     expect(result.process.env.item).toBe('gamma')
   })
 
+  it('expands variable brace ranges from the current loop environment', async () => {
+    const emit: Program = (proc, _self, ...values) => proc.stdio.writeLn(values.join(' ')) ?? 0
+    const result = await run(
+      'for i in 1 2 3; do emit {0..$i}; done',
+      { emit },
+    )
+
+    expect(result.output.content).toBe('0 1\n0 1 2\n0 1 2 3\n')
+  })
+
   it('stops a foreground for loop when its current command receives SIGINT', async () => {
     const started = deferred<void>()
     const shell = createShell()

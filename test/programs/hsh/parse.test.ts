@@ -155,6 +155,34 @@ describe('hsh parser', () => {
       })
   })
 
+  it('expands brace ranges whose endpoints are shell variables', () => {
+    expect(parseLine(
+      'echo {0..$i} {$i..0} {$from..${to}} pre{0..$i}post {a,b}{0..$j} {0..$j}{a,b}',
+      { i: '3', j: '0', from: '-1', to: '1' },
+    )).toEqual({
+      commands: [{
+        name: 'echo',
+        args: [
+          '0', '1', '2', '3',
+          '3', '2', '1', '0',
+          '-1', '0', '1',
+          'pre0post', 'pre1post', 'pre2post', 'pre3post',
+          'a0', 'b0',
+          '0a', '0b',
+        ],
+      }],
+    })
+  })
+
+  it('does not treat variables outside brace ranges as brace syntax', () => {
+    expect(parseLine('echo $value {0..$invalid}', {
+      value: '{a,b}',
+      invalid: 'not-an-endpoint',
+    })).toEqual({
+      commands: [{ name: 'echo', args: ['{a,b}', '{0..not-an-endpoint}'] }],
+    })
+  })
+
   it('supports nested alternatives and keeps non-expanding braces literal', () => {
     expect(parseLine('echo {a,{b,c}} "{d,e}" \\{f,g\\} {word..other}', {}))
       .toEqual({
@@ -169,6 +197,8 @@ describe('hsh parser', () => {
     expect(() => parseLine('echo {1..10001}', {}))
       .toThrow('Brace expansion exceeds 10000 values')
     expect(() => parseLine('echo {1..101}{1..101}', {}))
+      .toThrow('Brace expansion exceeds 10000 values')
+    expect(() => parseLine('echo {1..$end}{1..101}', { end: '101' }))
       .toThrow('Brace expansion exceeds 10000 values')
   })
 

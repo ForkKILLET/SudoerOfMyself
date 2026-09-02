@@ -575,6 +575,14 @@ interface BraceExpression {
   alternatives: string[]
 }
 
+interface TokenBraceExpression {
+  beginToken: number
+  beginOffset: number
+  endToken: number
+  endOffset: number
+  alternatives: string[]
+}
+
 const findBraceExpression = (content: string): BraceExpression | null => {
   for (let begin = 0; begin < content.length; begin ++) {
     if (content[begin] !== '{') continue
@@ -593,18 +601,121 @@ const findBraceExpression = (content: string): BraceExpression | null => {
   return null
 }
 
-const expandBraceContent = (content: string): string[] => {
-  const expression = findBraceExpression(content)
-  if (! expression) return [content]
-  const prefix = content.slice(0, expression.begin)
-  const suffix = content.slice(expression.end + 1)
-  const expanded: string[] = []
-  for (const value of expression.alternatives) {
-    for (const result of expandBraceContent(prefix + value + suffix)) {
-      expanded.push(result)
-      if (expanded.length > MAX_BRACE_EXPANSIONS) {
-        throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
+const resolveDynamicBraceToken = (token: HshToken, env: Env) => {
+  if (token.type === 'text' && ! token.isDq && ! token.isSq && ! token.isBraceLiteral) {
+    return token.content
+  }
+  if (token.type === 'variable' && ! token.isDq) {
+    return getEnv(env, token.content.slice(1))
+  }
+  if (token.type === 'parameter' && ! token.isDq) {
+    const name = token.content.slice(2, - 1)
+    if (/^([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[?!$#*@_-])$/.test(name)) {
+      return getEnv(env, name)
+    }
+  }
+  return null
+}
+
+const findDynamicBraceExpression = (
+  tokens: HshToken[],
+  env: Env,
+): TokenBraceExpression | null => {
+  for (let beginToken = 0; beginToken < tokens.length; beginToken ++) {
+    const begin = tokens[beginToken]
+    if (begin.type !== 'text' || begin.isDq || begin.isSq || begin.isBraceLiteral) continue
+
+    for (let beginOffset = 0; beginOffset < begin.content.length; beginOffset ++) {
+      if (begin.content[beginOffset] !== '{') continue
+      let depth = 1
+      let hasVariable = false
+      let body = ''
+
+      for (let endToken = beginToken; endToken < tokens.length; endToken ++) {
+        const token = tokens[endToken]
+        const content = resolveDynamicBraceToken(token, env)
+        if (content === null) break
+        if (token.type === 'variable' || token.type === 'parameter') hasVariable = true
+        const start = endToken === beginToken ? beginOffset + 1 : 0
+
+        for (let endOffset = start; endOffset < content.length; endOffset ++) {
+          const char = content[endOffset]
+          if (token.type === 'text' && char === '{') depth ++
+          else if (token.type === 'text' && char === '}') {
+            depth --
+            if (depth === 0) {
+              if (! hasVariable) break
+              const alternatives = expandBraceRange(body)
+              if (alternatives) {
+                return {
+                  beginToken,
+                  beginOffset,
+                  endToken,
+                  endOffset,
+                  alternatives,
+                }
+              }
+              break
+            }
+          }
+          if (depth > 0) body += char
+        }
+        if (depth === 0) break
       }
+    }
+  }
+  return null
+}
+
+const findTokenBraceExpression = (tokens: HshToken[], env: Env) => {
+  let found = findDynamicBraceExpression(tokens, env)
+  tokens.forEach((token, tokenIndex) => {
+    if (token.type !== 'text' || token.isDq || token.isSq || token.isBraceLiteral) return
+    const expression = findBraceExpression(token.content)
+    if (! expression) return
+    if (found && (
+      found.beginToken < tokenIndex
+      || (found.beginToken === tokenIndex && found.beginOffset <= expression.begin)
+    )) return
+    found = {
+      beginToken: tokenIndex,
+      beginOffset: expression.begin,
+      endToken: tokenIndex,
+      endOffset: expression.end,
+      alternatives: expression.alternatives,
+    }
+  })
+  return found
+}
+
+const expandBraceTokens = (tokens: HshToken[], env: Env): HshToken[][] => {
+  const expression = findTokenBraceExpression(tokens, env)
+  if (! expression) return [tokens]
+  const begin = tokens[expression.beginToken] as HshTokenText
+  const end = tokens[expression.endToken] as HshTokenText
+  const prefix = begin.content.slice(0, expression.beginOffset)
+  const suffix = end.content.slice(expression.endOffset + 1)
+  const before = [
+    ...tokens.slice(0, expression.beginToken),
+    ...(prefix ? [{ ...begin, content: prefix }] : []),
+  ]
+  const after = [
+    ...(suffix ? [{ ...end, content: suffix }] : []),
+    ...tokens.slice(expression.endToken + 1),
+  ]
+  const expanded: HshToken[][] = []
+
+  for (const value of expression.alternatives) {
+    const replacement: HshTokenText = {
+      type: 'text',
+      content: value,
+      begin: begin.begin,
+      end: end.end,
+      word: begin.word,
+    }
+    expanded.push(...expandBraceTokens([...before, replacement, ...after], env))
+    if (expanded.length > MAX_BRACE_EXPANSIONS) {
+      throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
     }
   }
   return expanded
@@ -614,29 +725,14 @@ const belongToSameWord = (previous: HshToken, next: HshToken) => (
   previous.word === next.word
 )
 
-const expandBraces = (tokens: HshToken[]) => {
+const expandBraces = (tokens: HshToken[], env: Env) => {
   const expanded: HshToken[] = []
   let word: HshToken[] = []
   let nextExpandedWord = Math.max(- 1, ...tokens.map(token => token.word)) + 1
 
   const flushWord = () => {
     if (! word.length) return
-    let variants: HshToken[][] = [[]]
-    for (const token of word) {
-      const contents = token.type === 'text'
-        && ! token.isDq
-        && ! token.isSq
-        && ! token.isBraceLiteral
-        ? expandBraceContent(token.content)
-        : [token.content]
-      if (variants.length * contents.length > MAX_BRACE_EXPANSIONS) {
-        throw new UserError(`Brace expansion exceeds ${MAX_BRACE_EXPANSIONS} values`)
-      }
-      variants = variants.flatMap(variant => contents.map(content => [
-        ...variant,
-        token.type === 'text' ? { ...token, content } : token,
-      ]))
-    }
+    const variants = expandBraceTokens(word, env)
     variants.forEach((variant) => {
       const expandedWord = nextExpandedWord ++
       expanded.push(...variant.map(token => ({ ...token, word: expandedWord })))
@@ -815,7 +911,7 @@ export const expand = (
     return exists ? fields : []
   }
 
-  splitTokenWords(expandBraces(tokens)).forEach((group) => {
+  splitTokenWords(expandBraces(tokens, env)).forEach((group) => {
     if (! Array.isArray(group)) {
       expanded.push(group)
       return
