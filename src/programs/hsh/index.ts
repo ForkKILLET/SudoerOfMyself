@@ -56,6 +56,11 @@ import { HSH_RESERVED_WORDS } from './reserved_words'
 import { renderPrompt } from './prompt'
 import { appendHistoryEntry, parseHistoryFile, parseHistoryLimit } from './history'
 import { expandPathname } from './pathname'
+import {
+  type CommandTimingSnapshot,
+  finishCommandTiming,
+  startCommandTiming,
+} from './timing'
 
 export type ProgramRegistry = Readonly<Record<string, Program>>
 
@@ -166,7 +171,8 @@ export const execute = async (
       command.assignments?.forEach(({ name, value }) => {
         proc.variables.set(name, value, { exported: true })
       })
-      return normalizeExit(await builtins[name](proc, name, ...args))
+      const result = proc.measureUser(() => builtins[name](proc, name, ...args))
+      return normalizeExit(await result)
     }
     catch (err) {
       proc.error(errorMessage(err))
@@ -260,7 +266,13 @@ export const executeScript = async (
   proc: Process,
   script: HshAstScript,
   builtins: ProgramRegistry,
-  { source }: { source?: string } = {},
+  {
+    source,
+    timing,
+  }: {
+    source?: string
+    timing?: CommandTimingSnapshot
+  } = {},
 ): Promise<ProcessExit> => {
   let lastStatus = normalExit(0)
   let commandIndex = 0
@@ -284,7 +296,10 @@ export const executeScript = async (
         foreground: false,
         forceChild: true,
       })
-        .then(statuses => statuses.at(- 1) ?? normalExit(0))
+        .then((statuses) => {
+          if (timing) finishCommandTiming(proc, timing, processGroup.usage)
+          return statuses.at(- 1) ?? normalExit(0)
+        })
         .catch((error) => {
           proc.error(error)
           return normalExit(1)
@@ -315,9 +330,16 @@ export const executeScript = async (
     const lastCommand = pipeline.at(- 1)
     if (lastCommand?.name) updateLastArgument(proc, lastCommand)
     const exitRequest = getShellExitRequest(proc)
-    if (exitRequest) return exitRequest
-    if (interruptStatus) return interruptStatus
+    if (exitRequest) {
+      if (timing) finishCommandTiming(proc, timing)
+      return exitRequest
+    }
+    if (interruptStatus) {
+      if (timing) finishCommandTiming(proc, timing)
+      return interruptStatus
+    }
   }
+  if (timing) finishCommandTiming(proc, timing)
   return lastStatus
 }
 
@@ -432,6 +454,7 @@ const executeStatement = async (
   proc: Process,
   statement: HshStatement,
   builtins: ProgramRegistry,
+  timed = false,
 ): Promise<ProcessExit> => {
   switch (statement.type) {
     case 'simple': {
@@ -441,7 +464,8 @@ const executeStatement = async (
         expandPathname: pattern => expandPathname(proc.ctx.fs, proc.cwd, pattern),
       })
       return executeScript(proc, parsed, builtins, {
-        source: statement.source,
+        source: timed ? `time ${statement.source}` : statement.source,
+        timing: timed ? startCommandTiming(proc) : undefined,
       })
     }
     case 'conditional': return executeConditional(proc, statement, builtins)
@@ -450,6 +474,18 @@ const executeStatement = async (
     case 'until': return executeLoop(proc, statement, builtins)
     case 'for': return executeFor(proc, statement, builtins)
   }
+}
+
+const executeTimedStatement = async (
+  proc: Process,
+  statement: HshStatement,
+  builtins: ProgramRegistry,
+) => {
+  if (statement.type === 'simple') return executeStatement(proc, statement, builtins, true)
+  const timing = startCommandTiming(proc)
+  const status = await executeStatement(proc, statement, builtins)
+  finishCommandTiming(proc, timing)
+  return status
 }
 
 const executeConditional = async (
@@ -509,10 +545,13 @@ const executeBackgroundStatement = (
   statement: HshStatement,
   builtins: ProgramRegistry,
   source?: string,
+  timed = false,
 ) => {
   const processGroup = new ProcessGroup()
   const completion = proc.spawn(
-    child => executeStatement(child, statement, builtins),
+    child => timed
+      ? executeTimedStatement(child, statement, builtins)
+      : executeStatement(child, statement, builtins),
     {
       name: 'hsh',
       stdio: createBackgroundStdio(proc),
@@ -545,8 +584,10 @@ export const executeControlScript = async (
       || (entry.condition === 'failure' && lastStatus.code !== 0)
     if (! shouldRun) continue
     lastStatus = entry.background
-      ? executeBackgroundStatement(proc, entry.statement, builtins, entry.source)
-      : await executeStatement(proc, entry.statement, builtins)
+      ? executeBackgroundStatement(proc, entry.statement, builtins, entry.source, entry.timed)
+      : entry.timed
+        ? await executeTimedStatement(proc, entry.statement, builtins)
+        : await executeStatement(proc, entry.statement, builtins)
     if (isInterruptExit(lastStatus)) return setLastStatus(proc, lastStatus)
   }
   return setLastStatus(proc, lastStatus)

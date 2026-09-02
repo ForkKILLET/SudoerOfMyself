@@ -16,6 +16,7 @@ import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
 import { Term } from '@/sys0/term'
 import { DEFAULT_PROFILE } from '@/data/profile'
+import { TimeService } from '@/sys0/time'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -74,6 +75,68 @@ const run = async (source: string, builtins: Record<string, Program>) => {
 }
 
 describe('hsh control-flow execution', () => {
+  it('times simple commands and compound statements', async () => {
+    let now = 0
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      time: new TimeService({ monotonic: { nowMs: () => now } }),
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/', PATH: '/bin', PWD: '/' },
+      stdio: new Stdio(new EmptyInput(), output, error),
+    })
+    const work: Program = () => {
+      now += 250
+      return 0
+    }
+
+    await executeControlScript(
+      process,
+      parseControlScript('time work; time for i in a b; do work; done; time work | work'),
+      { work },
+    )
+
+    expect(error.content).toBe(
+      'real 0.250s\nuser 0.250s\nsys  0.000s\n' +
+      'real 0.500s\nuser 0.500s\nsys  0.000s\n' +
+      'real 0.500s\nuser 0.500s\nsys  0.000s\n',
+    )
+  })
+
+  it('reports a timed background command only after it finishes', async () => {
+    let now = 0
+    const release = deferred<number>()
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      time: new TimeService({ monotonic: { nowMs: () => now } }),
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/', PATH: '/bin', PWD: '/' },
+      stdio: new Stdio(new EmptyInput(), output, error),
+    })
+
+    await executeControlScript(process, parseControlScript('time work &'), {
+      work: () => release.promise,
+    })
+    const job = process.jobTable?.get(1)
+    expect(error.content).toBe('')
+    expect(job?.command).toBe('time work &')
+
+    now = 1_000
+    release.resolve(0)
+    await job?.completion
+
+    expect(error.content).toBe('real 1.000s\nuser 0.000s\nsys  0.000s\n')
+  })
+
   it('uses the bracket builtin as an if condition', async () => {
     const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
     const result = await run(`

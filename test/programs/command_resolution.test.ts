@@ -77,14 +77,15 @@ describe('shell command introspection', () => {
     const { output, shell } = createShell()
     const { type } = createCommands()
 
-    await expect(type(shell, 'type', 'if', 'then', 'in', '[[', ']]')).resolves.toBe(0)
+    await expect(type(shell, 'type', 'if', 'then', 'in', '[[', ']]', 'time')).resolves.toBe(0)
 
     expect(output.content).toBe(
       'if is a reserved word\n' +
       'then is a reserved word\n' +
       'in is a reserved word\n' +
       '[[ is a reserved word\n' +
-      ']] is a reserved word\n',
+      ']] is a reserved word\n' +
+      'time is a reserved word\n',
     )
   })
 
@@ -114,8 +115,8 @@ describe('shell command introspection', () => {
     const { output, shell } = createShell()
     const { command } = createCommands()
 
-    await expect(command(shell, 'command', '-v', 'if', 'do', 'done', '[[')).resolves.toBe(0)
+    await expect(command(shell, 'command', '-v', 'if', 'do', 'done', '[[', 'time')).resolves.toBe(0)
 
-    expect(output.content).toBe('if\ndo\ndone\n[[\n')
+    expect(output.content).toBe('if\ndo\ndone\n[[\ntime\n')
   })
 })

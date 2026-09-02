@@ -38,6 +38,23 @@ describe('hsh control-flow parser', () => {
     })
   })
 
+  it('marks time as a statement modifier', () => {
+    expect(parseControlScript('time first | second; time for i in a; do work; done'))
+      .toMatchObject({
+        entries: [
+          {
+            timed: true,
+            statement: { type: 'simple', source: 'first | second' },
+          },
+          {
+            timed: true,
+            statement: { type: 'for' },
+          },
+        ],
+      })
+    expect(() => parseControlScript('time')).toThrow(IncompleteHshScriptError)
+  })
+
   it('parses nested if, loop, and for statements', () => {
     const script = parseControlScript(`
       if ready; then

@@ -123,18 +123,21 @@ export class Process extends Emitter<ProcessEvents> {
   private startProgram<T>(run: () => T) {
     if (this.state !== 'ready') throw new Error('Only a ready process can be started')
     this.state = 'running'
-    const startedAt = this.monotonicNow()
-    let result: T
-    try {
-      result = run()
-    }
-    finally {
-      this.accounting.addUser(this.monotonicNow() - startedAt)
-    }
+    const result = this.measureUser(run)
     const pendingSignals = this.pendingSignals
     this.pendingSignals = []
     pendingSignals.forEach(signal => this.emit('signal', signal))
     return result
+  }
+
+  measureUser<T>(run: () => T) {
+    const startedAt = this.monotonicNow()
+    try {
+      return run()
+    }
+    finally {
+      this.accounting.addUser(this.monotonicNow() - startedAt)
+    }
   }
 
   signalForeground(signal: ProcessSignal) {

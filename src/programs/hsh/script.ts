@@ -20,6 +20,7 @@ export interface HshListEntry {
   statement: HshStatement
   background?: true
   source?: string
+  timed?: true
 }
 
 export type HshStatement =
@@ -179,6 +180,12 @@ class ScriptParser {
 
     while (this.cursor < this.tokens.length && ! this.isStopWord(stopWords)) {
       const statementBegin = this.peek() !.begin
+      const timed = this.isWord('time')
+      if (timed) {
+        this.cursor ++
+        this.skipNewlines()
+        if (! this.peek()) throw new IncompleteHshScriptError('Expected command after time')
+      }
       const statement = this.parseStatement()
       const next = this.peek()
       const isBackgroundCompound = next?.type === 'separator'
@@ -187,6 +194,7 @@ class ScriptParser {
       entries.push({
         condition,
         statement,
+        ...(timed ? { timed: true as const } : {}),
         ...(isBackgroundCompound ? {
           background: true as const,
           source: this.source.slice(

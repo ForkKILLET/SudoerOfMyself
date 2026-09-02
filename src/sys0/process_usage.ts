@@ -19,6 +19,15 @@ export const addProcessUsage = (
   blockedMs: left.blockedMs + right.blockedMs,
 })
 
+export const subtractProcessUsage = (
+  later: ProcessUsage,
+  earlier: ProcessUsage,
+): ProcessUsage => ({
+  userMs: Math.max(0, later.userMs - earlier.userMs),
+  systemMs: Math.max(0, later.systemMs - earlier.systemMs),
+  blockedMs: Math.max(0, later.blockedMs - earlier.blockedMs),
+})
+
 const normalizedDuration = (milliseconds: number) => (
   Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0
 )
