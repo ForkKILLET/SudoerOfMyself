@@ -5,7 +5,7 @@ import { FRead } from '@/sys0/fs'
 import { Process } from '@/sys0/proc'
 import { ProcessTable } from '@/sys0/process_table'
 import { Readline } from '@/sys0/readline'
-import { Stdio, Stdout } from '@/sys0/stdio'
+import { Stdin, Stdio, Stdout } from '@/sys0/stdio'
 import { Term } from '@/sys0/term'
 
 class KeyInput implements FRead {
@@ -73,6 +73,38 @@ const createReadline = (source: string[] | FRead) => {
   }
 }
 
+const createTerminalReadline = () => {
+  const dataListeners: Array<(data: string) => void> = []
+  const terminalWrites: string[] = []
+  const term = {
+    buffer: { active: { cursorX: 0 } },
+    cols: 80,
+    doEcho: true,
+    getStringWidth: (value: string) => value.length,
+    on: (event: string, listener: (data: string) => void) => {
+      if (event === 'data') dataListeners.push(listener)
+      return { dispose() {} }
+    },
+    write: (value: string) => terminalWrites.push(value),
+  } as unknown as Term
+  const input = new Stdin(term)
+  const output = new Stdout(term)
+  const stdio = new Stdio(input, output)
+  const context = {
+    processes: new ProcessTable(),
+    term,
+  } as Context
+  const process = new Process(context, null, {
+    name: 'readline-test',
+    stdio,
+  })
+
+  return {
+    readline: new Readline(process, stdio, term),
+    paste: (data: string) => dataListeners.forEach(listener => listener(data)),
+  }
+}
+
 const completions = [
   { display: 'echo', value: 'cho' },
   { display: 'exit', value: 'xit' },
@@ -117,5 +149,20 @@ describe('readline completion editing', () => {
     await expect(reading).resolves.toBe('partially typed')
     expect(stripAnsi(terminalWrites.join('')))
       .toContain('[1]  + 42 done       example &\r\npartially typed')
+  })
+})
+
+describe('readline multiline paste', () => {
+  it('submits complete lines and keeps the final partial line for the next prompt', async () => {
+    const { readline, paste } = createTerminalReadline()
+    const firstLine = readline.readLn()
+
+    paste('echo a\necho b')
+
+    await expect(firstLine).resolves.toBe('echo a')
+    const secondLine = readline.readLn()
+    await Promise.resolve()
+    paste('\r')
+    await expect(secondLine).resolves.toBe('echo b')
   })
 })

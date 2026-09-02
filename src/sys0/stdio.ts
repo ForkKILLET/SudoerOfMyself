@@ -3,7 +3,6 @@ import { sleep } from '@/utils'
 import { Emitter, Events } from '@/utils/emitter'
 import { FRead, FReadKeyOptions, FReadWrite, FWrite } from './fs'
 import { Pred } from '@/utils/types'
-import { Disposable } from '@/utils/disposable'
 import {
   displayFdError,
   FdTable,
@@ -17,37 +16,72 @@ export interface StdinEvents extends Events {
   data: [ string ]
 }
 
+interface PendingStdinRead {
+  finish(data: string): void
+}
+
+const splitTerminalData = (data: string) => {
+  const chunks: string[] = []
+  let chunkStart = 0
+
+  for (let index = 0; index < data.length; index ++) {
+    const char = data[index]
+    if (char !== '\r' && char !== '\n') continue
+
+    if (index > chunkStart) chunks.push(data.slice(chunkStart, index))
+    chunks.push('\r')
+
+    if (char === '\r' && data[index + 1] === '\n') index ++
+    chunkStart = index + 1
+  }
+
+  if (chunkStart < data.length) chunks.push(data.slice(chunkStart))
+  return chunks
+}
+
 export class Stdin extends Emitter<StdinEvents> implements FRead {
   isDisabled = false
+  private readonly queuedData: string[] = []
+  private readonly pendingReads: PendingStdinRead[] = []
 
   constructor(private term: Term) {
     super()
 
     this.term.on('data', (data) => {
       if (this.isDisabled) return
-      this.emit('data', data)
+      splitTerminalData(data).forEach(chunk => this.enqueue(chunk))
     })
+  }
+
+  private enqueue(data: string) {
+    const pendingRead = this.pendingReads.shift()
+    if (pendingRead) pendingRead.finish(data)
+    else this.queuedData.push(data)
+    this.emit('data', data)
   }
 
   readKey({
     signal,
   }: FReadKeyOptions = {}) {
     if (signal?.aborted) return Promise.resolve('\x03')
+    const queued = this.queuedData.shift()
+    if (queued !== undefined) return Promise.resolve(queued)
 
     return new Promise<string>((resolve) => {
-      const abort = () => {
-        resolve('\x03')
-        dispose()
-      }
-      const { dispose } = Disposable.combine(
-        this.on('data', (data) => {
+      const pendingRead: PendingStdinRead = {
+        finish: (data) => {
+          signal?.removeEventListener('abort', abort)
           resolve(data)
-          dispose()
-        }),
-        signal && {
-          dispose: () => signal.removeEventListener('abort', abort),
         },
-      )
+      }
+      const abort = () => {
+        const index = this.pendingReads.indexOf(pendingRead)
+        if (index === - 1) return
+        this.pendingReads.splice(index, 1)
+        pendingRead.finish('\x03')
+      }
+
+      this.pendingReads.push(pendingRead)
       signal?.addEventListener('abort', abort, { once: true })
     })
   }
