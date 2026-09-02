@@ -553,14 +553,26 @@ export class Fs {
     return ! this.getChildren(dir).length
   }
 
-  mkdir(path: string): FOp.MkdirResult {
+  mkdir(path: string, { parents = false }: { parents?: boolean } = {}): FOp.MkdirResult {
     const { mount, mountedPath } = this.resolveMountedPath(path)
-    if (mount) return mount.fs.mkdir(mountedPath)
+    if (mount) return mount.fs.mkdir(mountedPath, { parents })
     if (this.isReadOnly) return this.readOnlyError()
+
+    if (parents) {
+      const existing = this.findInode(path, { allowedTypes: [FileT.DIR] })
+      if (existing.isOk) return FOp.ok({ dir: existing.val.inode.file })
+      if (existing.err.type === FOp.T.NOT_ALLOWED_TYPE) return existing
+    }
+
     const { dirname, filename } = Path.getDirAndName(path)
     if (! Path.isLegalFilename(filename)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
 
-    const dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+    let dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+    if (parents && dirRes.isErr && dirRes.err.type === FOp.T.NOT_FOUND) {
+      const parentResult = this.mkdir(dirname, { parents: true })
+      if (parentResult.isErr) return parentResult
+      dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+    }
     if (dirRes.isErr) return dirRes
     const { inode: parentInode } = dirRes.val
     if (this.getChildInode(parentInode.file, filename)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
@@ -574,8 +586,8 @@ export class Fs {
     })
   }
 
-  mkdirU(path: string) {
-    return this.unwrap(this.mkdir(path), `Cannot create directory '${path}'`)
+  mkdirU(path: string, options: { parents?: boolean } = {}) {
+    return this.unwrap(this.mkdir(path, options), `Cannot create directory '${path}'`)
   }
 
   rmWhere(parentInode: Inode<DirFile>, filename: string): FOp.OperationResult<void> {

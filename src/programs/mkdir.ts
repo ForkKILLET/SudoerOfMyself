@@ -16,7 +16,7 @@ export const mkdir = createCommand('mkdir', '<DIRECTORY...>', 'Create the DIRECT
 
     for (const path of paths) {
       try {
-        ctx.fs.mkdirU(path)
+        ctx.fs.mkdirU(path, { parents: options.parent })
         if (options.verbose) {
           proc.log(`Created directory '${path}'`)
         }

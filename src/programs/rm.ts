@@ -19,46 +19,57 @@ export interface RmXOptions {
 const _rmX = async (
   ctx: Context, options: RmXOptions,
   path: string, parentInode: Inode<DirFile>, filename: string, inode: Inode<File>,
-) => {
+): Promise<boolean> => {
   const fail = (err: FOp.Error, path: string) => {
-    if (! (options.force && err.type === FOp.T.NOT_FOUND)) options.onErr?.(err, path)
+    if (options.force && err.type === FOp.T.NOT_FOUND) return true
+    options.onErr?.(err, path)
+    return false
   }
 
-  $isDir: if (ctx.fs.isInodeOfType(inode, [FileT.DIR])) {
+  if (ctx.fs.isInodeOfType(inode, [FileT.DIR])) {
     const { file } = inode
     const childnames = ctx.fs.getChildren(file).map(({ name }) => name)
-    if (! childnames.length && options.dir) break $isDir
-    if (! options.recursive)
-      return fail({ type: FOp.T.IS_A_DIR }, path)
-
-    if (options.onPromptEnter && ! await options.onPromptEnter(path)) break $isDir
-
-    let childFailed = false
-    for (const childname of childnames) {
-      const childpath = Path.join(path, childname)
-      const childInode = ctx.fs.getChildInode(file, childname)
-      if (! childInode) {
-        childFailed = true
-        fail({ type: FOp.T.NOT_FOUND }, childpath)
-        continue
-      }
-      await _rmX(ctx, options, childpath, inode, childname, childInode)
+    if (! childnames.length && options.dir) {
+      // An empty directory can be removed below without recursive traversal.
     }
+    else if (! options.recursive) {
+      return fail({ type: FOp.T.IS_A_DIR }, path)
+    }
+    else {
+      if (options.onPromptEnter && ! await options.onPromptEnter(path)) return true
 
-    if (childFailed) return fail({ type: FOp.T.IS_A_DIR }, path)
+      let childFailed = false
+      for (const childname of childnames) {
+        const childpath = Path.join(path, childname)
+        const childInode = ctx.fs.getChildInode(file, childname)
+        if (! childInode) {
+          childFailed = ! fail({ type: FOp.T.NOT_FOUND }, childpath) || childFailed
+          continue
+        }
+        childFailed = ! await _rmX(ctx, options, childpath, inode, childname, childInode) || childFailed
+      }
+
+      if (childFailed) return false
+    }
   }
 
-  if (options.onPromptRm && ! await options.onPromptRm(inode.file.type, path)) return
+  if (options.onPromptRm && ! await options.onPromptRm(inode.file.type, path)) return true
 
   const result = ctx.fs.rmWhere(parentInode, filename)
   if (result.isErr) return fail(result.err, path)
   options.onOk?.(path)
+  return true
 }
 
 const rmX = async (ctx: Context, path: string, options: RmXOptions) => {
-  const { parentInode, inode, filename } = ctx.fs.findInodeU(path)
-  if (! parentInode) return
-  await _rmX(ctx, options, path, parentInode, filename, inode)
+  const found = ctx.fs.findInode(path)
+  if (found.isErr) {
+    if (options.force && found.err.type === FOp.T.NOT_FOUND) return true
+    options.onErr?.(found.err, path)
+    return false
+  }
+  const { parentInode, inode, filename } = found.val
+  return _rmX(ctx, options, path, parentInode, filename, inode)
 }
 
 export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).')
@@ -71,7 +82,12 @@ export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).
   .program(async ({ proc, options }, ...paths) => {
     const { ctx, stdio } = proc
 
-    options.interactive ??= ! options.force
+    if (! paths.length) {
+      if (options.force) return 0
+      throw new UserError('Missing operand')
+    }
+
+    const errors: string[] = []
 
     for (const path of paths) {
       await rmX(ctx, path, {
@@ -83,7 +99,7 @@ export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).
           ? (type, path) => stdio.prompt(`Remove ${displayFileT(type)} '${path}'?`)
           : undefined,
         onErr: (err, path) => {
-          throw new UserError(`Cannot remove '${path}': ${FOp.displayError(err)}`)
+          errors.push(`Cannot remove '${path}': ${FOp.displayError(err)}`)
         },
         onOk: (path) => {
           if (options.verbose) stdio.writeLn(`Removed '${path}'`)
@@ -91,5 +107,6 @@ export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).
       })
     }
 
-    return 0
+    if (errors.length) proc.error(errors)
+    return errors.length ? 1 : 0
   })
