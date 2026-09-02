@@ -636,6 +636,30 @@ export const createHsh = ({
     proc.jobTable = new JobTable()
     initializeShellParameters(proc, path ?? name, scriptArgs)
 
+    const flushFileSystem = async () => {
+      try {
+        await ctx.fs.flush()
+      }
+      catch (error) {
+        proc.error(`file system save failed: ${errorMessage(error)}`)
+      }
+    }
+
+    const executeParsedSource = async (proc: Process, script: HshControlScript) => {
+      try {
+        await executeControlScript(proc, script, builtins)
+      }
+      catch (error) {
+        if (! (error instanceof UserError)) throw error
+        proc.error(error.message)
+        setLastStatus(proc, normalExit(1))
+        await flushFileSystem()
+        return false
+      }
+      await flushFileSystem()
+      return true
+    }
+
     const executeSource = async (proc: Process, source: string) => {
       const parseResult = Result.wrap<HshControlScript, unknown>(() => {
         return parseControlScript(source)
@@ -645,14 +669,7 @@ export const createHsh = ({
         proc.variables.set('?', '2', { exported: false })
         return false
       }
-      await executeControlScript(proc, parseResult.val, builtins)
-      try {
-        await ctx.fs.flush()
-      }
-      catch (error) {
-        proc.error(`file system save failed: ${errorMessage(error)}`)
-      }
-      return true
+      return executeParsedSource(proc, parseResult.val)
     }
 
     if (options.command) {
@@ -700,13 +717,7 @@ export const createHsh = ({
             proc.variables.set('?', '2', { exported: false })
           }
           else {
-            await executeControlScript(proc, parseResult.val, builtins)
-            try {
-              await ctx.fs.flush()
-            }
-            catch (error) {
-              proc.error(`file system save failed: ${errorMessage(error)}`)
-            }
+            await executeParsedSource(proc, parseResult.val)
           }
           if (getShellExitRequest(proc)) loop.stop()
         },

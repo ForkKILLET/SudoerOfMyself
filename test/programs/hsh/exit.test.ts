@@ -68,6 +68,22 @@ describe('exit builtin', () => {
     await expect(statusShell(failedCommand.shell, 'hsh', '-c', 'fail')).resolves.toBe(7)
   })
 
+  it('returns expansion errors without executing the rest of command mode input', async () => {
+    const { error, shell } = createShell()
+    const afterError = vi.fn(() => 0)
+    const hsh = createHsh({ builtins: { 'after-error': afterError } })
+
+    await expect(hsh(
+      shell,
+      'hsh',
+      '-c',
+      'echo $((1 / 0)); after-error',
+    )).resolves.toBe(1)
+
+    expect(error.content).toContain('Division by zero in arithmetic expansion')
+    expect(afterError).not.toHaveBeenCalled()
+  })
+
   it('stops executing commands after a foreground exit request', async () => {
     const { shell } = createShell()
     const afterExit = vi.fn(() => 0)

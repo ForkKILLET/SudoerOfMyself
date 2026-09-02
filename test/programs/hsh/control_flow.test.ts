@@ -343,4 +343,35 @@ describe('hsh control-flow execution', () => {
     expect(output.content).toContain('yes\n')
     expect(error.content).toBe('')
   })
+
+  it('continues the interactive shell after an arithmetic expansion error', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const term = {
+      buffer: { active: { cursorX: 0 } },
+      cols: 80,
+      doEcho: true,
+      getStringWidth: (value: string) => value.length,
+    } as unknown as Term
+    const context = {
+      fs: new Fs(Vfs.dir({}), { persistence: new MemoryFsPersistence() }),
+      processes: new ProcessTable(),
+      term,
+    } as Context
+    const process = new Process(context, null, {
+      name: 'hsh',
+      env: { HOME: '/', PATH: '/bin', PWD: '/' },
+      stdio: new Stdio(new KeyInput([
+        'echo $((1 / 0))', '\r',
+        'echo survived', '\r',
+        '\x04',
+      ]), output, error),
+    })
+    const hsh = createHsh({ builtins: { echo } })
+
+    await expect(hsh(process, 'hsh')).resolves.toBe(0)
+
+    expect(error.content).toContain('Division by zero in arithmetic expansion')
+    expect(output.content).toContain('survived\n')
+  })
 })
