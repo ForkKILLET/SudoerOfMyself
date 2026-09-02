@@ -14,8 +14,8 @@ describe('strftime', () => {
   })
 
   it('supports epoch seconds and control sequences', () => {
-    expect(formatStrftime('%s%%\n%n%t', timestamp, 'UTC')).toBe(
-      `${Math.floor(timestamp / 1_000)}%\n\n\t`,
+    expect(formatStrftime('%s %%s %%\n%n%t', timestamp, 'UTC')).toBe(
+      `${Math.floor(timestamp / 1_000)} %s %\n\n\t`,
     )
   })
 })

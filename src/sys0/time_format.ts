@@ -80,7 +80,7 @@ export const formatStrftime = (
 ) => {
   const date = getDateTimeParts(timestamp, timezone)
   const hour12 = date.hour % 12 || 12
-  return format.replace(/%[%aAbBdeFHImMnprRStTyYzZ]/g, (sequence) => {
+  return format.replace(/%[%aAbBdeFHImMnprRsStTyYzZ]/g, (sequence) => {
     switch (sequence) {
       case '%%': return '%'
       case '%a': return date.weekdayShort
@@ -97,6 +97,7 @@ export const formatStrftime = (
       case '%n': return '\n'
       case '%p': return date.hour < 12 ? 'AM' : 'PM'
       case '%R': return `${pad2(date.hour)}:${pad2(date.minute)}`
+      case '%s': return Math.floor(timestamp / 1_000).toString()
       case '%S': return pad2(date.second)
       case '%t': return '\t'
       case '%T': return `${pad2(date.hour)}:${pad2(date.minute)}:${pad2(date.second)}`
@@ -106,5 +107,5 @@ export const formatStrftime = (
       case '%Z': return date.timezoneName
       default: return sequence
     }
-  }).replace(/%s/g, Math.floor(timestamp / 1_000).toString())
+  })
 }

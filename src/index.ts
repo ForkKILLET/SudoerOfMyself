@@ -42,13 +42,16 @@ const start = async () => {
       saveClock()
       void clockPersistence.flush().catch(error => console.error('Could not save game clock', error))
     }
+    const onPageShow = () => time.game.unsuspend()
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
     disposeTimePersistence = () => {
       clearInterval(heartbeat)
       clockSubscription.dispose()
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
     }
 
     const ctx = new Context(getRootImage(), {
