@@ -55,6 +55,7 @@ export class GameClock {
   private _rate: number
   private _running: boolean
   private _timezone: string
+  private suspended = false
   private readonly listeners = new Set<GameClockListener>()
 
   constructor(
@@ -72,7 +73,7 @@ export class GameClock {
   }
 
   nowMs() {
-    if (! this._running) return this.anchorWorldTimeMs
+    if (! this._running || this.suspended) return this.anchorWorldTimeMs
     const elapsed = Math.max(0, this.monotonic.nowMs() - this.anchorMonotonicMs)
     return this.anchorWorldTimeMs + elapsed * this._rate
   }
@@ -144,6 +145,18 @@ export class GameClock {
     this.reanchor(this.anchorWorldTimeMs)
     this._running = true
     this.emitChange()
+  }
+
+  suspend() {
+    if (this.suspended) return
+    this.reanchor(this.nowMs())
+    this.suspended = true
+  }
+
+  unsuspend() {
+    if (! this.suspended) return
+    this.reanchor(this.anchorWorldTimeMs)
+    this.suspended = false
   }
 
   onChange(listener: GameClockListener) {

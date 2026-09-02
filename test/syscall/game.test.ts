@@ -7,6 +7,7 @@ import { Vfs } from '@/sys0/fs/vfs'
 import { Process } from '@/sys0/proc'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
+import { TimeService } from '@/sys0/time'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -31,6 +32,10 @@ const createProcess = () => {
   const context = {
     fs,
     processes: new ProcessTable(),
+    time: new TimeService({
+      monotonic: { nowMs: () => 250 },
+      gameState: { worldTimeMs: 1_000, rate: 0, running: true, timezone: 'UTC' },
+    }),
   } as Context
   const process = new Process(context, null, {
     name: 'worker',
@@ -42,6 +47,13 @@ const createProcess = () => {
 }
 
 describe('game file-descriptor syscalls', () => {
+  it('exposes game realtime separately from monotonic time', async () => {
+    const { handlers } = createProcess()
+
+    expect(handlers['clock.gettime']('realtime')).toMatchObject({ val: 1_000 })
+    expect(handlers['clock.gettime']('monotonic')).toMatchObject({ val: 250 })
+  })
+
   it('opens relative paths and shares the open-file description through dup', async () => {
     const { fs, handlers } = createProcess()
     const opened = await handlers['fd.open']('output', 'w')

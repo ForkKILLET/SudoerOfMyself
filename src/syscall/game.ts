@@ -13,6 +13,7 @@ import type { FileMode } from '@/sys0/fs/file_handle'
 export type FdOpenError = FOp.Error | FdError
 
 export type GameSyscallSchema = {
+  'clock.gettime': SyscallDefinition<[clock: 'realtime' | 'monotonic'], number, never>
   'fd.open': SyscallDefinition<[path: string, mode: FileMode], number, FdOpenError>
   'fd.readKey': SyscallDefinition<[fd: number], string, FdError>
   'fd.read': SyscallDefinition<[fd: number], string, FdError>
@@ -44,6 +45,9 @@ export const createGameSyscallHandlers = (
   }
 
   return {
+    'clock.gettime': clock => Ok(clock === 'realtime'
+      ? process.ctx.time.game.nowMs()
+      : process.ctx.time.monotonic.nowMs()),
     'fd.open': (path, mode) => {
       const opened = process.ctx.fs.open(path, mode, process.cwd)
       if (opened.isErr) return Err(opened.err)
@@ -144,5 +148,9 @@ export class WorkerProcessApi {
 
   getCwd() {
     return this.client.call('cwd.get')
+  }
+
+  getTime(clock: 'realtime' | 'monotonic') {
+    return this.client.call('clock.gettime', clock)
   }
 }

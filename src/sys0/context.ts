@@ -6,11 +6,13 @@ import { ExecService, NativeProgramRegistry } from './exec'
 import { ProcessTable } from './process_table'
 import { FsPersistence } from './fs/persistence'
 import { ProcessScheduler } from './process_scheduler'
+import { TimeService } from './time'
 
 export interface ContextOptions {
   mounts?: readonly FsMount[]
   fsPersistence?: FsPersistence
   nativePrograms: NativeProgramRegistry
+  time?: TimeService
 }
 
 export class Context {
@@ -20,6 +22,7 @@ export class Context {
   exec: ExecService
   processes: ProcessTable
   scheduler: ProcessScheduler
+  time: TimeService
 
   get fgProc(): Process {
     let process = this.init
@@ -31,14 +34,17 @@ export class Context {
     mounts = [],
     fsPersistence,
     nativePrograms,
+    time = new TimeService(),
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
     this.scheduler = new ProcessScheduler()
+    this.time = time
     this.fs = new Fs(initialImage, {
       persistence: fsPersistence,
       getCwd: () => this.fgProc.cwd,
       mounts,
+      now: () => time.game.nowMs(),
     })
     this.exec = new ExecService(this.fs, nativePrograms)
     this.init = new Process(this, null, {

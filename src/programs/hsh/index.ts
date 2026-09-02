@@ -760,6 +760,7 @@ export const createHsh = ({
         jobs: proc.jobTable?.values().filter(job => job.state === 'running').length,
         historyNumber: history.size,
         commandNumber,
+        now: new Date(ctx.time?.game.nowMs() ?? Date.now()),
       })
       const loop = readline.createLoop({
         history,

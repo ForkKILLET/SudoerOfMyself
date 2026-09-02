@@ -41,16 +41,21 @@ export class Process extends Emitter<ProcessEvents> {
   exitCode: number | null = null
   exitStatus: ProcessExit | null = null
   jobTable: JobTable | null
-  readonly startedAtMs = performance.now()
+  readonly startedAtMs: number
 
   // TODO: Replace elapsed wall time with scheduler-owned CPU accounting once
   // Worker execution can be dynamically instrumented.
   get elapsedTimeMs() {
-    return Math.max(0, performance.now() - this.startedAtMs)
+    return Math.max(0, this.monotonicNow() - this.startedAtMs)
   }
 
   private _cwd = '/'
   private pendingSignals: ProcessSignal[] = []
+
+  private monotonicNow() {
+    return this.ctx.time?.monotonic.nowMs() ?? performance.now()
+  }
+
   get cwd() {
     return this._cwd
   }
@@ -71,6 +76,7 @@ export class Process extends Emitter<ProcessEvents> {
   ) {
     super()
 
+    this.startedAtMs = this.monotonicNow()
     this.name = options.name
     this.variables = parent && options.inheritShellVariables
       ? parent.variables.clone()

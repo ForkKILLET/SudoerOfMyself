@@ -61,6 +61,23 @@ describe('GameClock', () => {
     expect(clock.nowMs()).toBe(12_000)
   })
 
+  it('temporarily suspends without persisting a paused clock', () => {
+    const monotonic = createMonotonicClock()
+    const clock = new GameClock(monotonic.clock)
+
+    monotonic.advance(100)
+    clock.suspend()
+    monotonic.advance(1_000)
+    expect(clock.snapshot()).toMatchObject({
+      worldTimeMs: DEFAULT_GAME_CLOCK_STATE.worldTimeMs + 100,
+      running: true,
+    })
+
+    clock.unsuspend()
+    monotonic.advance(100)
+    expect(clock.nowMs()).toBe(DEFAULT_GAME_CLOCK_STATE.worldTimeMs + 200)
+  })
+
   it('notifies listeners only for explicit clock changes', () => {
     const monotonic = createMonotonicClock()
     const clock = new GameClock(monotonic.clock)
