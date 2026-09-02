@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { formatProcessTime, ps } from '@/programs/ps'
 import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
@@ -28,11 +28,7 @@ const deferred = <T>() => {
 }
 
 describe('ps', () => {
-  afterEach(() => vi.restoreAllMocks())
-
   it('reports the active process table including itself', async () => {
-    let now = 1000
-    vi.spyOn(performance, 'now').mockImplementation(() => now)
     const output = new MemoryOutput()
     const context = { processes: new ProcessTable() } as Context
     const root = new Process(context, null, {
@@ -40,11 +36,13 @@ describe('ps', () => {
       env: { HOME: '/', PATH: '/bin', PWD: '/' },
       stdio: new Stdio(new EmptyInput(), output),
     })
+    root.accounting.addUser(14_000)
     const longExit = deferred<number>()
-    now = 2000
     const longRunning = root.spawn(() => longExit.promise, { name: 'long-running' })
+    const child = root.subProcesses[0]
+    child.accounting.addUser(12_000)
+    child.accounting.addSystem(1_000)
 
-    now = 15_000
     await root.spawn(ps, { name: 'ps' })
 
     expect(output.content).toBe(

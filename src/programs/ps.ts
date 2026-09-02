@@ -18,11 +18,14 @@ export const ps = createCommand('ps', '', 'Report active processes.')
   .help('help')
   .program(({ proc }) => {
     const processes = proc.ctx.processes.values()
-    const rows = processes.map(process => ({
-      pid: process.pid.toString(),
-      time: formatProcessTime(process.elapsedTimeMs),
-      command: process.name,
-    }))
+    const rows = processes.map((process) => {
+      const { userMs, systemMs } = process.accounting.selfUsage
+      return {
+        pid: process.pid.toString(),
+        time: formatProcessTime(userMs + systemMs),
+        command: process.name,
+      }
+    })
     const pidWidth = Math.max(7, ...rows.map(row => row.pid.length))
     const timeWidth = Math.max(8, ...rows.map(row => row.time.length))
 
