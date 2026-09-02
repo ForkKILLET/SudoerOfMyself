@@ -30,6 +30,9 @@ import { breakLoop, continueLoop } from './loop_control'
 import { fail, succeed } from './status'
 import { set } from './set'
 import { shift } from './shift'
+import { createEnvCommand } from './env'
+import { printenv } from './printenv'
+import { readonly } from './readonly'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -38,6 +41,7 @@ export const BUILTINS: Record<string, Program> = {
   command: createCommandBuiltin(() => BUILTINS),
   continue: continueLoop,
   echo,
+  env: createEnvCommand(() => BUILTINS),
   exit,
   export: exportEnv,
   false: fail,
@@ -45,7 +49,9 @@ export const BUILTINS: Record<string, Program> = {
   jobs,
   kill,
   pwd,
+  printenv,
   read,
+  readonly,
   set,
   shift,
   type: createTypeCommand(() => BUILTINS),

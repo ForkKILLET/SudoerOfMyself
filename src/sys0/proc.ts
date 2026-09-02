@@ -25,6 +25,7 @@ export interface CreateProcOptions {
   processGroup?: ProcessGroup | null
   foreground?: boolean
   inheritShellVariables?: boolean
+  clearEnvironment?: boolean
 }
 
 export class Process extends Emitter<ProcessEvents> {
@@ -73,7 +74,7 @@ export class Process extends Emitter<ProcessEvents> {
     this.name = options.name
     this.variables = parent && options.inheritShellVariables
       ? parent.variables.clone()
-      : new ShellVariables(parent?.variables.environment())
+      : new ShellVariables(options.clearEnvironment ? {} : parent?.variables.environment())
     Object.entries(options.env ?? {}).forEach(([name, value]) => {
       this.variables.set(name, value, { exported: true })
     })

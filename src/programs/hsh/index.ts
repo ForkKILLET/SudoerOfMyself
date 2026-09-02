@@ -80,10 +80,16 @@ export const execute = async (
     : undefined
 
   if (! name) {
-    command.assignments?.forEach(({ name, value }) => {
-      proc.variables.set(name, value)
-    })
-    return normalExit(0)
+    try {
+      command.assignments?.forEach(({ name, value }) => {
+        proc.variables.set(name, value)
+      })
+      return normalExit(0)
+    }
+    catch (error) {
+      proc.error(errorMessage(error))
+      return normalExit(1)
+    }
   }
 
   const getStdio = () => {
@@ -138,36 +144,29 @@ export const execute = async (
       }, ...args)
     }
 
-    const previousAssignments = new Map<string, {
-      existed: boolean
-      exported: boolean
-      value?: string
-    }>()
-    command.assignments?.forEach(({ name, value }) => {
+    const previousAssignments = new Map<string, ReturnType<typeof proc.variables.snapshot>>()
+    command.assignments?.forEach(({ name }) => {
       if (! previousAssignments.has(name)) {
-        previousAssignments.set(name, {
-          existed: Object.hasOwn(env, name),
-          exported: proc.variables.isExported(name),
-          value: env[name],
-        })
+        previousAssignments.set(name, proc.variables.snapshot(name))
       }
-      proc.variables.set(name, value, { exported: true })
     })
     const originalStdio = proc.stdio
     const originalName = proc.name
     proc.stdio = commandStdio
     proc.name = name
     try {
+      command.assignments?.forEach(({ name, value }) => {
+        proc.variables.set(name, value, { exported: true })
+      })
       return normalizeExit(await builtins[name](proc, name, ...args))
     }
     catch (err) {
-      proc.error(err)
+      proc.error(errorMessage(err))
       return normalExit(1)
     }
     finally {
-      previousAssignments.forEach(({ existed, exported, value }, name) => {
-        if (existed) proc.variables.set(name, value !, { exported })
-        else proc.variables.unset(name)
+      previousAssignments.forEach((snapshot, name) => {
+        proc.variables.restore(name, snapshot)
       })
       proc.stdio = originalStdio
       commandStdio.close()

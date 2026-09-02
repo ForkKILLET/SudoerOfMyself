@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { exportEnv } from '@/programs/export'
+import { createEnvCommand } from '@/programs/env'
+import { executeScript } from '@/programs/hsh'
+import { parseLine } from '@/programs/hsh/parse'
+import { printenv } from '@/programs/printenv'
 import { read } from '@/programs/read'
+import { readonly } from '@/programs/readonly'
 import { unset } from '@/programs/unset'
 import { Context } from '@/sys0/context'
 import { FRead, FWrite } from '@/sys0/fs'
@@ -75,6 +80,59 @@ describe('environment builtins', () => {
 
     expect(shell.env.REMOVE_ME).toBeUndefined()
     expect(error.content).toContain('invalid environment variable name')
+  })
+
+  it('removes export attributes without removing shell values', async () => {
+    const { output, shell } = createShell()
+    await exportEnv(shell, 'export', 'VISIBLE=value')
+
+    await expect(exportEnv(shell, 'export', '-n', 'VISIBLE')).resolves.toBe(0)
+    await expect(printenv(shell, 'printenv', 'VISIBLE')).resolves.toBe(1)
+
+    expect(shell.env.VISIBLE).toBe('value')
+    expect(shell.fork({ name: 'child' }).env.VISIBLE).toBeUndefined()
+    expect(output.content).toBe('')
+  })
+
+  it('runs env commands with temporary or empty exported environments', async () => {
+    const { shell } = createShell()
+    shell.variables.set('LOCAL_ONLY', 'hidden')
+    shell.variables.set('EXPORTED', 'outer', { exported: true })
+    const observed: Record<string, string>[] = []
+    const inspect = (child: Process) => {
+      observed.push({ ...child.env })
+      return 0
+    }
+    const env = createEnvCommand(() => ({ inspect }))
+
+    await expect(env(shell, 'env', 'EXPORTED=inner', 'TEMP=value', 'inspect'))
+      .resolves.toMatchObject({ code: 0 })
+    await expect(env(shell, 'env', '-i', 'TEMP=clean', 'inspect'))
+      .resolves.toMatchObject({ code: 0 })
+
+    expect(observed[0]).toMatchObject({ EXPORTED: 'inner', TEMP: 'value' })
+    expect(observed[0].LOCAL_ONLY).toBeUndefined()
+    expect(observed[1]).toEqual({ TEMP: 'clean', PWD: '/' })
+    expect(shell.env.EXPORTED).toBe('outer')
+    expect(shell.env.TEMP).toBeUndefined()
+  })
+
+  it('enforces readonly variables across assignment and unset paths', async () => {
+    const { error, shell } = createShell()
+
+    await expect(readonly(shell, 'readonly', 'LOCKED=one')).resolves.toBe(0)
+    await expect(exportEnv(shell, 'export', 'LOCKED=two')).resolves.toBe(1)
+    await expect(unset(shell, 'unset', 'LOCKED')).resolves.toBe(1)
+    const assignment = await executeScript(
+      shell,
+      parseLine('LOCKED=three', shell.env),
+      {},
+    )
+
+    expect(assignment.code).toBe(1)
+    expect(shell.env.LOCKED).toBe('one')
+    expect(shell.variables.isReadonly('LOCKED')).toBe(true)
+    expect(error.content.match(/readonly variable/g)).toHaveLength(3)
   })
 
   it('reads fields from a pipe and assigns the remainder to the last name', async () => {
