@@ -18,9 +18,15 @@ export class FileSystemWriterLockUnsupportedError extends Error {
   }
 }
 
-export const acquireFileSystemWriterLock = (
-  lockManager: LockManager | null = globalThis.navigator?.locks ?? null,
-) => {
+export interface AcquireFileSystemWriterLockOptions {
+  lockManager?: LockManager | null
+  lockName?: string
+}
+
+export const acquireFileSystemWriterLock = ({
+  lockManager = globalThis.navigator?.locks ?? null,
+  lockName = FILE_SYSTEM_WRITER_LOCK_NAME,
+}: AcquireFileSystemWriterLockOptions = {}) => {
   if (! lockManager) {
     return Promise.reject(new FileSystemWriterLockUnsupportedError())
   }
@@ -28,7 +34,7 @@ export const acquireFileSystemWriterLock = (
   return new Promise<FileSystemWriterLock>((resolve, reject) => {
     let acquisitionSettled = false
     const request = lockManager.request(
-      FILE_SYSTEM_WRITER_LOCK_NAME,
+      lockName,
       { mode: 'exclusive', ifAvailable: true },
       async (lock) => {
         if (! lock) {

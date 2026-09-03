@@ -26,32 +26,41 @@ class FakeLockManager {
 
 describe('file-system writer lock', () => {
   it('rejects browsers without the Web Locks API', async () => {
-    await expect(acquireFileSystemWriterLock(null)).rejects.toBeInstanceOf(
+    await expect(acquireFileSystemWriterLock({ lockManager: null })).rejects.toBeInstanceOf(
       FileSystemWriterLockUnsupportedError,
     )
   })
 
   it('allows one writer and rejects a competing tab without waiting', async () => {
     const lockManager = new FakeLockManager() as unknown as LockManager
-    const first = await acquireFileSystemWriterLock(lockManager)
+    const first = await acquireFileSystemWriterLock({ lockManager })
 
-    await expect(acquireFileSystemWriterLock(lockManager)).rejects.toBeInstanceOf(
+    await expect(acquireFileSystemWriterLock({ lockManager })).rejects.toBeInstanceOf(
       FileSystemWriterLockUnavailableError,
     )
 
     first.release()
     await new Promise<void>(resolve => setTimeout(resolve, 0))
-    const next = await acquireFileSystemWriterLock(lockManager)
+    const next = await acquireFileSystemWriterLock({ lockManager })
     next.release()
   })
 
   it('makes release idempotent', async () => {
     const lockManager = new FakeLockManager() as unknown as LockManager
-    const lock = await acquireFileSystemWriterLock(lockManager)
+    const lock = await acquireFileSystemWriterLock({ lockManager })
 
     expect(() => {
       lock.release()
       lock.release()
     }).not.toThrow()
+  })
+
+  it('allows independent storage namespaces to hold separate locks', async () => {
+    const lockManager = new FakeLockManager() as unknown as LockManager
+    const main = await acquireFileSystemWriterLock({ lockManager, lockName: 'main' })
+    const debug = await acquireFileSystemWriterLock({ lockManager, lockName: 'debug' })
+
+    main.release()
+    debug.release()
   })
 })

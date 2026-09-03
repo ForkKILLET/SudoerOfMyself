@@ -56,7 +56,6 @@ export const BUILTINS: Record<string, Program> = {
   exit,
   export: exportEnv,
   false: fail,
-  hsh_tokenize,
   jobs,
   kill,
   pwd,
@@ -77,15 +76,12 @@ export const hsh = createHsh({
   builtins: BUILTINS,
 })
 
-export const help = createHelp(hsh)
+export const help = createHelp(hsh, () => BUILTINS)
 
-export const NATIVE_PROGRAMS: Record<string, Program> = {
+export const PUBLIC_NATIVE_PROGRAMS: Record<string, Program> = {
   cat,
   cp,
-  cpu_burn,
   date,
-  fs_inodemap,
-  fs_format,
   ls,
   mkdir,
   mv,
@@ -101,3 +97,19 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
   hsh,
   help,
 }
+
+export const DEBUG_NATIVE_PROGRAMS: Record<string, Program> = {
+  cpu_burn,
+  fs_format,
+  fs_inodemap,
+  hsh_tokenize,
+}
+
+export const NATIVE_PROGRAMS: Record<string, Program> = {
+  ...PUBLIC_NATIVE_PROGRAMS,
+  ...DEBUG_NATIVE_PROGRAMS,
+}
+
+export const getInstalledNativeProgramNames = (debug = false) => (
+  Object.keys(debug ? NATIVE_PROGRAMS : PUBLIC_NATIVE_PROGRAMS)
+)

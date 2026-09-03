@@ -13,12 +13,16 @@ export interface TerminalEvents extends Events {
   interrupt: []
 }
 
+export type TermOptions = ITerminalOptions & ITerminalInitOnlyOptions & {
+  useWebglAddon?: boolean
+}
+
 export class Term extends Terminal {
   private readonly events = new Emitter<TerminalEvents>()
 
   doEcho = true
 
-  constructor(options?: ITerminalOptions & ITerminalInitOnlyOptions) {
+  constructor({ useWebglAddon = true, ...options }: TermOptions = {}) {
     super({
       rows: 30,
       cols: 97,
@@ -31,11 +35,13 @@ export class Term extends Terminal {
     this.loadAddon(new Unicode11Addon())
     this.unicode.activeVersion = '11'
 
-    const webglAddon = new WebglAddon()
-    webglAddon.onContextLoss(() => {
-      webglAddon.dispose()
-    })
-    this.loadAddon(webglAddon)
+    if (useWebglAddon) {
+      const webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose()
+      })
+      this.loadAddon(webglAddon)
+    }
 
     this.attachCustomKeyEventHandler(event => (
       handleTerminalCopyShortcut(event, () => this.getSelection())

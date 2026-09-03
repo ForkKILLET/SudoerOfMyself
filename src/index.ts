@@ -2,11 +2,15 @@ import '@/styles/index.css'
 import '@xterm/xterm/css/xterm.css'
 
 import { Context } from '@/sys0/context'
-import { game0 } from '@/programs/game0'
-import { NATIVE_PROGRAMS } from '@/programs'
+import { createGame0, game0 } from '@/programs/game0'
+import { getInstalledNativeProgramNames, hsh, NATIVE_PROGRAMS } from '@/programs'
 import { getBinImage, getRootImage } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
-import { showRecoveryMode, showStartupBlockedMode } from '@/recovery'
+import {
+  showRecoveryMode,
+  showRequestedRecoveryMode,
+  showStartupBlockedMode,
+} from '@/recovery'
 import { IndexedDbFileSystemStore } from '@/sys0/fs/indexed_db'
 import { QueuedFsPersistence } from '@/sys0/fs/persistence'
 import { TimeService } from '@/sys0/time'
@@ -16,9 +20,14 @@ import {
   FileSystemWriterLockUnavailableError,
   FileSystemWriterLockUnsupportedError,
 } from '@/sys0/fs/writer_lock'
+import { parseBootMode } from '@/boot_mode'
+import { getStorageNamespace } from '@/storage_namespace'
+
+const mode = parseBootMode(location.search)
+const storage = getStorageNamespace(mode.debug)
 
 const start = async () => {
-  const store = await IndexedDbFileSystemStore.open()
+  const store = await IndexedDbFileSystemStore.open({ databaseName: storage.databaseName })
   let disposeTimePersistence = () => {}
   try {
     const persistence = await QueuedFsPersistence.create(store)
@@ -57,7 +66,7 @@ const start = async () => {
     const ctx = new Context(getRootImage(), {
       mounts: [{
         path: '/bin',
-        image: getBinImage(Object.keys(NATIVE_PROGRAMS)),
+        image: getBinImage(getInstalledNativeProgramNames(mode.debug)),
         readOnly: true,
       }],
       fsPersistence: persistence,
@@ -69,7 +78,7 @@ const start = async () => {
     if (! terminalContainer) throw new Error('Terminal container not found')
 
     ctx.attach(terminalContainer)
-    ctx.init.spawn(game0, { name: 'game0' })
+    ctx.init.spawn(mode.debug ? createGame0(hsh) : game0, { name: 'game0' })
     await Promise.all([ctx.fs.flush(), clockPersistence.flush()])
   }
   catch (error) {
@@ -80,8 +89,12 @@ const start = async () => {
 }
 
 const boot = async () => {
+  if (mode.recovery) {
+    showRequestedRecoveryMode(storage)
+    return
+  }
   if (! await prepareCrossOriginIsolation()) return
-  const writerLock = await acquireFileSystemWriterLock()
+  const writerLock = await acquireFileSystemWriterLock({ lockName: storage.writerLockName })
   try {
     await start()
   }
@@ -103,6 +116,7 @@ void boot().catch((error: unknown) => {
       error,
       'HumanOS is already running',
       'Continue in the existing tab, or close it and reload this page.',
+      storage,
     )
     return
   }
@@ -111,8 +125,9 @@ void boot().catch((error: unknown) => {
       error,
       'This browser cannot safely open HumanOS',
       'Use a browser that supports the Web Locks API.',
+      storage,
     )
     return
   }
-  showRecoveryMode(error)
+  showRecoveryMode(error, storage)
 })

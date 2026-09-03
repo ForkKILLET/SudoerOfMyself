@@ -1,4 +1,4 @@
-import { wrapProgram } from '@/sys0/program'
+import { createCommand } from '@/sys0/program'
 import { replicate } from '@/utils'
 import { type HshToken, tokenize } from './hsh/parse'
 
@@ -20,32 +20,37 @@ export const formatTokenRows = (tokens: readonly HshToken[]) => {
   })
 }
 
-export const hsh_tokenize = wrapProgram((proc, _, ...args) => {
-  const { stdio, ctx } = proc
+export const hsh_tokenize = createCommand(
+  'hsh_tokenize', '<TEXT...>', 'Display the tokens and source ranges produced by the hsh lexer.',
+)
+  .help('help')
+  .whenUnknownOption('make-arg')
+  .program(({ proc }, ...args) => {
+    const { stdio, ctx } = proc
 
-  const raw = args.join(' ')
-  const tokens = tokenize(raw, false)
+    const raw = args.join(' ')
+    const tokens = tokenize(raw, false)
 
-  stdio.writeLn(raw)
-  const tokenLine = replicate(ctx.term.getStringWidth(raw), ' ')
-  tokens.forEach(({ begin, end }) => {
-    const beginColumn = ctx.term.getStringWidth(raw.slice(0, begin))
-    const endColumn = ctx.term.getStringWidth(raw.slice(0, end))
-    const width = endColumn - beginColumn
-    if (width <= 0) return
-    if (width === 1) {
-      tokenLine[beginColumn] = '┴'
-    }
-    else {
-      tokenLine[beginColumn] = '└'
-      for (let column = beginColumn + 1; column < endColumn - 1; column ++) {
-        tokenLine[column] = '─'
+    stdio.writeLn(raw)
+    const tokenLine = replicate(ctx.term.getStringWidth(raw), ' ')
+    tokens.forEach(({ begin, end }) => {
+      const beginColumn = ctx.term.getStringWidth(raw.slice(0, begin))
+      const endColumn = ctx.term.getStringWidth(raw.slice(0, end))
+      const width = endColumn - beginColumn
+      if (width <= 0) return
+      if (width === 1) {
+        tokenLine[beginColumn] = '┴'
       }
-      tokenLine[endColumn - 1] = '┘'
-    }
-  })
-  stdio.writeLn(tokenLine.join(''))
-  stdio.writeLn(formatTokenRows(tokens).join('\n'))
+      else {
+        tokenLine[beginColumn] = '└'
+        for (let column = beginColumn + 1; column < endColumn - 1; column ++) {
+          tokenLine[column] = '─'
+        }
+        tokenLine[endColumn - 1] = '┘'
+      }
+    })
+    stdio.writeLn(tokenLine.join(''))
+    stdio.writeLn(formatTokenRows(tokens).join('\n'))
 
-  return 0
-})
+    return 0
+  })
