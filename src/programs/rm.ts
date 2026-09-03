@@ -1,6 +1,6 @@
-import { Context } from '@/sys0/context'
 import { DirFile, displayFileT, File, FileT, FOp, Inode } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
+import type { FsSession } from '@/sys0/fs/session'
 import { createCommand } from '@/sys0/program'
 import { pick } from '@/utils'
 import { Awaitable } from '@/utils/types'
@@ -17,7 +17,7 @@ export interface RmXOptions {
 }
 
 const _rmX = async (
-  ctx: Context, options: RmXOptions,
+  fs: FsSession, options: RmXOptions,
   path: string, parentInode: Inode<DirFile>, filename: string, inode: Inode<File>,
 ): Promise<boolean> => {
   const fail = (err: FOp.Error, path: string) => {
@@ -26,9 +26,9 @@ const _rmX = async (
     return false
   }
 
-  if (ctx.fs.isInodeOfType(inode, [FileT.DIR])) {
+  if (fs.isInodeOfType(inode, [FileT.DIR])) {
     const { file } = inode
-    const childnames = ctx.fs.getChildren(file).map(({ name }) => name)
+    const childnames = fs.getChildren(file).map(({ name }) => name)
     if (! childnames.length && options.dir) {
       // An empty directory can be removed below without recursive traversal.
     }
@@ -41,12 +41,12 @@ const _rmX = async (
       let childFailed = false
       for (const childname of childnames) {
         const childpath = Path.join(path, childname)
-        const childInode = ctx.fs.getChildInode(file, childname)
+        const childInode = fs.getChildInode(file, childname)
         if (! childInode) {
           childFailed = ! fail({ type: FOp.T.NOT_FOUND }, childpath) || childFailed
           continue
         }
-        childFailed = ! await _rmX(ctx, options, childpath, inode, childname, childInode) || childFailed
+        childFailed = ! await _rmX(fs, options, childpath, inode, childname, childInode) || childFailed
       }
 
       if (childFailed) return false
@@ -55,21 +55,21 @@ const _rmX = async (
 
   if (options.onPromptRm && ! await options.onPromptRm(inode.file.type, path)) return true
 
-  const result = ctx.fs.rmWhere(parentInode, filename)
+  const result = fs.rmWhere(parentInode, filename)
   if (result.isErr) return fail(result.err, path)
   options.onOk?.(path)
   return true
 }
 
-const rmX = async (ctx: Context, path: string, options: RmXOptions) => {
-  const found = ctx.fs.findInode(path)
+const rmX = async (fs: FsSession, path: string, options: RmXOptions) => {
+  const found = fs.findInode(path)
   if (found.isErr) {
     if (options.force && found.err.type === FOp.T.NOT_FOUND) return true
     options.onErr?.(found.err, path)
     return false
   }
   const { parentInode, inode, filename } = found.val
-  return _rmX(ctx, options, path, parentInode, filename, inode)
+  return _rmX(fs, options, path, parentInode, filename, inode)
 }
 
 export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).')
@@ -80,7 +80,7 @@ export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).
   .option('recursive', '--recursive, -r', 'boolean', 'Remove directories and their contents recursively.')
   .option('verbose', '--verbose, -v', 'boolean', 'Explain what is being done.')
   .program(async ({ proc, options }, ...paths) => {
-    const { ctx, stdio } = proc
+    const { stdio } = proc
 
     if (! paths.length) {
       if (options.force) return 0
@@ -90,7 +90,7 @@ export const rm = createCommand('rm', '<FILE...>', 'Remove (unlink) the FILE(s).
     const errors: string[] = []
 
     for (const path of paths) {
-      await rmX(ctx, path, {
+      await rmX(proc.fs, path, {
         ...pick(options, ['dir', 'recursive', 'force']),
         onPromptEnter: options.interactive
           ? path => stdio.prompt(`Enter ${displayFileT(FileT.DIR)} '${path}'?`)

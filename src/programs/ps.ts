@@ -17,7 +17,9 @@ export const formatProcessTime = (milliseconds: number) => {
 export const ps = createCommand('ps', '', 'Report active processes.')
   .help('help')
   .program(({ proc }) => {
-    const processes = proc.ctx.processes.values()
+    const processes = proc.ctx.processes.values().filter(process => (
+      process.credentials.effectiveUid === proc.credentials.effectiveUid
+    ))
     const rows = processes.map((process) => {
       const { userMs, systemMs } = process.accounting.selfUsage
       return {

@@ -2,12 +2,14 @@ import { Err, Ok, Result } from 'fk-result'
 import {
   FileT,
   FOp,
-  Fs,
   Inode,
-  NativeExecutableDescriptor,
   NormalFile,
 } from './fs'
 import { Path } from './fs/path'
+import type { FsSession } from './fs/session'
+import { AccessMode, PermissionBits } from './fs/permissions'
+import { hasExecuteBit, loadSysExecutable, type SysExecutable } from './executable'
+import { createExecCredentials, type ProcessCredentials } from './identity'
 import { Program } from './program'
 
 export type NativeProgramRegistry = Record<string, Program>
@@ -27,24 +29,32 @@ export type ExecError =
 
 export interface ResolvedExecutable {
   path: string
-  inode: Inode<NormalFile> & { executable: NativeExecutableDescriptor }
+  inode: Inode<NormalFile>
+  descriptor: SysExecutable
   program: Program
 }
 
 export interface ResolveExecutableOptions {
   envPath: string
   cwd: string
+  fs: FsSession
 }
 
+export const credentialsForExecutable = (inode: Inode, parent: ProcessCredentials) => (
+  createExecCredentials(parent, {
+    uid: inode.metadata.uid,
+    gid: inode.metadata.gid,
+    setUid: (inode.metadata.mode & PermissionBits.SET_UID) !== 0,
+    setGid: (inode.metadata.mode & PermissionBits.SET_GID) !== 0,
+  })
+)
+
 export class ExecService {
-  constructor(
-    private readonly fs: Fs,
-    private readonly nativePrograms: NativeProgramRegistry,
-  ) {}
+  constructor(private readonly nativePrograms: NativeProgramRegistry) {}
 
   resolve(
     command: string,
-    { envPath, cwd }: ResolveExecutableOptions,
+    { envPath, cwd, fs }: ResolveExecutableOptions,
   ): Result<ResolvedExecutable, ExecError> {
     const candidates = Path.hasSlash(command)
       ? [command]
@@ -52,25 +62,33 @@ export class ExecService {
     let nonExecutablePath: string | undefined
 
     for (const candidate of candidates) {
-      const found = this.fs.findInode(candidate, { cwd })
+      const found = fs.findInode(candidate, { cwd })
       if (found.isErr) {
         if (found.err.type === FOp.T.NOT_FOUND) continue
         return Err({ type: ExecErrorT.FILE_SYSTEM_ERROR, error: found.err })
       }
 
       const { inode, path } = found.val
-      if (! this.isExecutable(inode)) {
+      if (inode.file.type !== FileT.NORMAL) {
         nonExecutablePath ??= path
         continue
       }
-      const program = this.nativePrograms[inode.executable.programId]
+      const normalInode = inode as Inode<NormalFile>
+      const descriptor = loadSysExecutable(normalInode)
+      if (! descriptor
+        || ! hasExecuteBit(normalInode)
+        || ! fs.canAccess(normalInode, AccessMode.EXECUTE)) {
+        nonExecutablePath ??= path
+        continue
+      }
+      const program = this.nativePrograms[descriptor.programId]
       if (! program) {
         return Err({
           type: ExecErrorT.NATIVE_PROGRAM_NOT_REGISTERED,
-          programId: inode.executable.programId,
+          programId: descriptor.programId,
         })
       }
-      return Ok({ path, inode, program })
+      return Ok({ path, inode: normalInode, descriptor, program })
     }
 
     return nonExecutablePath
@@ -78,17 +96,23 @@ export class ExecService {
       : Err({ type: ExecErrorT.NOT_FOUND })
   }
 
-  isExecutable(inode: Inode): inode is Inode<NormalFile> & { executable: NativeExecutableDescriptor } {
-    return inode.file.type === FileT.NORMAL && inode.executable?.format === 'native'
+  isExecutable(inode: Inode): inode is Inode<NormalFile> {
+    if (inode.file.type !== FileT.NORMAL) return false
+    const normalInode = inode as Inode<NormalFile>
+    return hasExecuteBit(normalInode) && loadSysExecutable(normalInode) !== undefined
   }
 
-  listInPath(envPath: string, cwd: string): string[] {
+  listInPath(envPath: string, cwd: string, fs: FsSession): string[] {
     const names = new Set<string>()
     for (const path of envPath.split(':').filter(Boolean)) {
-      const directory = this.fs.find(path, { allowedTypes: [FileT.DIR], cwd })
+      const directory = fs.find(path, { allowedTypes: [FileT.DIR], cwd })
       if (directory.isErr) continue
-      this.fs.getChildren(directory.val.file).forEach(({ name, inode }) => {
-        if (inode && this.isExecutable(inode)) names.add(name)
+      fs.getChildren(directory.val.file).forEach(({ name, inode }) => {
+        if (
+          inode
+          && this.isExecutable(inode)
+          && fs.canAccess(inode, AccessMode.EXECUTE)
+        ) names.add(name)
       })
     }
     return [...names]

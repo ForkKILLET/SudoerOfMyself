@@ -35,6 +35,14 @@ export const initializeShellParameters = (
   variables.set('0', arg0, { exported: false })
   variables.set('-', '', { exported: false })
   variables.set('_', arg0, { exported: false })
+  variables.defineDynamic('UID', {
+    get: () => process.credentials.realUid.toString(),
+  })
+  variables.defineDynamic('EUID', {
+    get: () => process.credentials.effectiveUid.toString(),
+  })
+  variables.makeReadonly('UID')
+  variables.makeReadonly('EUID')
   setPositionalParameters(process, args)
 }
 

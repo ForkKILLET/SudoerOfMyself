@@ -255,16 +255,13 @@ describe('Fs mutation consistency', () => {
       now: () => 42,
       mounts: [{
         path: '/bin',
-        image: Vfs.dir({ 'new-command': Vfs.nativeExe('new-command') }),
+        image: Vfs.dir({ 'new-command': Vfs.sysExe('new-command') }),
         readOnly: true,
       }],
     })
 
     expect(mountedBoot.find('/bin/old').isErr).toBe(true)
-    expect(mountedBoot.findInodeU('/bin/new-command').inode.executable).toEqual({
-      format: 'native',
-      programId: 'new-command',
-    })
+    expect(mountedBoot.openU('/bin/new-command', 'r').handle.read()).toBe('#!sys\nnew-command\n')
     expect(mountedBoot.statU('/bin/new-command')).toMatchObject({
       createdAt: 42,
       modifiedAt: 42,
@@ -280,7 +277,7 @@ describe('Fs mutation consistency', () => {
     expect(removeResult.isErr && removeResult.err.type).toBe(FOp.T.READ_ONLY_FILE_SYSTEM)
 
     mountedBoot.reset()
-    expect(mountedBoot.findInodeU('/bin/new-command').inode.executable?.programId).toBe('new-command')
+    expect(mountedBoot.openU('/bin/new-command', 'r').handle.read()).toBe('#!sys\nnew-command\n')
     expect(mountedBoot.find('/save').isErr).toBe(true)
   })
 
@@ -316,6 +313,25 @@ describe('Fs mutation consistency', () => {
     expect(result.val.createdInodes.every(inode => (
       inode.metadata.createdAt === 123 && inode.metadata.modifiedAt === 123
     ))).toBe(true)
+  })
+
+  it('applies creation ownership, inherited image ownership, and umask', () => {
+    const maintainer = {
+      inodes: new Map<number, Inode>(),
+      inodeBitmap: new Bitmap(8),
+    }
+    const result = Vfs.create(maintainer, Vfs.dir({
+      child: Vfs.normal('data'),
+    }, { uid: 10, gid: 20 }), 123, {
+      uid: 30,
+      gid: 40,
+      umask: 0o027,
+    })
+
+    expect(result.isOk).toBe(true)
+    if (result.isErr) return
+    expect(result.val.inode.metadata).toMatchObject({ uid: 10, gid: 20, mode: 0o750 })
+    expect(result.val.createdInodes[1].metadata).toMatchObject({ uid: 10, gid: 20, mode: 0o640 })
   })
 
   it('resolves relative paths through the injected working directory', () => {

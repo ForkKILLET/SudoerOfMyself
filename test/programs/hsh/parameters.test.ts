@@ -106,6 +106,8 @@ describe('hsh special parameters', () => {
     await hsh(shell, 'hsh', '-c', 'capture', 'custom-zero', 'first', 'second')
 
     expect(captured['$']).toBe(shell.pid.toString())
+    expect(captured.UID).toBe('0')
+    expect(captured.EUID).toBe('0')
     expect(captured['0']).toBe('custom-zero')
     expect(captured['1']).toBe('first')
     expect(captured['2']).toBe('second')

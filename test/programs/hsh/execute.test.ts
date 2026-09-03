@@ -48,6 +48,8 @@ const createShellProcess = (programs: Program | Record<string, Program>) => {
     exec: {
       resolve: (name: string) => Ok({
         program: typeof programs === 'function' ? programs : programs[name],
+        inode: fs.root,
+        path: `/bin/${name}`,
       }),
     },
   } as unknown as Context
@@ -159,6 +161,7 @@ describe('hsh execution', () => {
     expect(resolve).toHaveBeenCalledWith('external', {
       envPath: '/temporary/bin',
       cwd: '/',
+      fs: process.fs,
     })
     expect(childPath).toBe('/temporary/bin')
     expect(process.env.PATH).toBe('/bin')

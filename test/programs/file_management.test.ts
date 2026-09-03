@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cp } from '@/programs/cp'
+import { cat } from '@/programs/cat'
 import { mkdir } from '@/programs/mkdir'
 import { mv } from '@/programs/mv'
 import { rm } from '@/programs/rm'
@@ -13,6 +14,7 @@ import { Vfs } from '@/sys0/fs/vfs'
 import { Process } from '@/sys0/proc'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
+import { AccountService, HUMAN_GROUP_ID, HUMAN_USER_ID, ROOT_USER_ID } from '@/sys0/identity'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -27,18 +29,20 @@ class MemoryOutput implements FWrite {
   writeLn(data: string) { this.write(data + '\n') }
 }
 
-const createProcess = () => {
+const createProcess = (uid = ROOT_USER_ID) => {
   const output = new MemoryOutput()
   const error = new MemoryOutput()
   const fs = new Fs(Vfs.dir({
     existing: Vfs.dir(),
-    executable: Vfs.nativeExe('command'),
+    executable: Vfs.sysExe('command'),
     file: Vfs.normal('contents'),
     nested: Vfs.dir({ child: Vfs.normal('data') }),
+    home: Vfs.dir({}, { uid: HUMAN_USER_ID, gid: HUMAN_GROUP_ID, mode: 0o700 }),
   }), { persistence: new MemoryFsPersistence() })
-  const context = { fs, processes: new ProcessTable() } as Context
+  const context = { accounts: new AccountService(), fs, processes: new ProcessTable() } as Context
   const process = new Process(context, null, {
     name: 'hsh',
+    credentials: context.accounts.createCredentials(uid),
     cwd: '/',
     env: { HOME: '/', PATH: '/bin', PWD: '/' },
     stdio: new Stdio(new EmptyInput(), output, error),
@@ -122,17 +126,28 @@ describe('file-management commands', () => {
     expect(fs.find('/skipped').isErr).toBe(true)
   })
 
-  it('cp copies files and executable descriptors', async () => {
+  it('root can copy native executable contents and preserve their restricted mode', async () => {
     const { fs, process } = createProcess()
 
     await expect(cp(process, 'cp', '/file', '/copy')).resolves.toBe(0)
     await expect(cp(process, 'cp', '/executable', '/command-copy')).resolves.toBe(0)
 
     expect(fs.openU('/copy', 'r').handle.read()).toBe('contents')
-    expect(fs.findInodeU('/command-copy').inode.executable).toEqual({
-      format: 'native',
-      programId: 'command',
-    })
+    expect(fs.openU('/command-copy', 'r').handle.read()).toBe('#!sys\ncommand\n')
+    expect(fs.statU('/command-copy').mode).toBe(0o751)
+  })
+
+  it('ordinary users cannot read or copy native executable contents', async () => {
+    const { error, fs, output, process } = createProcess(HUMAN_USER_ID)
+
+    await expect(cat(process, 'cat', '/executable')).resolves.toBe(1)
+    expect(output.content).toBe('')
+    expect(error.content).toContain('Permission denied')
+
+    error.content = ''
+    await expect(cp(process, 'cp', '/executable', '/home/copied')).resolves.toBe(1)
+    expect(error.content).toContain('Permission denied')
+    expect(fs.find('/home/copied').isErr).toBe(true)
   })
 
   it('cp requires -r for directories and recursively copies their contents', async () => {

@@ -24,5 +24,6 @@ export const resolveShellCommand = (
   return process.ctx.exec.resolve(name, {
     envPath: process.env.PATH,
     cwd: process.env.PWD,
+    fs: process.fs,
   }).map(({ path }) => ({ kind: 'executable', path }))
 }

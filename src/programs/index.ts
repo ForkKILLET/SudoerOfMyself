@@ -43,6 +43,13 @@ import { date } from './date'
 import { times } from './times'
 import { timeout } from './timeout'
 import { uptime } from './uptime'
+import { chmod } from './chmod'
+import { chgrp } from './chgrp'
+import { chown } from './chown'
+import { groups } from './groups'
+import { id } from './id'
+import { umask } from './umask'
+import { whoami } from './whoami'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -70,6 +77,7 @@ export const BUILTINS: Record<string, Program> = {
   true: succeed,
   wait,
   times,
+  umask,
 }
 
 export const hsh = createHsh({
@@ -80,8 +88,13 @@ export const help = createHelp(hsh, () => BUILTINS)
 
 export const PUBLIC_NATIVE_PROGRAMS: Record<string, Program> = {
   cat,
+  chmod,
+  chgrp,
+  chown,
   cp,
   date,
+  groups,
+  id,
   ls,
   mkdir,
   mv,
@@ -94,6 +107,7 @@ export const PUBLIC_NATIVE_PROGRAMS: Record<string, Program> = {
   touch,
   timeout,
   uptime,
+  whoami,
   hsh,
   help,
 }
@@ -112,4 +126,8 @@ export const NATIVE_PROGRAMS: Record<string, Program> = {
 
 export const getInstalledNativeProgramNames = (debug = false) => (
   Object.keys(debug ? NATIVE_PROGRAMS : PUBLIC_NATIVE_PROGRAMS)
+)
+
+export const getNativePrograms = (debug = false) => (
+  debug ? NATIVE_PROGRAMS : PUBLIC_NATIVE_PROGRAMS
 )

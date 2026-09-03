@@ -1,7 +1,7 @@
 import type { Inode, InodeId } from '.'
 
 export const FILE_SYSTEM_IMAGE_FORMAT = 'sudoer-of-myself/file-system'
-export const FILE_SYSTEM_IMAGE_VERSION = 2
+export const FILE_SYSTEM_IMAGE_VERSION = 4
 
 export interface FileSystemImage {
   format: typeof FILE_SYSTEM_IMAGE_FORMAT
@@ -47,7 +47,7 @@ export function assertFileSystemImage(value: unknown): asserts value is FileSyst
   const inodes = image.inodes as unknown[]
   inodes.forEach((candidate: unknown, index: number) => {
     if (! isRecord(candidate)) invalidImage(`inode ${index} is not an object`)
-    const { iid, file, metadata, executable } = candidate as Record<string, unknown>
+    const { iid, file, metadata } = candidate as Record<string, unknown>
     if (! Number.isSafeInteger(iid) || (iid as number) < 1) {
       invalidImage(`inode ${index} has an invalid id`)
     }
@@ -55,12 +55,21 @@ export function assertFileSystemImage(value: unknown): asserts value is FileSyst
     inodeIds.add(iid as number)
 
     if (! isRecord(metadata)) invalidImage(`inode ${String(iid)} has invalid metadata`)
-    const { createdAt, modifiedAt } = metadata as Record<string, unknown>
+    const { createdAt, modifiedAt, uid, gid, mode } = metadata as Record<string, unknown>
     if (! Number.isFinite(createdAt) || (createdAt as number) < 0) {
       invalidImage(`inode ${String(iid)} has an invalid creation time`)
     }
     if (! Number.isFinite(modifiedAt) || (modifiedAt as number) < 0) {
       invalidImage(`inode ${String(iid)} has an invalid modification time`)
+    }
+    if (! Number.isSafeInteger(uid) || (uid as number) < 0) {
+      invalidImage(`inode ${String(iid)} has an invalid owner user ID`)
+    }
+    if (! Number.isSafeInteger(gid) || (gid as number) < 0) {
+      invalidImage(`inode ${String(iid)} has an invalid owner group ID`)
+    }
+    if (! Number.isSafeInteger(mode) || (mode as number) < 0 || (mode as number) > 0o7777) {
+      invalidImage(`inode ${String(iid)} has an invalid mode`)
     }
 
     if (! isRecord(file)) invalidImage(`inode ${String(iid)} has no file`)
@@ -79,14 +88,6 @@ export function assertFileSystemImage(value: unknown): asserts value is FileSyst
       if (typeof fileRecord.content !== 'string') invalidImage(`file inode ${String(iid)} has invalid content`)
     }
     else invalidImage(`inode ${String(iid)} has an unknown file type`)
-
-    if (executable !== undefined) {
-      if (! isRecord(executable)) invalidImage(`inode ${String(iid)} has an invalid executable descriptor`)
-      const executableRecord = executable as Record<string, unknown>
-      if (executableRecord.format !== 'native' || typeof executableRecord.programId !== 'string') {
-        invalidImage(`inode ${String(iid)} has an invalid executable descriptor`)
-      }
-    }
   })
 
   if (! inodeIds.has(image.rootIid as number)) invalidImage('root inode is missing')

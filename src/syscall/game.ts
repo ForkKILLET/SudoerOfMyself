@@ -49,7 +49,7 @@ export const createGameSyscallHandlers = (
       ? process.ctx.time.game.nowMs()
       : process.ctx.time.monotonic.nowMs()),
     'fd.open': (path, mode) => {
-      const opened = process.ctx.fs.open(path, mode, process.cwd)
+      const opened = process.fs.open(path, mode, process.cwd)
       if (opened.isErr) return Err(opened.err)
       const handle = opened.val.handle
       const target = mode === 'r'
@@ -71,13 +71,13 @@ export const createGameSyscallHandlers = (
     'stdio.readKey': () => readKey(0),
     'stdio.write': data => write(1, data),
     'fs.readFile': (path) => {
-      const opened = process.ctx.fs.open(path, 'r', process.cwd)
+      const opened = process.fs.open(path, 'r', process.cwd)
       if (opened.isErr) return Err(opened.err)
       return Ok(opened.val.handle.read())
     },
     'fs.writeFile': (path, data, mode) => {
       const fileMode = mode === 'append' ? 'a' as const : 'w' as const
-      const opened = process.ctx.fs.open(path, fileMode, process.cwd)
+      const opened = process.fs.open(path, fileMode, process.cwd)
       if (opened.isErr) return Err(opened.err)
       opened.val.handle.write(data)
       return Ok(undefined)

@@ -7,12 +7,14 @@ import { ProcessTable } from './process_table'
 import { FsPersistence } from './fs/persistence'
 import { ProcessScheduler } from './process_scheduler'
 import { TimeService } from './time'
+import { AccountService, ROOT_USER_ID } from './identity'
 
 export interface ContextOptions {
   mounts?: readonly FsMount[]
   fsPersistence?: FsPersistence
   nativePrograms: NativeProgramRegistry
   time?: TimeService
+  accounts?: AccountService
 }
 
 export class Context {
@@ -23,6 +25,7 @@ export class Context {
   processes: ProcessTable
   scheduler: ProcessScheduler
   time: TimeService
+  accounts: AccountService
 
   get fgProc(): Process {
     let process = this.init
@@ -35,10 +38,12 @@ export class Context {
     fsPersistence,
     nativePrograms,
     time = new TimeService(),
+    accounts = new AccountService(),
   }: ContextOptions) {
     this.term = new Term()
     this.processes = new ProcessTable()
     this.time = time
+    this.accounts = accounts
     this.scheduler = new ProcessScheduler({ now: () => time.monotonic.nowMs() })
     this.fs = new Fs(initialImage, {
       persistence: fsPersistence,
@@ -46,9 +51,10 @@ export class Context {
       mounts,
       now: () => time.game.nowMs(),
     })
-    this.exec = new ExecService(this.fs, nativePrograms)
+    this.exec = new ExecService(nativePrograms)
     this.init = new Process(this, null, {
       name: 'init',
+      credentials: accounts.createCredentials(ROOT_USER_ID),
       env: {
         PWD: '/home',
         HOME: '/home',

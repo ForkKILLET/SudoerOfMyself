@@ -20,7 +20,7 @@ import {
   type FileSystemReplacement,
 } from '@/sys0/fs/image'
 
-const metadata = { createdAt: 0, modifiedAt: 0 }
+const metadata = { createdAt: 0, modifiedAt: 0, uid: 0, gid: 0, mode: 0o644 }
 const gameClock: GameClockState = {
   worldTimeMs: 1_000,
   rate: 1,

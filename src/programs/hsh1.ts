@@ -1,5 +1,5 @@
 import { Program } from '@/sys0/program'
-import { hsh, NATIVE_PROGRAMS } from '.'
+import { hsh, PUBLIC_NATIVE_PROGRAMS } from '.'
 import { pick } from '@/utils'
 
 const hook = async <T extends object, R>(
@@ -19,7 +19,7 @@ const hook = async <T extends object, R>(
 }
 
 export const hsh1: Program = (proc, name, ...args) => hook(
-  NATIVE_PROGRAMS,
+  PUBLIC_NATIVE_PROGRAMS,
   {
     help: (proc) => {
       proc.stdio.writeLn('You are helpless. jaja.')

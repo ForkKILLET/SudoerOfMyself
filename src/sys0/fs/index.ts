@@ -2,6 +2,8 @@ import { Bitmap } from '@/utils/bitmap'
 import { Awaitable, Pred } from '@/utils/types'
 import { Err, Ok, Result } from 'fk-result'
 import { UserError } from '@/utils/errors'
+import type { GroupId, UserId } from '@/sys0/identity'
+import { normalizeMode, type UnixMode } from './permissions'
 
 import { FileMode, FileHandleFromMode, FILE_HANDLE_FROM_MODE } from './file_handle'
 import { FsPersistence, MemoryFsPersistence } from './persistence'
@@ -39,12 +41,15 @@ export type InodeId = number
 export interface InodeMetadata {
   createdAt: number
   modifiedAt: number
+  uid: UserId
+  gid: GroupId
+  mode: UnixMode
 }
+export type InodeMetadataUpdate = Partial<Pick<InodeMetadata, 'uid' | 'gid' | 'mode'>>
 export interface Inode<F extends File = File> {
   iid: InodeId
   file: F
   metadata: InodeMetadata
-  executable?: ExecutableDescriptor
 }
 export type Inodes = Map<InodeId, Inode>
 
@@ -77,13 +82,6 @@ export interface NormalFile {
   type: FileT.NORMAL
   content: string
 }
-
-export interface NativeExecutableDescriptor {
-  format: 'native'
-  programId: string
-}
-
-export type ExecutableDescriptor = NativeExecutableDescriptor
 
 export type FileFromT<FT extends FileT> =
   FT extends FileT.DIR ? DirFile :
@@ -122,7 +120,9 @@ export interface FileStat {
   size: number
   createdAt: number
   modifiedAt: number
-  executable: boolean
+  uid: UserId
+  gid: GroupId
+  mode: UnixMode
 }
 
 export namespace FOp {
@@ -140,6 +140,7 @@ export namespace FOp {
     DIRECTORY_NOT_EMPTY,
     CROSS_DEVICE,
     INVALID_ARGUMENT,
+    PERMISSION_DENIED,
     AGGREGATED_ERROR,
   }
 
@@ -157,6 +158,7 @@ export namespace FOp {
     | { type: T.DIRECTORY_NOT_EMPTY }
     | { type: T.CROSS_DEVICE }
     | { type: T.INVALID_ARGUMENT }
+    | { type: T.PERMISSION_DENIED }
     | { type: T.AGGREGATED_ERROR, errors: Error[] }
 
   export type OperationResult<T> = Result<T, Error>
@@ -192,6 +194,8 @@ export namespace FOp {
         return `Invalid cross-device operation`
       case T.INVALID_ARGUMENT:
         return `Invalid argument`
+      case T.PERMISSION_DENIED:
+        return `Permission denied`
       case T.AGGREGATED_ERROR:
         return `Got multiple errors:\n${err.errors.map(err => '  ' + displayError(err)).join('\n')}`
     }
@@ -388,10 +392,9 @@ export class Fs {
 
   private freezeFiles() {
     this.inodes.forEach((inode) => {
-      const { file, executable, metadata } = inode
+      const { file, metadata } = inode
       if (file.type === FileT.DIR) Object.freeze(file.entries)
       Object.freeze(file)
-      if (executable) Object.freeze(executable)
       Object.freeze(metadata)
       Object.freeze(inode)
     })
@@ -428,15 +431,21 @@ export class Fs {
     return this.isFileOfType(inode.file, types)
   }
 
-  create<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
+  create<FB extends Vfs.Vfile>(
+    tree: FB,
+    creation: Vfs.CreationContext = Vfs.ROOT_CREATION_CONTEXT,
+  ): FOp.CreateResult<FileFromT<FB['type']>> {
     if (this.isReadOnly) return this.readOnlyError()
-    const result = this.createUnchecked(tree)
+    const result = this.createUnchecked(tree, creation)
     if (result.isOk) this.markDirty(createPutsDelta(result.val.createdInodes))
     return result
   }
 
-  private createUnchecked<FB extends Vfs.Vfile>(tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
-    const result = Vfs.create(this, tree, this.now())
+  private createUnchecked<FB extends Vfs.Vfile>(
+    tree: FB,
+    creation: Vfs.CreationContext = Vfs.ROOT_CREATION_CONTEXT,
+  ): FOp.CreateResult<FileFromT<FB['type']>> {
+    const result = Vfs.create(this, tree, this.now(), creation)
     if (result.isOk) {
       result.val.createdInodes.forEach((inode) => {
         FILE_SYSTEM_OWNER.set(inode.file, this)
@@ -445,12 +454,17 @@ export class Fs {
     return result
   }
 
-  createAt<FB extends Vfs.Vfile>(parent: Inode<DirFile>, name: string, tree: FB): FOp.CreateResult<FileFromT<FB['type']>> {
+  createAt<FB extends Vfs.Vfile>(
+    parent: Inode<DirFile>,
+    name: string,
+    tree: FB,
+    creation: Vfs.CreationContext = Vfs.ROOT_CREATION_CONTEXT,
+  ): FOp.CreateResult<FileFromT<FB['type']>> {
     const owner = FILE_SYSTEM_OWNER.get(parent.file)
-    if (owner && owner !== this) return owner.createAt(parent, name, tree)
+    if (owner && owner !== this) return owner.createAt(parent, name, tree, creation)
     if (this.isReadOnly) return this.readOnlyError()
     if (this.getChildInode(parent.file, name)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
-    const createRes = this.createUnchecked(tree)
+    const createRes = this.createUnchecked(tree, creation)
     if (createRes.isErr) return createRes
 
     parent.file.entries[name] = createRes.val.inode.iid
@@ -562,7 +576,9 @@ export class Fs {
         : 0,
       createdAt: inode.metadata.createdAt,
       modifiedAt: inode.metadata.modifiedAt,
-      executable: inode.executable !== undefined,
+      uid: inode.metadata.uid,
+      gid: inode.metadata.gid,
+      mode: inode.metadata.mode,
     })
   }
 
@@ -570,9 +586,31 @@ export class Fs {
     return this.unwrap(this.stat(path, cwd), path)
   }
 
-  touch(path: string, cwd = this.cwd): FOp.TouchResult {
+  updateMetadata(
+    path: string,
+    update: InodeMetadataUpdate,
+    cwd = this.cwd,
+  ): FOp.OperationResult<{ inode: Inode }> {
     const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
-    if (mount) return mount.fs.touch(mountedPath, '/')
+    if (mount) return mount.fs.updateMetadata(mountedPath, update, '/')
+    if (this.isReadOnly) return this.readOnlyError()
+    const result = this.findInode(path, { cwd })
+    if (result.isErr) return result
+    const { inode } = result.val
+    if (update.uid !== undefined) inode.metadata.uid = update.uid
+    if (update.gid !== undefined) inode.metadata.gid = update.gid
+    if (update.mode !== undefined) inode.metadata.mode = normalizeMode(update.mode)
+    this.persistInode(inode)
+    return FOp.ok({ inode })
+  }
+
+  touch(
+    path: string,
+    cwd = this.cwd,
+    creation: Vfs.CreationContext = Vfs.ROOT_CREATION_CONTEXT,
+  ): FOp.TouchResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) return mount.fs.touch(mountedPath, '/', creation)
     if (this.isReadOnly) return this.readOnlyError()
 
     const result = this.findInode(path, { cwd })
@@ -587,7 +625,7 @@ export class Fs {
     if (! Path.isLegalFilename(filename)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
     const parentResult = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd })
     if (parentResult.isErr) return parentResult
-    const created = this.createAt(parentResult.val.inode, filename, Vfs.normal(''))
+    const created = this.createAt(parentResult.val.inode, filename, Vfs.normal(''), creation)
     if (created.isErr) return created
     return FOp.ok({ inode: created.val.inode })
   }
@@ -596,25 +634,14 @@ export class Fs {
     return this.unwrap(this.touch(path, cwd), `Cannot touch '${path}'`)
   }
 
-  setExecutable(
-    path: string,
-    executable: ExecutableDescriptor | undefined,
-    cwd = this.cwd,
-  ): FOp.OperationResult<void> {
-    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
-    if (mount) return mount.fs.setExecutable(mountedPath, executable, '/')
-    if (this.isReadOnly) return this.readOnlyError()
-    const result = this.findInode(path, { allowedTypes: [FileT.NORMAL], cwd })
-    if (result.isErr) return result
-
-    if (executable) result.val.inode.executable = structuredClone(executable)
-    else delete result.val.inode.executable
-    this.markInodeDirty(result.val.inode)
-    return FOp.ok(undefined)
-  }
-
   getChild(dir: DirFile, childName: string) {
     return this.getChildInode(dir, childName)?.file ?? null
+  }
+
+  getInode(file: File): Inode | undefined {
+    const owner = FILE_SYSTEM_OWNER.get(file)
+    if (owner && owner !== this) return owner.getInode(file)
+    return [...this.inodes.values()].find(inode => inode.file === file)
   }
 
   getChildInode(dir: DirFile, childName: string): Inode | null {
@@ -654,13 +681,21 @@ export class Fs {
     return ! this.getChildren(dir).length
   }
 
-  mkdir(path: string, { parents = false }: { parents?: boolean } = {}): FOp.MkdirResult {
-    const { mount, mountedPath } = this.resolveMountedPath(path)
-    if (mount) return mount.fs.mkdir(mountedPath, { parents })
+  mkdir(path: string, {
+    parents = false,
+    cwd = this.cwd,
+    creation = Vfs.ROOT_CREATION_CONTEXT,
+  }: {
+    parents?: boolean
+    cwd?: string
+    creation?: Vfs.CreationContext
+  } = {}): FOp.MkdirResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) return mount.fs.mkdir(mountedPath, { parents, cwd: '/', creation })
     if (this.isReadOnly) return this.readOnlyError()
 
     if (parents) {
-      const existing = this.findInode(path, { allowedTypes: [FileT.DIR] })
+      const existing = this.findInode(path, { allowedTypes: [FileT.DIR], cwd })
       if (existing.isOk) return FOp.ok({ dir: existing.val.inode.file })
       if (existing.err.type === FOp.T.NOT_ALLOWED_TYPE) return existing
     }
@@ -668,17 +703,17 @@ export class Fs {
     const { dirname, filename } = Path.getDirAndName(path)
     if (! Path.isLegalFilename(filename)) return FOp.err({ type: FOp.T.ILLEGAL_NAME })
 
-    let dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+    let dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd })
     if (parents && dirRes.isErr && dirRes.err.type === FOp.T.NOT_FOUND) {
-      const parentResult = this.mkdir(dirname, { parents: true })
+      const parentResult = this.mkdir(dirname, { parents: true, cwd, creation })
       if (parentResult.isErr) return parentResult
-      dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR] })
+      dirRes = this.findInode(dirname, { allowedTypes: [FileT.DIR], cwd })
     }
     if (dirRes.isErr) return dirRes
     const { inode: parentInode } = dirRes.val
     if (this.getChildInode(parentInode.file, filename)) return FOp.err({ type: FOp.T.ALREADY_EXISTS })
 
-    const createRes = this.createAt(parentInode, filename, Vfs.dir())
+    const createRes = this.createAt(parentInode, filename, Vfs.dir(), creation)
     if (createRes.isErr) return createRes
 
     const { inode } = createRes.val
@@ -722,11 +757,11 @@ export class Fs {
     return FOp.ok(undefined)
   }
 
-  rm(path: string): FOp.RmResult {
-    const { mount, mountedPath } = this.resolveMountedPath(path)
-    if (mount) return mount.fs.rm(mountedPath)
+  rm(path: string, cwd = this.cwd): FOp.RmResult {
+    const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
+    if (mount) return mount.fs.rm(mountedPath, '/')
     if (this.isReadOnly) return this.readOnlyError()
-    const res = this.findInode(path)
+    const res = this.findInode(path, { cwd })
     if (res.isErr) return res
 
     const { inode, parentInode: parent, filename } = res.val
@@ -736,12 +771,12 @@ export class Fs {
     if (rmRes.isErr) return rmRes
 
     return FOp.ok({
-      path: Path.normalize(path),
+      path: Path.resolve(path, cwd),
     })
   }
 
-  rmU(path: string) {
-    return this.unwrap(this.rm(path), `Cannot remove '${path}'`)
+  rmU(path: string, cwd = this.cwd) {
+    return this.unwrap(this.rm(path, cwd), `Cannot remove '${path}'`)
   }
 
   rename(sourcePath: string, targetPath: string, cwd = this.cwd): FOp.RenameResult {
@@ -810,10 +845,14 @@ export class Fs {
     )
   }
 
-  private markInodeDirty = (inode: Inode) => {
+  private persistInode(inode: Inode) {
     if (this.inodes.get(inode.iid) !== inode) return
-    inode.metadata.modifiedAt = this.now()
     this.markDirty(createPutDelta(inode))
+  }
+
+  private markInodeDirty = (inode: Inode) => {
+    inode.metadata.modifiedAt = this.now()
+    this.persistInode(inode)
   }
 
   private createFileHandle<FM extends FileMode>(inode: Inode<NormalFile>, mode: FM): FileHandleFromMode<FM> {
@@ -821,9 +860,14 @@ export class Fs {
     return new Handle(this.markInodeDirty, inode) as FileHandleFromMode<FM>
   }
 
-  open<FM extends FileMode>(path: string, mode: FM, cwd = this.cwd): FOp.OpenResult<FM> {
+  open<FM extends FileMode>(
+    path: string,
+    mode: FM,
+    cwd = this.cwd,
+    creation: Vfs.CreationContext = Vfs.ROOT_CREATION_CONTEXT,
+  ): FOp.OpenResult<FM> {
     const { mount, mountedPath } = this.resolveMountedPath(path, cwd)
-    if (mount) return mount.fs.open(mountedPath, mode)
+    if (mount) return mount.fs.open(mountedPath, mode, '/', creation)
     if (this.isReadOnly && mode !== 'r') return this.readOnlyError()
     const res = this.findInode(path, { allowedTypes: [FileT.NORMAL], cwd })
 
@@ -839,7 +883,7 @@ export class Fs {
       if (dirRes.isErr) return dirRes
 
       const { inode: parentInode } = dirRes.val
-      const createRes = this.createAt(parentInode, filename, Vfs.normal(''))
+      const createRes = this.createAt(parentInode, filename, Vfs.normal(''), creation)
       if (createRes.isErr) return createRes
       inode = createRes.val.inode as Inode<NormalFile>
     }

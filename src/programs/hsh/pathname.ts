@@ -1,4 +1,4 @@
-import { FileT, Fs } from '@/sys0/fs'
+import { FileT, type Fs } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
 import { matchesShellPattern, ShellPatternPart } from '../shell_pattern'
 
@@ -49,7 +49,7 @@ interface PathCandidate {
 }
 
 export const expandPathname = (
-  fs: Fs,
+  fs: Pick<Fs, 'findInode' | 'getChildren'>,
   cwd: string,
   parts: readonly ShellPatternPart[],
 ) => {

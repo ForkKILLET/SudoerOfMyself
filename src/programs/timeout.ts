@@ -1,4 +1,4 @@
-import { ExecErrorT } from '@/sys0/exec'
+import { credentialsForExecutable, ExecErrorT } from '@/sys0/exec'
 import { FOp } from '@/sys0/fs'
 import { createCommand } from '@/sys0/program'
 import { UserError } from '@/utils/errors'
@@ -25,6 +25,7 @@ export const timeout = createCommand(
     const resolved = proc.ctx.exec.resolve(command, {
       envPath: proc.env.PATH,
       cwd: proc.cwd,
+      fs: proc.fs,
     })
     if (resolved.isErr) {
       switch (resolved.err.type) {
@@ -45,7 +46,11 @@ export const timeout = createCommand(
 
     let didTimeout = false
     const processGroup = new ProcessGroup()
-    const running = proc.spawn(resolved.val.program, { name: command, processGroup }, ...args)
+    const running = proc.spawn(resolved.val.program, {
+      name: command,
+      processGroup,
+      credentials: credentialsForExecutable(resolved.val.inode, proc.credentials),
+    }, ...args)
     const child = proc.subProcesses[0]
     const timer = setTimeout(() => {
       if (! child || child.state === 'exited') return

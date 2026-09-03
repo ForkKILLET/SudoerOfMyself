@@ -6,7 +6,6 @@ export const mkdir = createCommand('mkdir', '<DIRECTORY...>', 'Create the DIRECT
   .option('parent', '--parent, -p', 'boolean', 'Create parent directories as needed')
   .option('verbose', '--verbose, -v', 'boolean', 'Print a message for each created directory')
   .program(async ({ proc, options }, ...paths) => {
-    const { ctx } = proc
     proc.staticName = 'mkdir'
 
     if (! paths.length) {
@@ -16,7 +15,7 @@ export const mkdir = createCommand('mkdir', '<DIRECTORY...>', 'Create the DIRECT
 
     for (const path of paths) {
       try {
-        ctx.fs.mkdirU(path, { parents: options.parent })
+        proc.fs.mkdirU(path, { parents: options.parent })
         if (options.verbose) {
           proc.log(`Created directory '${path}'`)
         }

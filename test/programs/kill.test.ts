@@ -7,6 +7,7 @@ import { Process } from '@/sys0/proc'
 import { ProcessSignal, signalExit } from '@/sys0/process_exit'
 import { ProcessTable } from '@/sys0/process_table'
 import { Stdio } from '@/sys0/stdio'
+import { createProcessCredentials } from '@/sys0/identity'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -83,5 +84,21 @@ describe('kill builtin', () => {
 
     background.child.sendSignal('SIGKILL')
     await background.completion
+  })
+
+  it('rejects signals to processes owned by another user', async () => {
+    const { error, shell } = createShell()
+    shell.credentials.realUid = 1000
+    shell.credentials.effectiveUid = 1000
+    shell.credentials.savedUid = 1000
+    const target = new Process(shell.ctx, null, {
+      name: 'root-task',
+      credentials: createProcessCredentials(0, 0),
+      stdio: shell.stdio.fork(),
+    })
+
+    await expect(kill(shell, 'kill', '-0', target.pid.toString())).resolves.toBe(1)
+
+    expect(error.content).toContain('operation not permitted')
   })
 })

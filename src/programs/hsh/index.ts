@@ -21,7 +21,7 @@ import {
 import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
-import { ExecErrorT } from '@/sys0/exec'
+import { credentialsForExecutable, ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
 import { formatJobCompletion, JobTable, ProcessGroup } from '@/sys0/job'
@@ -120,14 +120,14 @@ export const execute = async (
       command.redirections?.forEach((redirection) => {
         switch (redirection.type) {
           case 'readFrom': {
-            const handle = ctx.fs.openU(redirection.path, 'r', proc.cwd).handle
+            const handle = proc.fs.openU(redirection.path, 'r', proc.cwd).handle
             unwrapFd(fds.replace(redirection.fd, readableFileTarget(handle)))
             break
           }
           case 'writeTo':
           case 'appendTo': {
             const mode = redirection.type === 'appendTo' ? 'a' : 'w'
-            const handle = ctx.fs.openU(redirection.path, mode, proc.cwd).handle
+            const handle = proc.fs.openU(redirection.path, mode, proc.cwd).handle
             unwrapFd(fds.replace(redirection.fd, writableFileTarget(handle)))
             break
           }
@@ -195,6 +195,7 @@ export const execute = async (
     const exeRes = ctx.exec.resolve(name, {
       envPath: assignmentEnv?.PATH ?? env.PATH,
       cwd: env.PWD,
+      fs: proc.fs,
     })
     if (exeRes.isErr) {
       try {
@@ -224,6 +225,7 @@ export const execute = async (
       name,
       stdio: commandStdio,
       env: assignmentEnv,
+      credentials: credentialsForExecutable(exeRes.val.inode, proc.credentials),
       processGroup: options.processGroup,
       foreground: options.foreground,
     }, ...args)
@@ -421,7 +423,7 @@ const expandForWords = (proc: Process, statement: HshForStatement) => {
     expand(tokenize(statement.wordsSource), proc.env, {
       assignVariable: (name, value) => proc.variables.set(name, value),
     }),
-    pattern => expandPathname(proc.ctx.fs, proc.cwd, pattern),
+    pattern => expandPathname(proc.fs, proc.cwd, pattern),
     { commandLine: false },
   )
   return tokens.map((token) => {
@@ -465,7 +467,7 @@ const executeStatement = async (
       const parsed = await parseLineAsync(statement.source, proc.env, {
         assignVariable: (name, value) => proc.variables.set(name, value),
         substituteCommand: source => executeCommandSubstitution(proc, source, builtins),
-        expandPathname: pattern => expandPathname(proc.ctx.fs, proc.cwd, pattern),
+        expandPathname: pattern => expandPathname(proc.fs, proc.cwd, pattern),
       })
       return executeScript(proc, parsed, builtins, {
         source: timed ? `time ${statement.source}` : statement.source,
@@ -666,7 +668,11 @@ export const getCompProvider = (
       const assignment = parseEnvAssignment(token.content)
       return assignment ? [[assignment.name, assignment.value]] : []
     }))
-    const installedPrograms = ctx.exec.listInPath(commandEnv.PATH ?? env.PATH, env.PWD)
+    const installedPrograms = ctx.exec.listInPath(
+      commandEnv.PATH ?? env.PATH,
+      env.PWD,
+      proc.fs,
+    )
     const commandNames = new Set([
       ...installedPrograms,
       ...Object.keys(builtins),
@@ -679,17 +685,17 @@ export const getCompProvider = (
 
   if (filename === '..') return [{ value: '/', display: '../' }]
 
-  const dirRes = ctx.fs.find(dirname, { allowedTypes: [FileT.DIR] })
+  const dirRes = proc.fs.find(dirname, { allowedTypes: [FileT.DIR] })
   if (dirRes.isErr) return []
 
   const { file: dir } = dirRes.val
   return getCandidates(
-    ctx.fs
+    proc.fs
       .getChildren(dir)
       .map(({ name }) => name)
       .sort()
       .map((name) => {
-        const child = ctx.fs.getChildInode(dir, name)
+        const child = proc.fs.getChildInode(dir, name)
         let display = name, value = name
         if (! child) {
           display = chalk.redBright(display)
@@ -721,7 +727,7 @@ export const createHsh = ({
 
     const flushFileSystem = async () => {
       try {
-        await ctx.fs.flush()
+        await proc.fs.flush()
       }
       catch (error) {
         proc.error(`file system save failed: ${errorMessage(error)}`)
@@ -764,7 +770,7 @@ export const createHsh = ({
       let commandNumber = 1
 
       const profilePath = Path.join(env.HOME, '.profile')
-      const profile = ctx.fs.open(profilePath, 'r', proc.cwd)
+      const profile = proc.fs.open(profilePath, 'r', proc.cwd)
       if (profile.isOk) {
         await executeSource(proc, profile.val.handle.read())
       }
@@ -775,7 +781,7 @@ export const createHsh = ({
       const readHistoryContent = () => {
         const path = env.HISTFILE
         if (! path) return ''
-        const result = ctx.fs.open(path, 'r', proc.cwd)
+        const result = proc.fs.open(path, 'r', proc.cwd)
         if (result.isOk) return result.val.handle.read()
         if (result.err.type !== FOp.T.NOT_FOUND) {
           proc.error(`${path}: ${FOp.displayError(result.err)}`)
@@ -787,7 +793,7 @@ export const createHsh = ({
         if (! path || ! line.trim()) return
         const content = readHistoryContent()
         const saveSize = parseHistoryLimit(env.SAVEHIST, 1_000)
-        const result = ctx.fs.open(path, 'w', proc.cwd)
+        const result = proc.fs.open(path, 'w', proc.cwd)
         if (result.isErr) {
           proc.error(`${path}: ${FOp.displayError(result.err)}`)
           return
@@ -867,7 +873,7 @@ export const createHsh = ({
     }
 
     else {
-      const fh = ctx.fs.openU(path, 'r').handle
+      const fh = proc.fs.openU(path, 'r').handle
       await executeSource(proc, fh.read())
     }
 

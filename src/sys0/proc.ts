@@ -10,6 +10,15 @@ import { Pid } from './process_table'
 import type { JobTable, ProcessGroup } from './job'
 import { defaultProcessScheduler } from './process_scheduler'
 import { ProcessAccounting } from './process_usage'
+import {
+  cloneProcessCredentials,
+  createProcessCredentials,
+  ROOT_GROUP_ID,
+  ROOT_USER_ID,
+  type ProcessCredentials,
+} from './identity'
+import { DEFAULT_UMASK, type UnixMode } from './fs/permissions'
+import { FsSession } from './fs/session'
 
 export interface ProcessEvents extends Events {
   signal: [ProcessSignal]
@@ -27,6 +36,8 @@ export interface CreateProcOptions {
   foreground?: boolean
   inheritShellVariables?: boolean
   clearEnvironment?: boolean
+  credentials?: ProcessCredentials
+  umask?: UnixMode
 }
 
 export class Process extends Emitter<ProcessEvents> {
@@ -44,6 +55,9 @@ export class Process extends Emitter<ProcessEvents> {
   jobTable: JobTable | null
   readonly startedAtMs: number
   readonly accounting = new ProcessAccounting()
+  readonly credentials: ProcessCredentials
+  umask: UnixMode
+  private fsSession: FsSession | undefined
 
   // TODO: Replace elapsed wall time with scheduler-owned CPU accounting once
   // Worker execution can be dynamically instrumented.
@@ -79,6 +93,12 @@ export class Process extends Emitter<ProcessEvents> {
     super()
 
     this.startedAtMs = this.monotonicNow()
+    this.credentials = cloneProcessCredentials(
+      options.credentials
+      ?? parent?.credentials
+      ?? createProcessCredentials(ROOT_USER_ID, ROOT_GROUP_ID),
+    )
+    this.umask = options.umask ?? parent?.umask ?? DEFAULT_UMASK
     this.name = options.name
     this.variables = parent && options.inheritShellVariables
       ? parent.variables.clone()
@@ -96,6 +116,15 @@ export class Process extends Emitter<ProcessEvents> {
     this.jobTable = parent?.jobTable ?? null
     this.pid = ctx.processes.register(this)
     this.processGroup?.add(this)
+  }
+
+  get fs() {
+    return this.fsSession ??= new FsSession(
+      this.ctx.fs,
+      () => this.cwd,
+      () => this.credentials,
+      () => this.umask,
+    )
   }
 
   subProcesses: Process[] = []

@@ -19,7 +19,7 @@ export const createHelp = (
       writeCommandGroup(
         writeLn,
         'Programs',
-        proc.ctx.exec.listInPath(proc.env.PATH, proc.cwd),
+        proc.ctx.exec.listInPath(proc.env.PATH, proc.cwd, proc.fs),
       )
       writeLn('')
       writeLn('Use "help PROGRAM" for detailed usage.')

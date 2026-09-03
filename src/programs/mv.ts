@@ -12,7 +12,7 @@ export const mv = createCommand('mv', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Mo
     if (paths.length < 2) throw new UserError('Missing destination operand')
 
     const targetPath = paths.pop() as string
-    const targetDirectoryResult = proc.ctx.fs.findInode(targetPath, {
+    const targetDirectoryResult = proc.fs.findInode(targetPath, {
       allowedTypes: [FileT.DIR],
       cwd: proc.cwd,
     })
@@ -25,7 +25,7 @@ export const mv = createCommand('mv', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Mo
     const errors: string[] = []
 
     for (const sourcePath of paths) {
-      const sourceResult = proc.ctx.fs.findInode(sourcePath, { cwd: proc.cwd })
+      const sourceResult = proc.fs.findInode(sourcePath, { cwd: proc.cwd })
       if (sourceResult.isErr) {
         errors.push(`Cannot move '${sourcePath}': ${FOp.displayError(sourceResult.err)}`)
         continue
@@ -34,7 +34,7 @@ export const mv = createCommand('mv', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Mo
         && targetDirectory !== sourceResult.val.path
         ? Path.join(targetDirectory, sourceResult.val.filename)
         : Path.resolve(targetPath, proc.cwd)
-      const existingTarget = proc.ctx.fs.findInode(destination, { cwd: '/' })
+      const existingTarget = proc.fs.findInode(destination, { cwd: '/' })
       if (
         existingTarget.isOk
         && existingTarget.val.inode !== sourceResult.val.inode
@@ -43,7 +43,7 @@ export const mv = createCommand('mv', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Mo
         && ! await proc.stdio.prompt(`Overwrite '${destination}'?`)
       ) continue
 
-      const result = proc.ctx.fs.rename(sourceResult.val.path, destination, '/')
+      const result = proc.fs.rename(sourceResult.val.path, destination, '/')
       if (result.isErr) {
         errors.push(`Cannot move '${sourcePath}' to '${destination}': ${FOp.displayError(result.err)}`)
       }

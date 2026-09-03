@@ -2,6 +2,7 @@ import { createCommand } from '@/sys0/program'
 import { ProcessSignal } from '@/sys0/process_exit'
 import { UserError } from '@/utils/errors'
 import { parseJobId } from './job_ref'
+import { canSignal } from '@/sys0/identity'
 
 type KillSignal = ProcessSignal | 0
 
@@ -56,6 +57,11 @@ export const kill = createCommand('kill', '[OPTIONS] PID | %JOB...', 'Send a sig
           hasError = true
           return
         }
+        if (job.group.values().some(process => ! canSignal(proc.credentials, process.credentials))) {
+          proc.error(`${target}: operation not permitted`)
+          hasError = true
+          return
+        }
         if (signal !== 0) job.group.sendSignal(signal)
         return
       }
@@ -66,11 +72,18 @@ export const kill = createCommand('kill', '[OPTIONS] PID | %JOB...', 'Send a sig
         hasError = true
         return
       }
-      const exists = proc.ctx.processes.has(pid)
-      if (! exists || (signal !== 0 && ! proc.ctx.processes.sendSignal(pid, signal))) {
+      const targetProcess = proc.ctx.processes.get(pid)
+      if (! targetProcess) {
         proc.error(`${target}: no such process`)
         hasError = true
+        return
       }
+      if (! canSignal(proc.credentials, targetProcess.credentials)) {
+        proc.error(`${target}: operation not permitted`)
+        hasError = true
+        return
+      }
+      if (signal !== 0) proc.ctx.processes.sendSignal(pid, signal)
     })
 
     return hasError ? 1 : 0

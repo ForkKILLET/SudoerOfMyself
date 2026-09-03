@@ -6,7 +6,7 @@ export const tee = createCommand('tee', '[FILE...]', 'Copy standard input to eac
   .option('append', '-a, --append', 'boolean', 'Append to the given FILEs, do not overwrite')
   .program(async ({ proc, options }, ...paths) => {
     const mode = options.append ? 'a' : 'w'
-    const outputs = paths.map(path => proc.ctx.fs.openU(path, mode).handle)
+    const outputs = paths.map(path => proc.fs.openU(path, mode).handle)
     const abortController = new AbortController()
     let receivedSignal: ProcessSignal | undefined
     const signalSubscription = proc.on('signal', (signal) => {

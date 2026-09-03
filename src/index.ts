@@ -3,7 +3,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { Context } from '@/sys0/context'
 import { createGame0, game0 } from '@/programs/game0'
-import { getInstalledNativeProgramNames, hsh, NATIVE_PROGRAMS } from '@/programs'
+import { getInstalledNativeProgramNames, getNativePrograms, hsh } from '@/programs'
 import { getBinImage, getRootImage } from '@/data/sys_image'
 import { prepareCrossOriginIsolation } from '@/cross_origin_isolation'
 import {
@@ -70,7 +70,7 @@ const start = async () => {
         readOnly: true,
       }],
       fsPersistence: persistence,
-      nativePrograms: NATIVE_PROGRAMS,
+      nativePrograms: getNativePrograms(mode.debug),
       time,
     })
 

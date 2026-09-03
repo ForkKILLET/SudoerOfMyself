@@ -25,11 +25,11 @@ class NullOutput implements FWrite {
 
 const createProcess = (task: Program) => {
   const fs = new Fs(Vfs.dir({
-    bin: Vfs.dir({ task: Vfs.nativeExe('task') }),
+    bin: Vfs.dir({ task: Vfs.sysExe('task') }),
   }), { persistence: new MemoryFsPersistence() })
   const context = {
     fs,
-    exec: new ExecService(fs, { task }),
+    exec: new ExecService({ task }),
     processes: new ProcessTable(),
   } as Context
   return new Process(context, null, {

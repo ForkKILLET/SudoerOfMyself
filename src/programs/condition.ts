@@ -1,9 +1,13 @@
 import { Err, Ok, type Result } from 'fk-result'
 import { FileT } from '@/sys0/fs'
+import { AccessMode } from '@/sys0/fs/permissions'
 import type { Process } from '@/sys0/proc'
 import { matchesShellPattern, type ShellPatternPart } from './shell_pattern'
 
-export type ConditionUnaryOperator = '-n' | '-z' | '-e' | '-f' | '-d' | '-s' | '-x'
+export type ConditionUnaryOperator =
+  | '-n' | '-z'
+  | '-e' | '-f' | '-d' | '-s'
+  | '-r' | '-w' | '-x' | '-O' | '-G'
 export type ConditionBinaryOperator =
   | '=' | '==' | '!=' | '<' | '>'
   | '-eq' | '-ne' | '-lt' | '-le' | '-gt' | '-ge'
@@ -26,7 +30,7 @@ export type ConditionError =
   | { type: 'invalid-integer', value: string }
 
 const UNARY_OPERATORS: ReadonlySet<string> = new Set<ConditionUnaryOperator>([
-  '-n', '-z', '-e', '-f', '-d', '-s', '-x',
+  '-n', '-z', '-e', '-f', '-d', '-s', '-r', '-w', '-x', '-O', '-G',
 ])
 
 const BINARY_OPERATORS: ReadonlySet<string> = new Set<ConditionBinaryOperator>([
@@ -152,7 +156,7 @@ const evaluateUnary = (
   if (operator === '-n') return operand.length > 0
   if (operator === '-z') return operand.length === 0
 
-  const found = proc.ctx.fs.findInode(operand, { cwd: proc.cwd })
+  const found = proc.fs.findInode(operand, { cwd: proc.cwd })
   if (found.isErr) return false
   const { inode } = found.val
   switch (operator) {
@@ -160,7 +164,11 @@ const evaluateUnary = (
     case '-f': return inode.file.type === FileT.NORMAL
     case '-d': return inode.file.type === FileT.DIR
     case '-s': return inode.file.type === FileT.NORMAL && inode.file.content.length > 0
-    case '-x': return proc.ctx.exec.isExecutable(inode)
+    case '-r': return proc.fs.canAccess(inode, AccessMode.READ)
+    case '-w': return proc.fs.canAccess(inode, AccessMode.WRITE)
+    case '-x': return proc.fs.canAccess(inode, AccessMode.EXECUTE)
+    case '-O': return inode.metadata.uid === proc.credentials.effectiveUid
+    case '-G': return inode.metadata.gid === proc.credentials.effectiveGid
   }
 }
 

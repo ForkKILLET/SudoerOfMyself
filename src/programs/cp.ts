@@ -1,6 +1,6 @@
-import { Context } from '@/sys0/context'
 import { FileT, FOp } from '@/sys0/fs'
 import { Path } from '@/sys0/fs/path'
+import type { FsSession } from '@/sys0/fs/session'
 import { createCommand } from '@/sys0/program'
 import { Awaitable } from '@/utils/types'
 import { UserError } from '@/utils/errors'
@@ -12,18 +12,19 @@ interface CopyOptions {
 }
 
 const copyEntry = async (
-  ctx: Context,
+  fs: FsSession,
   sourcePath: string,
   targetPath: string,
   options: CopyOptions,
 ): Promise<boolean> => {
-  const sourceResult = ctx.fs.findInode(sourcePath, { cwd: '/' })
+  const sourceResult = fs.findInode(sourcePath, { cwd: '/' })
   if (sourceResult.isErr) {
     options.onError(sourcePath, targetPath, sourceResult.err)
     return false
   }
   const source = sourceResult.val.inode
-  const targetResult = ctx.fs.findInode(targetPath, { cwd: '/' })
+  const targetResult = fs.findInode(targetPath, { cwd: '/' })
+  const targetDidNotExist = targetResult.isErr && targetResult.err.type === FOp.T.NOT_FOUND
 
   if (source.file.type === FileT.DIR) {
     if (! options.recursive) {
@@ -43,7 +44,7 @@ const copyEntry = async (
         options.onError(sourcePath, targetPath, targetResult.err)
         return false
       }
-      const created = ctx.fs.mkdir(targetPath)
+      const created = fs.mkdir(targetPath)
       if (created.isErr) {
         options.onError(sourcePath, targetPath, created.err)
         return false
@@ -51,10 +52,17 @@ const copyEntry = async (
     }
 
     let succeeded = true
-    for (const child of ctx.fs.getChildren(source.file)) {
+    for (const child of fs.getChildren(source.file)) {
       const childSource = Path.join(sourceResult.val.path, child.name)
       const childTarget = Path.join(targetPath, child.name)
-      succeeded = await copyEntry(ctx, childSource, childTarget, options) && succeeded
+      succeeded = await copyEntry(fs, childSource, childTarget, options) && succeeded
+    }
+    if (targetDidNotExist) {
+      const changed = fs.chmod(targetPath, source.metadata.mode & ~ fs.umask & 0o777, '/')
+      if (changed.isErr) {
+        options.onError(sourcePath, targetPath, changed.err)
+        return false
+      }
     }
     return succeeded
   }
@@ -75,16 +83,23 @@ const copyEntry = async (
     return false
   }
 
-  const opened = ctx.fs.open(targetPath, 'w', '/')
+  const sourceOpened = fs.open(sourceResult.val.path, 'r', '/')
+  if (sourceOpened.isErr) {
+    options.onError(sourcePath, targetPath, sourceOpened.err)
+    return false
+  }
+  const opened = fs.open(targetPath, 'w', '/')
   if (opened.isErr) {
     options.onError(sourcePath, targetPath, opened.err)
     return false
   }
-  opened.val.handle.write(source.file.content)
-  const executable = ctx.fs.setExecutable(targetPath, source.executable, '/')
-  if (executable.isErr) {
-    options.onError(sourcePath, targetPath, executable.err)
-    return false
+  opened.val.handle.write(sourceOpened.val.handle.read())
+  if (targetDidNotExist) {
+    const changed = fs.chmod(targetPath, source.metadata.mode & ~ fs.umask & 0o777, '/')
+    if (changed.isErr) {
+      options.onError(sourcePath, targetPath, changed.err)
+      return false
+    }
   }
   return true
 }
@@ -112,7 +127,7 @@ export const cp = createCommand('cp', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Co
     if (paths.length < 2) throw new UserError('Missing destination operand')
 
     const targetPath = paths.pop() as string
-    const targetDirectoryResult = proc.ctx.fs.findInode(targetPath, {
+    const targetDirectoryResult = proc.fs.findInode(targetPath, {
       allowedTypes: [FileT.DIR],
       cwd: proc.cwd,
     })
@@ -125,7 +140,7 @@ export const cp = createCommand('cp', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Co
     const errors: string[] = []
 
     for (const sourcePath of paths) {
-      const sourceResult = proc.ctx.fs.findInode(sourcePath, { cwd: proc.cwd })
+      const sourceResult = proc.fs.findInode(sourcePath, { cwd: proc.cwd })
       if (sourceResult.isErr) {
         errors.push(`Cannot copy '${sourcePath}': ${FOp.displayError(sourceResult.err)}`)
         continue
@@ -139,7 +154,7 @@ export const cp = createCommand('cp', '<SOURCE...> DIRECTORY | SOURCE DEST', 'Co
         path: sourceResult.val.path,
       }
       const destination = targetFor(source, targetDirectory, targetPath, proc.cwd)
-      await copyEntry(proc.ctx, source.path, destination, {
+      await copyEntry(proc.fs, source.path, destination, {
         recursive: options.recursive ?? false,
         confirmOverwrite: options.interactive && ! options.force
           ? path => proc.stdio.prompt(`Overwrite '${path}'?`)

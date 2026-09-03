@@ -12,10 +12,10 @@ export const touch = createCommand('touch', '<FILE...>', 'Update file timestamps
     const errors: string[] = []
     paths.forEach((path) => {
       if (options.noCreate) {
-        const existing = proc.ctx.fs.find(path, { cwd: proc.cwd })
+        const existing = proc.fs.find(path, { cwd: proc.cwd })
         if (existing.isErr && existing.err.type === FOp.T.NOT_FOUND) return
       }
-      const result = proc.ctx.fs.touch(path, proc.cwd)
+      const result = proc.fs.touch(path, proc.cwd)
       if (result.isErr) errors.push(`Cannot touch '${path}': ${FOp.displayError(result.err)}`)
     })
 

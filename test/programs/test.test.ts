@@ -29,11 +29,11 @@ const createProcess = () => {
     empty: Vfs.normal(''),
     file: Vfs.normal('contents'),
     dir: Vfs.dir(),
-    executable: Vfs.nativeExe('executable'),
+    executable: Vfs.sysExe('executable'),
   }), { persistence: new MemoryFsPersistence() })
   const context = {
     fs,
-    exec: new ExecService(fs, { executable: () => 0 }),
+    exec: new ExecService({ executable: () => 0 }),
     processes: new ProcessTable(),
   } as Context
   const process = new Process(context, null, {
@@ -71,6 +71,10 @@ describe('test and [ builtins', () => {
     expect(await test(process, 'test', '-s', '/file')).toBe(0)
     expect(await test(process, 'test', '-s', '/empty')).toBe(1)
     expect(await test(process, 'test', '-x', '/executable')).toBe(0)
+    expect(await test(process, 'test', '-r', '/file')).toBe(0)
+    expect(await test(process, 'test', '-w', '/file')).toBe(0)
+    expect(await test(process, 'test', '-O', '/file')).toBe(0)
+    expect(await test(process, 'test', '-G', '/file')).toBe(0)
     expect(await test(process, 'test', '-e', '/missing')).toBe(1)
   })
 

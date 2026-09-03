@@ -6,7 +6,7 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
   .usage('With no FILE, or when FILE is -, read standard input.')
   .program(async ({ proc }, ...paths) => {
     proc.staticName = 'cat'
-    const { stdio, ctx } = proc
+    const { stdio } = proc
 
     let hasError = false
 
@@ -61,7 +61,7 @@ export const cat = createCommand('cat', '<FILE...>', 'Concatenate FILE(s) to sta
         continue
       }
       try {
-        const fh = ctx.fs.openU(path, 'r').handle
+        const fh = proc.fs.openU(path, 'r').handle
         const data = fh.read()
         stdio.write(data)
       }

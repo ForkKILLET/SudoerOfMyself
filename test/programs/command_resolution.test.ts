@@ -32,14 +32,14 @@ const createShell = () => {
   const error = new MemoryOutput()
   const fs = new Fs(Vfs.dir({
     bin: Vfs.dir({
-      tool: Vfs.nativeExe('tool'),
-      unavailable: Vfs.nativeExe('unavailable'),
+      tool: Vfs.sysExe('tool'),
+      unavailable: Vfs.sysExe('unavailable'),
       plain: Vfs.normal('text'),
     }),
   }), { persistence: new MemoryFsPersistence() })
   const context = {
     fs,
-    exec: new ExecService(fs, { tool: noop }),
+    exec: new ExecService({ tool: noop }),
     processes: new ProcessTable(),
   } as Context
   const shell = new Process(context, null, {
