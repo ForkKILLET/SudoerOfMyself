@@ -12,6 +12,7 @@ import {
   expandPathnames,
   HSH_CHARS,
   HshAstCommand,
+  HshAstRedirection,
   HshAstScript,
   HshTokenText,
   parseEnvAssignment,
@@ -27,14 +28,20 @@ import { createPipe } from '@/sys0/pipe'
 import { formatJobCompletion, type Job, JobTable, ProcessGroup } from '@/sys0/job'
 import {
   consumeLoopControlAtBoundary,
+  enterReturnContext,
   enterShellLoop,
   getLoopControlRequest,
   getShellExitRequest,
+  getReturnRequest,
+  isInReturnContext,
+  leaveReturnContext,
   leaveShellLoop,
 } from './control'
 import {
+  getPositionalParameters,
   initializeShellParameters,
   initializeTimeParameters,
+  setPositionalParameters,
   updateLastArgument,
 } from './parameters'
 import { errorMessage, UserError } from '@/utils/errors'
@@ -49,8 +56,12 @@ import {
   type HshControlScript,
   type HshConditionalStatement,
   type HshForStatement,
+  type HshFunctionDefinition,
+  type HshGroupStatement,
   type HshIfStatement,
   type HshLoopStatement,
+  type HshPipelineStatement,
+  type HshRedirectedStatement,
   type HshStatement,
   IncompleteHshScriptError,
   parseControlScript,
@@ -85,6 +96,70 @@ export interface ExecuteOptions {
   foreground?: boolean
 }
 
+const executeWithReturnContext = async (
+  child: Process,
+  allowReturn: boolean,
+  run: () => Promise<ProcessExit>,
+) => {
+  const frame = allowReturn ? enterReturnContext(child) : undefined
+  try {
+    const status = await run()
+    return getReturnRequest(child) ?? status
+  }
+  finally {
+    if (frame) leaveReturnContext(child, frame)
+  }
+}
+
+const createCommandStdio = (
+  proc: Process,
+  {
+    input,
+    output,
+    redirections = [],
+  }: {
+    input?: FRead
+    output?: FWrite
+    redirections?: HshAstRedirection[]
+  },
+) => {
+  const fds = proc.stdio.fds.fork()
+  const unwrapFd = <T>(result: Result<T, FdError>) => result.unwrapBy((error) => {
+    throw new UserError(displayFdError(error))
+  })
+  try {
+    if (input) unwrapFd(fds.replace(0, readableFileTarget(input)))
+    if (output) unwrapFd(fds.replace(1, writableFileTarget(output)))
+    redirections.forEach((redirection) => {
+      switch (redirection.type) {
+        case 'readFrom': {
+          const handle = proc.fs.openU(redirection.path, 'r', proc.cwd).handle
+          unwrapFd(fds.replace(redirection.fd, readableFileTarget(handle)))
+          break
+        }
+        case 'writeTo':
+        case 'appendTo': {
+          const mode = redirection.type === 'appendTo' ? 'a' : 'w'
+          const handle = proc.fs.openU(redirection.path, mode, proc.cwd).handle
+          unwrapFd(fds.replace(redirection.fd, writableFileTarget(handle)))
+          break
+        }
+        case 'duplicate':
+          unwrapFd(fds.duplicate(redirection.sourceFd, redirection.fd))
+          break
+        case 'close':
+          unwrapFd(fds.closeIfOpen(redirection.fd))
+          break
+      }
+    })
+    return new Stdio(fds)
+  }
+  catch (error) {
+    fds.closeAll()
+    throw error
+  }
+}
+
 export const execute = async (
   proc: Process,
   command: HshAstCommand,
@@ -110,49 +185,21 @@ export const execute = async (
     }
   }
 
-  const getStdio = () => {
-    const fds = proc.stdio.fds.fork()
-    const unwrapFd = <T>(result: Result<T, FdError>) => result.unwrapBy((error) => {
-      throw new UserError(displayFdError(error))
-    })
-    try {
-      if (options.input) unwrapFd(fds.replace(0, readableFileTarget(options.input)))
-      if (options.output) unwrapFd(fds.replace(1, writableFileTarget(options.output)))
-      command.redirections?.forEach((redirection) => {
-        switch (redirection.type) {
-          case 'readFrom': {
-            const handle = proc.fs.openU(redirection.path, 'r', proc.cwd).handle
-            unwrapFd(fds.replace(redirection.fd, readableFileTarget(handle)))
-            break
-          }
-          case 'writeTo':
-          case 'appendTo': {
-            const mode = redirection.type === 'appendTo' ? 'a' : 'w'
-            const handle = proc.fs.openU(redirection.path, mode, proc.cwd).handle
-            unwrapFd(fds.replace(redirection.fd, writableFileTarget(handle)))
-            break
-          }
-          case 'duplicate':
-            unwrapFd(fds.duplicate(redirection.sourceFd, redirection.fd))
-            break
-          case 'close':
-            unwrapFd(fds.closeIfOpen(redirection.fd))
-            break
-        }
-      })
-
-      return new Stdio(fds)
-    }
-    catch (error) {
-      fds.closeAll()
-      throw error
-    }
-  }
-
-  const commandStdio = getStdio()
-  if (name in builtins) {
+  const commandStdio = createCommandStdio(proc, {
+    input: options.input,
+    output: options.output,
+    redirections: command.redirections,
+  })
+  const shellProgram = proc.functions.get(name)
+    ?? (Object.hasOwn(builtins, name) ? builtins[name] : undefined)
+  if (shellProgram) {
     if (options.pipelineStage) {
-      return proc.spawn(builtins[name], {
+      const allowReturn = isInReturnContext(proc)
+      return proc.spawn((child, self, ...childArgs) => (
+        executeWithReturnContext(child, allowReturn, async () => (
+          normalizeExit(await shellProgram(child, self, ...childArgs))
+        ))
+      ), {
         name,
         stdio: commandStdio,
         env: assignmentEnv,
@@ -176,7 +223,7 @@ export const execute = async (
       command.assignments?.forEach(({ name, value }) => {
         proc.variables.set(name, value, { exported: true })
       })
-      const result = proc.measureUser(() => builtins[name](proc, name, ...args))
+      const result = proc.measureUser(() => shellProgram(proc, name, ...args))
       return normalizeExit(await result)
     }
     catch (err) {
@@ -345,6 +392,11 @@ export const executeScript = async (
       if (timing) finishCommandTiming(proc, timing)
       return exitRequest
     }
+    const returnRequest = getReturnRequest(proc)
+    if (returnRequest) {
+      if (timing) finishCommandTiming(proc, timing)
+      return returnRequest
+    }
     if (interruptStatus) {
       if (timing) finishCommandTiming(proc, timing)
       return interruptStatus
@@ -370,6 +422,7 @@ const executeIf = async (
       isInterruptExit(conditionStatus)
       || getShellExitRequest(proc)
       || getLoopControlRequest(proc)
+      || getReturnRequest(proc)
     ) return conditionStatus
     if (conditionStatus.code === 0) {
       return executeControlScript(proc, branch.body, builtins)
@@ -398,7 +451,11 @@ const executeLoop = async (
   try {
     while (true) {
       const conditionStatus = await executeControlScript(proc, statement.condition, builtins)
-      if (isInterruptExit(conditionStatus) || getShellExitRequest(proc)) return conditionStatus
+      if (
+        isInterruptExit(conditionStatus)
+        || getShellExitRequest(proc)
+        || getReturnRequest(proc)
+      ) return conditionStatus
       const conditionAction = consumeLoopControlAtBoundary(proc)
       if (conditionAction) {
         if (conditionAction === 'continue') continue
@@ -411,7 +468,11 @@ const executeLoop = async (
 
       const iteration = await executeLoopIteration(proc, statement.body, builtins)
       lastStatus = iteration.status
-      if (isInterruptExit(lastStatus) || getShellExitRequest(proc)) return lastStatus
+      if (
+        isInterruptExit(lastStatus)
+        || getShellExitRequest(proc)
+        || getReturnRequest(proc)
+      ) return lastStatus
       if (iteration.action === 'continue') continue
       if (iteration.action) break
     }
@@ -450,7 +511,11 @@ const executeFor = async (
       proc.variables.set(statement.name, word)
       const iteration = await executeLoopIteration(proc, statement.body, builtins)
       lastStatus = iteration.status
-      if (isInterruptExit(lastStatus) || getShellExitRequest(proc)) return lastStatus
+      if (
+        isInterruptExit(lastStatus)
+        || getShellExitRequest(proc)
+        || getReturnRequest(proc)
+      ) return lastStatus
       if (iteration.action === 'continue') continue
       if (iteration.action) break
     }
@@ -461,11 +526,142 @@ const executeFor = async (
   return setLastStatus(proc, lastStatus)
 }
 
+const executeGroup = (
+  proc: Process,
+  statement: HshGroupStatement,
+  builtins: ProgramRegistry,
+  alreadyIsolated = false,
+) => {
+  if (statement.mode === 'current' || alreadyIsolated) {
+    return executeControlScript(proc, statement.body, builtins)
+  }
+  const allowReturn = isInReturnContext(proc)
+  return proc.spawn(
+    child => executeWithReturnContext(
+      child,
+      allowReturn,
+      () => executeControlScript(child, statement.body, builtins),
+    ),
+    {
+      name: 'hsh',
+      inheritShellVariables: true,
+      foreground: proc.isForeground,
+    },
+  )
+}
+
+const executeFunctionDefinition = (
+  proc: Process,
+  statement: HshFunctionDefinition,
+  builtins: ProgramRegistry,
+) => {
+  const program: Program = async (functionProc, _self, ...args) => {
+    const previousParameters = getPositionalParameters(functionProc)
+    const frame = enterReturnContext(functionProc)
+    setPositionalParameters(functionProc, args)
+    try {
+      const status = await executeStatement(functionProc, statement.body, builtins)
+      return getReturnRequest(functionProc) ?? status
+    }
+    finally {
+      leaveReturnContext(functionProc, frame)
+      setPositionalParameters(functionProc, previousParameters)
+    }
+  }
+  proc.functions.set(statement.name, program)
+  return setLastStatus(proc, normalExit(0))
+}
+
+const executeStatementPipeline = async (
+  proc: Process,
+  statement: HshPipelineStatement,
+  builtins: ProgramRegistry,
+) => {
+  const pipes = statement.stages.slice(1).map(() => createPipe())
+  const processGroup = proc.processGroup ?? new ProcessGroup()
+  const allowReturn = isInReturnContext(proc)
+  const runs = statement.stages.map((stage, index) => proc.spawn(
+    child => executeWithReturnContext(
+      child,
+      allowReturn,
+      () => executeStatement(child, stage, builtins, false, true),
+    ),
+    {
+      name: 'hsh',
+      stdio: createCommandStdio(proc, {
+        input: pipes[index - 1]?.reader,
+        output: pipes[index]?.writer,
+      }),
+      inheritShellVariables: true,
+      processGroup,
+      foreground: proc.isForeground,
+    },
+  ))
+  const statuses = await Promise.all(runs)
+  const interruptStatus = statuses.find(isInterruptExit)
+  if (interruptStatus) proc.stdio.writeLn('')
+  return interruptStatus ?? statuses.at(- 1) ?? normalExit(0)
+}
+
+const executeRedirectedStatement = async (
+  proc: Process,
+  statement: HshRedirectedStatement,
+  builtins: ProgramRegistry,
+  alreadyIsolated = false,
+) => {
+  try {
+    const parsed = await parseLineAsync(`: ${statement.source}`, proc.env, {
+      assignVariable: (name, value) => proc.variables.set(name, value),
+      substituteCommand: source => executeCommandSubstitution(proc, source, builtins),
+      expandPathname: pattern => expandPathname(proc.fs, proc.cwd, pattern),
+    })
+    const command = parsed.commands[0]
+    if (
+      parsed.commands.length !== 1
+      || command.name !== ':'
+      || command.args.length
+      || ! command.redirections?.length
+    ) throw new UserError(`Unexpected token after compound command: ${statement.source}`)
+
+    const redirectedStdio = createCommandStdio(proc, {
+      redirections: command.redirections,
+    })
+    const originalStdio = proc.stdio
+    proc.stdio = redirectedStdio
+    try {
+      try {
+        return await executeStatement(
+          proc,
+          statement.statement,
+          builtins,
+          false,
+          alreadyIsolated,
+        )
+      }
+      catch (error) {
+        if (! (error instanceof UserError)) throw error
+        proc.error(error.message)
+        return normalExit(1)
+      }
+    }
+    finally {
+      proc.stdio = originalStdio
+      redirectedStdio.close()
+    }
+  }
+  catch (error) {
+    if (! (error instanceof UserError)) throw error
+    proc.error(error.message)
+    return normalExit(1)
+  }
+}
+
 const executeStatement = async (
   proc: Process,
   statement: HshStatement,
   builtins: ProgramRegistry,
   timed = false,
+  alreadyIsolated = false,
 ): Promise<ProcessExit> => {
   switch (statement.type) {
     case 'simple': {
@@ -502,6 +698,12 @@ const executeStatement = async (
     case 'while':
     case 'until': return executeLoop(proc, statement, builtins)
     case 'for': return executeFor(proc, statement, builtins)
+    case 'group': return executeGroup(proc, statement, builtins, alreadyIsolated)
+    case 'functionDefinition': return executeFunctionDefinition(proc, statement, builtins)
+    case 'pipeline': return executeStatementPipeline(proc, statement, builtins)
+    case 'redirected': {
+      return executeRedirectedStatement(proc, statement, builtins, alreadyIsolated)
+    }
   }
 }
 
@@ -509,10 +711,13 @@ const executeTimedStatement = async (
   proc: Process,
   statement: HshStatement,
   builtins: ProgramRegistry,
+  alreadyIsolated = false,
 ) => {
-  if (statement.type === 'simple') return executeStatement(proc, statement, builtins, true)
+  if (statement.type === 'simple') {
+    return executeStatement(proc, statement, builtins, true, alreadyIsolated)
+  }
   const timing = startCommandTiming(proc)
-  const status = await executeStatement(proc, statement, builtins)
+  const status = await executeStatement(proc, statement, builtins, false, alreadyIsolated)
   finishCommandTiming(proc, timing)
   return status
 }
@@ -546,8 +751,13 @@ const executeCommandSubstitution = async (
     fds.closeAll()
     throw new UserError(displayFdError(replaced.err))
   }
+  const allowReturn = isInReturnContext(proc)
   await proc.spawn(
-    child => executeControlScript(child, parseControlScript(source), builtins),
+    child => executeWithReturnContext(
+      child,
+      allowReturn,
+      () => executeControlScript(child, parseControlScript(source), builtins),
+    ),
     {
       name: 'hsh',
       stdio: new Stdio(fds),
@@ -577,10 +787,15 @@ const executeBackgroundStatement = (
   timed = false,
 ) => {
   const processGroup = new ProcessGroup()
+  const allowReturn = isInReturnContext(proc)
   const completion = proc.spawn(
-    child => timed
-      ? executeTimedStatement(child, statement, builtins)
-      : executeStatement(child, statement, builtins),
+    child => executeWithReturnContext(
+      child,
+      allowReturn,
+      () => timed
+        ? executeTimedStatement(child, statement, builtins, true)
+        : executeStatement(child, statement, builtins, false, true),
+    ),
     {
       name: 'hsh',
       stdio: createBackgroundStdio(proc),
@@ -607,7 +822,11 @@ export const executeControlScript = async (
 ): Promise<ProcessExit> => {
   let lastStatus = normalExit(0)
   for (const entry of script.entries) {
-    if (getShellExitRequest(proc) || getLoopControlRequest(proc)) break
+    if (
+      getShellExitRequest(proc)
+      || getLoopControlRequest(proc)
+      || getReturnRequest(proc)
+    ) break
     const shouldRun = entry.condition === 'always'
       || (entry.condition === 'success' && lastStatus.code === 0)
       || (entry.condition === 'failure' && lastStatus.code !== 0)
@@ -617,7 +836,8 @@ export const executeControlScript = async (
       : entry.timed
         ? await executeTimedStatement(proc, entry.statement, builtins)
         : await executeStatement(proc, entry.statement, builtins)
-    if (isInterruptExit(lastStatus)) return setLastStatus(proc, lastStatus)
+    setLastStatus(proc, lastStatus)
+    if (isInterruptExit(lastStatus)) return lastStatus
   }
   return setLastStatus(proc, lastStatus)
 }
@@ -699,6 +919,7 @@ export const getCompProvider = (
     const commandNames = new Set([
       ...installedPrograms,
       ...proc.aliases.names(),
+      ...proc.functions.names(),
       ...Object.keys(builtins),
       ...HSH_RESERVED_WORDS,
     ])

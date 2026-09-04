@@ -41,6 +41,9 @@ export const createTypeCommand = (getBuiltins: BuiltinRegistryProvider) => (
           case 'reserved':
             proc.stdio.writeLn(`${name} is a reserved word`)
             break
+          case 'function':
+            proc.stdio.writeLn(`${name} is a shell function`)
+            break
           case 'builtin':
             proc.stdio.writeLn(`${name} is a shell builtin`)
             break

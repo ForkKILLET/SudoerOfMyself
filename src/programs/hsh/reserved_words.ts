@@ -1,6 +1,8 @@
 export const HSH_RESERVED_WORDS: ReadonlySet<string> = new Set([
   '[[',
   ']]',
+  '{',
+  '}',
   'if',
   'then',
   'elif',
@@ -12,5 +14,6 @@ export const HSH_RESERVED_WORDS: ReadonlySet<string> = new Set([
   'done',
   'for',
   'in',
+  'function',
   'time',
 ])

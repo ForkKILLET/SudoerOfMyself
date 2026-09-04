@@ -82,6 +82,17 @@ describe('environment builtins', () => {
     expect(error.content).toContain('invalid environment variable name')
   })
 
+  it('removes shell functions separately with unset -f', async () => {
+    const { shell } = createShell()
+    shell.variables.set('cleanup', 'variable')
+    shell.functions.set('cleanup', () => 0)
+
+    await expect(unset(shell, 'unset', '-f', 'cleanup')).resolves.toBe(0)
+
+    expect(shell.functions.has('cleanup')).toBe(false)
+    expect(shell.env.cleanup).toBe('variable')
+  })
+
   it('removes export attributes without removing shell values', async () => {
     const { output, shell } = createShell()
     await exportEnv(shell, 'export', 'VISIBLE=value')

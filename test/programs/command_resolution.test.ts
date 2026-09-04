@@ -77,7 +77,8 @@ describe('shell command introspection', () => {
     const { output, shell } = createShell()
     const { type } = createCommands()
 
-    await expect(type(shell, 'type', 'if', 'then', 'in', '[[', ']]', 'time')).resolves.toBe(0)
+    await expect(type(shell, 'type', 'if', 'then', 'in', '[[', ']]', '{', '}', 'function', 'time'))
+      .resolves.toBe(0)
 
     expect(output.content).toBe(
       'if is a reserved word\n' +
@@ -85,6 +86,9 @@ describe('shell command introspection', () => {
       'in is a reserved word\n' +
       '[[ is a reserved word\n' +
       ']] is a reserved word\n' +
+      '{ is a reserved word\n' +
+      '} is a reserved word\n' +
+      'function is a reserved word\n' +
       'time is a reserved word\n',
     )
   })
@@ -118,6 +122,17 @@ describe('shell command introspection', () => {
     await expect(command(shell, 'command', '-v', 'if', 'do', 'done', '[[', 'time')).resolves.toBe(0)
 
     expect(output.content).toBe('if\ndo\ndone\n[[\ntime\n')
+  })
+
+  it('resolves shell functions before builtins', async () => {
+    const { output, shell } = createShell()
+    const { command, type } = createCommands()
+    shell.functions.set('echo', noop)
+
+    await expect(type(shell, 'type', 'echo')).resolves.toBe(0)
+    await expect(command(shell, 'command', '-v', 'echo')).resolves.toBe(0)
+
+    expect(output.content).toBe('echo is a shell function\necho\n')
   })
 
   it('reports aliases before other command kinds', async () => {

@@ -17,6 +17,8 @@ import { Stdio } from '@/sys0/stdio'
 import { Term } from '@/sys0/term'
 import { DEFAULT_PROFILE } from '@/data/profile'
 import { TimeService } from '@/sys0/time'
+import { returnFromContext } from '@/programs/return'
+import { exit } from '@/programs/exit'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -230,6 +232,165 @@ describe('hsh control-flow execution', () => {
 
     expect(result.output.content).toBe('inner\nsecond\ntwo words\nouter\n')
     expect(result.process.env.VALUE).toBe('outer')
+  })
+
+  it('executes brace groups in the current shell and subshell groups in a child', async () => {
+    const emit: Program = (proc, _self, ...values) => (
+      proc.stdio.writeLn(values.join(' ')) ?? 0
+    )
+    const changeDirectory: Program = (proc, _self, directory) => {
+      proc.cwd = directory
+      return 0
+    }
+    const shell = createShell()
+    shell.process.variables.set('VALUE', 'outer')
+
+    await executeControlScript(shell.process, parseControlScript(`
+      { VALUE=brace; change-directory /brace; emit brace:$VALUE:$PWD; }
+      (VALUE=subshell; change-directory /subshell; emit child:$VALUE:$PWD)
+      emit parent:$VALUE:$PWD
+    `), { 'change-directory': changeDirectory, emit })
+
+    expect(shell.output.content).toBe(
+      'brace:brace:/brace\n' +
+      'child:subshell:/subshell\n' +
+      'parent:brace:/brace\n',
+    )
+    expect(shell.process.env.VALUE).toBe('brace')
+    expect(shell.process.cwd).toBe('/brace')
+  })
+
+  it('uses a subshell group status for conditional lists', async () => {
+    const emit: Program = proc => proc.stdio.writeLn('recovered') ?? 0
+    const result = await run('(fail) || emit', { fail: () => 7, emit })
+
+    expect(result.output.content).toBe('recovered\n')
+    expect(result.status.code).toBe(0)
+  })
+
+  it('pipes compound-command output through an isolated pipeline stage', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const collect: Program = async (proc) => {
+      proc.stdio.write((await proc.stdio.read()).toUpperCase())
+      return 0
+    }
+    const result = await run(`
+      { emit one; emit two; } | collect
+      (emit three) | collect
+    `, { collect, emit })
+
+    expect(result.output.content).toBe('ONE\nTWO\nTHREE\n')
+  })
+
+  it('applies trailing redirections to groups and function bodies', async () => {
+    const shell = createShell()
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const report: Program = proc => proc.error('failure') ?? 0
+
+    await executeControlScript(shell.process, parseControlScript(`
+      { emit one; emit two; } > /grouped.txt
+      (emit three) >> /grouped.txt
+      writer() { emit function; } >> /grouped.txt
+      writer
+      { report; } > /combined.txt 2>&1
+    `), { emit, report })
+
+    expect(shell.process.fs.openU('/grouped.txt', 'r').handle.read()).toBe(
+      'one\ntwo\nthree\nfunction\n',
+    )
+    expect(shell.process.fs.openU('/combined.txt', 'r').handle.read())
+      .toBe('report: failure\n')
+    expect(shell.output.content).toBe('')
+    expect(shell.error.content).toBe('')
+  })
+
+  it('contains exit within a subshell group', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      (exit 5; emit unreachable)
+      emit status:$?
+    `, { emit, exit })
+
+    expect(result.output.content).toBe('status:5\n')
+    expect(result.status.code).toBe(0)
+  })
+
+  it('defines functions with local positional parameters and explicit return statuses', async () => {
+    const shell = createShell()
+    shell.process.variables.set('0', 'hsh', { exported: false })
+    shell.process.variables.set('1', 'outer', { exported: false })
+    shell.process.variables.set('#', '1', { exported: false })
+    shell.process.variables.set('*', 'outer', { exported: false })
+    shell.process.variables.set('@', 'outer', { exported: false })
+    const emit: Program = (proc, _self, ...values) => (
+      proc.stdio.writeLn(values.join(' ')) ?? 0
+    )
+
+    await executeControlScript(shell.process, parseControlScript(`
+      greet() {
+        emit function:$0:$#:$1:$2
+        CHANGED=yes
+        return 7
+        emit unreachable
+      }
+      greet alpha "two words"
+      emit status:$?:outer:$#:$1:$CHANGED
+    `), { emit, return: returnFromContext })
+
+    expect(shell.output.content).toBe(
+      'function:hsh:2:alpha:two words\n' +
+      'status:7:outer:1:outer:yes\n',
+    )
+    expect(shell.process.functions.has('greet')).toBe(true)
+  })
+
+  it('lets functions override builtins with the same name', async () => {
+    const shell = createShell()
+    const say: Program = proc => proc.stdio.writeLn('builtin') ?? 0
+    const raw: Program = proc => proc.stdio.writeLn('function') ?? 0
+
+    await executeControlScript(
+      shell.process,
+      parseControlScript('say() { raw; }; say'),
+      { raw, say },
+    )
+
+    expect(shell.output.content).toBe('function\n')
+  })
+
+  it('returns only from the innermost function call', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      inner() { return 3; }
+      outer() { inner; emit inner-status:$?; return 4; }
+      outer
+      emit outer-status:$?
+    `, { emit, return: returnFromContext })
+
+    expect(result.output.content).toBe('inner-status:3\nouter-status:4\n')
+  })
+
+  it('inherits return permission into a subshell without returning from the caller', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      wrapped() { (return 3); emit subshell-status:$?; }
+      wrapped
+      emit function-status:$?
+    `, { emit, return: returnFromContext })
+
+    expect(result.output.content).toBe('subshell-status:3\nfunction-status:0\n')
+  })
+
+  it('inherits functions in a subshell without leaking child definitions', async () => {
+    const emit: Program = (proc, _self, value) => proc.stdio.writeLn(value) ?? 0
+    const result = await run(`
+      parent_function() { emit inherited; }
+      (parent_function; child_function() { emit child; }; child_function)
+    `, { emit })
+
+    expect(result.output.content).toBe('inherited\nchild\n')
+    expect(result.process.functions.has('parent_function')).toBe(true)
+    expect(result.process.functions.has('child_function')).toBe(false)
   })
 
   it('executes lists and short-circuits && and ||', async () => {

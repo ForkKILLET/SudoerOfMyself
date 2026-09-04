@@ -11,6 +11,7 @@ const NO_RESERVED_WORDS: ReadonlySet<string> = new Set()
 export type ResolvedShellCommand =
   | { kind: 'alias', name: string, value: string }
   | { kind: 'reserved', name: string }
+  | { kind: 'function', name: string }
   | { kind: 'builtin', name: string }
   | { kind: 'executable', path: string }
 
@@ -23,6 +24,7 @@ export const resolveShellCommand = (
   const alias = process.aliases.get(name)
   if (alias !== undefined) return Ok({ kind: 'alias', name, value: alias })
   if (reservedWords.has(name)) return Ok({ kind: 'reserved', name })
+  if (process.functions.has(name)) return Ok({ kind: 'function', name })
   if (Object.hasOwn(builtins, name)) return Ok({ kind: 'builtin', name })
   return process.ctx.exec.resolve(name, {
     envPath: process.env.PATH,

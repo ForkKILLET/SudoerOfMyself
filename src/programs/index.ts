@@ -52,9 +52,12 @@ import { umask } from './umask'
 import { whoami } from './whoami'
 import { alias, unalias } from './alias'
 import { nano } from './nano'
+import { createSourceBuiltin } from './source'
+import { returnFromContext } from './return'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
+  ['.']: createSourceBuiltin(() => BUILTINS),
   ['[']: bracket,
   alias,
   break: breakLoop,
@@ -72,8 +75,10 @@ export const BUILTINS: Record<string, Program> = {
   printenv,
   read,
   readonly,
+  return: returnFromContext,
   set,
   shift,
+  source: createSourceBuiltin(() => BUILTINS),
   test,
   type: createTypeCommand(() => BUILTINS),
   unalias,

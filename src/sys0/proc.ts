@@ -20,6 +20,7 @@ import {
 import { DEFAULT_UMASK, type UnixMode } from './fs/permissions'
 import { FsSession } from './fs/session'
 import { ShellAliases } from './alias'
+import { ShellFunctions } from './shell_function'
 
 export interface ProcessEvents extends Events {
   signal: [ProcessSignal]
@@ -49,6 +50,7 @@ export class Process extends Emitter<ProcessEvents> {
   staticName?: string
   readonly variables: ShellVariables
   readonly aliases: ShellAliases
+  readonly functions: ShellFunctions
   readonly env: Env
   stdio: Stdio
   state: ProcessState = 'running'
@@ -108,6 +110,9 @@ export class Process extends Emitter<ProcessEvents> {
     this.aliases = parent && options.inheritShellVariables
       ? parent.aliases.clone()
       : new ShellAliases()
+    this.functions = parent && options.inheritShellVariables
+      ? parent.functions.clone()
+      : new ShellFunctions()
     Object.entries(options.env ?? {}).forEach(([name, value]) => {
       this.variables.set(name, value, { exported: true })
     })

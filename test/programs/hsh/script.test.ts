@@ -44,7 +44,13 @@ describe('hsh control-flow parser', () => {
         entries: [
           {
             timed: true,
-            statement: { type: 'simple', source: 'first | second' },
+            statement: {
+              type: 'pipeline',
+              stages: [
+                { type: 'simple', source: 'first' },
+                { type: 'simple', source: 'second' },
+              ],
+            },
           },
           {
             timed: true,
@@ -77,6 +83,86 @@ describe('hsh control-flow parser', () => {
       name: 'item',
       wordsSource: 'one "$TWO"',
     })
+  })
+
+  it('parses subshell and current-shell groups without requiring spaces around parentheses', () => {
+    const script = parseControlScript('(first; second) || { third; fourth; }')
+
+    expect(script.entries).toMatchObject([
+      {
+        condition: 'always',
+        statement: {
+          type: 'group',
+          mode: 'subshell',
+          body: {
+            entries: [
+              { statement: { type: 'simple', source: 'first' } },
+              { statement: { type: 'simple', source: 'second' } },
+            ],
+          },
+        },
+      },
+      {
+        condition: 'failure',
+        statement: {
+          type: 'group',
+          mode: 'current',
+          body: {
+            entries: [
+              { statement: { type: 'simple', source: 'third' } },
+              { statement: { type: 'simple', source: 'fourth' } },
+            ],
+          },
+        },
+      },
+    ])
+  })
+
+  it('composes compound commands with pipelines and trailing redirections', () => {
+    const script = parseControlScript('(first) | { second; } > output.txt')
+
+    expect(script.entries[0]?.statement).toMatchObject({
+      type: 'pipeline',
+      stages: [
+        { type: 'group', mode: 'subshell' },
+        {
+          type: 'redirected',
+          source: '> output.txt',
+          statement: { type: 'group', mode: 'current' },
+        },
+      ],
+    })
+  })
+
+  it('parses POSIX-style function definitions with compound bodies', () => {
+    const script = parseControlScript('greet() { echo "$1"; return 3; }')
+
+    expect(script.entries[0]?.statement).toMatchObject({
+      type: 'functionDefinition',
+      name: 'greet',
+      body: {
+        type: 'group',
+        mode: 'current',
+        body: {
+          entries: [
+            { statement: { type: 'simple', source: 'echo "$1"' } },
+            { statement: { type: 'simple', source: 'return 3' } },
+          ],
+        },
+      },
+    })
+  })
+
+  it('parses function-keyword definitions with optional parentheses', () => {
+    const script = parseControlScript(`
+      function first { echo one; }
+      function second() (echo two)
+    `)
+
+    expect(script.entries.map(({ statement }) => statement)).toMatchObject([
+      { type: 'functionDefinition', name: 'first', body: { mode: 'current' } },
+      { type: 'functionDefinition', name: 'second', body: { mode: 'subshell' } },
+    ])
   })
 
   it('preserves background markers and redirection duplication in simple commands', () => {
@@ -121,5 +207,14 @@ describe('hsh control-flow parser', () => {
     expect(() => parseControlScript('echo yes;; echo nope')).toThrow('Unexpected token: ;')
     expect(() => parseControlScript('if ready; then fi')).toThrow('Expected command after then')
     expect(() => parseControlScript('while ready; do done')).toThrow('Expected command after do')
+    expect(() => parseControlScript('(echo yes')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('{ echo yes;')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('greet()')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('function')).toThrow(IncompleteHshScriptError)
+    expect(() => parseControlScript('greet() echo yes'))
+      .toThrow('Function body must be a compound command')
+    expect(() => parseControlScript('( )')).toThrow('Expected command after (')
+    expect(() => parseControlScript('{ }')).toThrow('Expected command after {')
+    expect(() => parseControlScript('(echo yes) |')).toThrow(IncompleteHshScriptError)
   })
 })

@@ -3,6 +3,12 @@ import { normalExit, ProcessExit } from '@/sys0/process_exit'
 
 const EXIT_REQUESTS = new WeakMap<Process, ProcessExit>()
 
+export interface ReturnFrame {
+  returnStatus?: ProcessExit
+}
+
+const RETURN_FRAMES = new WeakMap<Process, ReturnFrame[]>()
+
 export type LoopControlType = 'break' | 'continue'
 
 interface LoopControlRequest {
@@ -20,6 +26,36 @@ export const requestShellExit = (process: Process, code: number) => {
 }
 
 export const getShellExitRequest = (process: Process) => EXIT_REQUESTS.get(process)
+
+export const enterReturnContext = (process: Process) => {
+  const frame: ReturnFrame = {}
+  const frames = RETURN_FRAMES.get(process) ?? []
+  frames.push(frame)
+  RETURN_FRAMES.set(process, frames)
+  return frame
+}
+
+export const leaveReturnContext = (process: Process, frame: ReturnFrame) => {
+  const frames = RETURN_FRAMES.get(process)
+  if (frames?.at(- 1) !== frame) throw new Error('Return frames must be left in stack order')
+  frames.pop()
+  if (! frames.length) RETURN_FRAMES.delete(process)
+  return frame.returnStatus
+}
+
+export const isInReturnContext = (process: Process) => Boolean(RETURN_FRAMES.get(process)?.length)
+
+export const requestReturn = (process: Process, code: number) => {
+  const frame = RETURN_FRAMES.get(process)?.at(- 1)
+  if (! frame) return undefined
+  const returnStatus = normalExit(code)
+  frame.returnStatus = returnStatus
+  return returnStatus
+}
+
+export const getReturnRequest = (process: Process) => (
+  RETURN_FRAMES.get(process)?.at(- 1)?.returnStatus
+)
 
 export const enterShellLoop = (process: Process) => {
   LOOP_DEPTHS.set(process, (LOOP_DEPTHS.get(process) ?? 0) + 1)
