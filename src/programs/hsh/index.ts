@@ -60,6 +60,7 @@ import { HSH_RESERVED_WORDS } from './reserved_words'
 import { renderPrompt } from './prompt'
 import { appendHistoryEntry, parseHistoryFile, parseHistoryLimit } from './history'
 import { expandPathname } from './pathname'
+import { expandAliases } from './alias_expansion'
 import {
   type CommandTimingSnapshot,
   finishCommandTiming,
@@ -468,7 +469,25 @@ const executeStatement = async (
 ): Promise<ProcessExit> => {
   switch (statement.type) {
     case 'simple': {
-      const parsed = await parseLineAsync(statement.source, proc.env, {
+      const source = expandAliases(statement.source, proc.aliases)
+      const controlScript = parseControlScript(source)
+      const [entry] = controlScript.entries
+      const remainsSimple = controlScript.entries.length === 1
+        && entry.condition === 'always'
+        && ! entry.background
+        && ! entry.timed
+        && entry.statement.type === 'simple'
+        && entry.statement.source === source.trim()
+      if (! remainsSimple) {
+        const timing = timed ? startCommandTiming(proc) : undefined
+        try {
+          return await executeControlScript(proc, controlScript, builtins)
+        }
+        finally {
+          if (timing) finishCommandTiming(proc, timing)
+        }
+      }
+      const parsed = await parseLineAsync(source, proc.env, {
         assignVariable: (name, value) => proc.variables.set(name, value),
         substituteCommand: source => executeCommandSubstitution(proc, source, builtins),
         expandPathname: pattern => expandPathname(proc.fs, proc.cwd, pattern),
@@ -679,6 +698,7 @@ export const getCompProvider = (
     )
     const commandNames = new Set([
       ...installedPrograms,
+      ...proc.aliases.names(),
       ...Object.keys(builtins),
       ...HSH_RESERVED_WORDS,
     ])

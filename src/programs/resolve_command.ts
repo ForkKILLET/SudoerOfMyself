@@ -9,6 +9,7 @@ export type BuiltinRegistryProvider = () => BuiltinRegistry
 const NO_RESERVED_WORDS: ReadonlySet<string> = new Set()
 
 export type ResolvedShellCommand =
+  | { kind: 'alias', name: string, value: string }
   | { kind: 'reserved', name: string }
   | { kind: 'builtin', name: string }
   | { kind: 'executable', path: string }
@@ -19,6 +20,8 @@ export const resolveShellCommand = (
   builtins: BuiltinRegistry,
   reservedWords: ReadonlySet<string> = NO_RESERVED_WORDS,
 ): Result<ResolvedShellCommand, ExecError> => {
+  const alias = process.aliases.get(name)
+  if (alias !== undefined) return Ok({ kind: 'alias', name, value: alias })
   if (reservedWords.has(name)) return Ok({ kind: 'reserved', name })
   if (Object.hasOwn(builtins, name)) return Ok({ kind: 'builtin', name })
   return process.ctx.exec.resolve(name, {

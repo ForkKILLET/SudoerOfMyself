@@ -35,6 +35,9 @@ export const createTypeCommand = (getBuiltins: BuiltinRegistryProvider) => (
           return
         }
         switch (resolved.val.kind) {
+          case 'alias':
+            proc.stdio.writeLn(`${name} is an alias for ${resolved.val.value}`)
+            break
           case 'reserved':
             proc.stdio.writeLn(`${name} is a reserved word`)
             break

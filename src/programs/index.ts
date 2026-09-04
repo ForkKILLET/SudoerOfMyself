@@ -50,10 +50,12 @@ import { groups } from './groups'
 import { id } from './id'
 import { umask } from './umask'
 import { whoami } from './whoami'
+import { alias, unalias } from './alias'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
   ['[']: bracket,
+  alias,
   break: breakLoop,
   cd,
   command: createCommandBuiltin(() => BUILTINS),
@@ -73,6 +75,7 @@ export const BUILTINS: Record<string, Program> = {
   shift,
   test,
   type: createTypeCommand(() => BUILTINS),
+  unalias,
   unset,
   true: succeed,
   wait,

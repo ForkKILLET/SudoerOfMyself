@@ -119,4 +119,17 @@ describe('shell command introspection', () => {
 
     expect(output.content).toBe('if\ndo\ndone\n[[\ntime\n')
   })
+
+  it('reports aliases before other command kinds', async () => {
+    const { output, shell } = createShell()
+    const { command, type } = createCommands()
+    shell.aliases.set('echo', 'tool --verbose')
+
+    await expect(type(shell, 'type', 'echo')).resolves.toBe(0)
+    await expect(command(shell, 'command', '-v', 'echo')).resolves.toBe(0)
+
+    expect(output.content).toBe(String.raw`echo is an alias for tool --verbose
+alias echo='tool --verbose'
+`)
+  })
 })
