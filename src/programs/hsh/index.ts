@@ -21,7 +21,7 @@ import {
 import { MakeOptional } from '@/utils/types'
 import { isBetween } from '@/utils'
 import { Result } from 'fk-result'
-import { credentialsForExecutable, ExecErrorT } from '@/sys0/exec'
+import { credentialsForExecutable, displayInterpreterError, ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
 import { formatJobCompletion, JobTable, ProcessGroup } from '@/sys0/job'
@@ -214,6 +214,10 @@ export const execute = async (
           case ExecErrorT.FILE_SYSTEM_ERROR:
             commandStdio.writeErrorLn(`${name}: ${FOp.displayError(exeRes.err.error)}`)
             return normalExit(126)
+          case ExecErrorT.INTERPRETER_ERROR:
+          case ExecErrorT.INTERPRETER_LOOP:
+            commandStdio.writeErrorLn(displayInterpreterError(exeRes.err))
+            return normalExit(126)
         }
       }
       finally {
@@ -228,7 +232,7 @@ export const execute = async (
       credentials: credentialsForExecutable(exeRes.val.inode, proc.credentials),
       processGroup: options.processGroup,
       foreground: options.foreground,
-    }, ...args)
+    }, ...exeRes.val.argvPrefix, ...args)
   }
 }
 
@@ -720,7 +724,7 @@ export const createHsh = ({
   .option('command', '-c', 'string', 'Execute command')
   .program(async ({ proc, name, options }, path, ...scriptArgs) => {
     const { ctx, env, stdio } = proc
-    proc.cwd = env.HOME
+    if (! path && ! options.command) proc.cwd = env.HOME
     proc.jobTable = new JobTable()
     initializeShellParameters(proc, path ?? name, scriptArgs)
     initializeTimeParameters(proc)

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Err, Ok } from 'fk-result'
-import { execute, executeScript } from '@/programs/hsh'
+import { createHsh, execute, executeScript } from '@/programs/hsh'
 import { parseLine } from '@/programs/hsh/parse'
 import { Context } from '@/sys0/context'
 import { FRead, Fs, FWrite } from '@/sys0/fs'
@@ -15,7 +15,7 @@ import { createPipe } from '@/sys0/pipe'
 import { cat } from '@/programs/cat'
 import { jobs } from '@/programs/jobs'
 import { wait } from '@/programs/wait'
-import { ExecErrorT } from '@/sys0/exec'
+import { ExecErrorT, ExecService } from '@/sys0/exec'
 
 class EmptyInput implements FRead {
   readKey() { return '\x04' }
@@ -50,6 +50,7 @@ const createShellProcess = (programs: Program | Record<string, Program>) => {
         program: typeof programs === 'function' ? programs : programs[name],
         inode: fs.root,
         path: `/bin/${name}`,
+        argvPrefix: [],
       }),
     },
   } as unknown as Context
@@ -62,6 +63,42 @@ const createShellProcess = (programs: Program | Record<string, Program>) => {
 }
 
 describe('hsh execution', () => {
+  it('executes a shebang script without changing the caller working directory', async () => {
+    const output = new MemoryOutput()
+    const error = new MemoryOutput()
+    const fs = new Fs(Vfs.dir({
+      bin: Vfs.dir({ hsh: Vfs.sysExe('hsh') }),
+      work: Vfs.dir({
+        script: Vfs.normal('#!/bin/hsh\ncapture "$0" "$1" "$PWD"\n', { mode: 0o755 }),
+      }),
+    }), { persistence: new MemoryFsPersistence() })
+    const captured: string[][] = []
+    const interpreter = createHsh({
+      builtins: {
+        capture: (_proc, _name, ...args) => {
+          captured.push(args)
+          return 0
+        },
+      },
+    })
+    const context = {
+      fs,
+      processes: new ProcessTable(),
+      exec: new ExecService({ hsh: interpreter }),
+    } as Context
+    const shell = new Process(context, null, {
+      name: 'hsh',
+      cwd: '/work',
+      env: { HOME: '/', PATH: '/bin', PWD: '/work' },
+      stdio: new Stdio(new EmptyInput(), output, error),
+    })
+
+    await executeScript(shell, parseLine('./script first', shell.env), {})
+
+    expect(captured).toEqual([['/work/script', 'first', '/work']])
+    expect(error.content).toBe('')
+  })
+
   it('writes a newline after a foreground command is interrupted', async () => {
     const { output, process } = createShellProcess(() => signalExit('SIGINT'))
 

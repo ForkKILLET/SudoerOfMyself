@@ -78,6 +78,11 @@ const lexScript = (source: string) => {
       index ++
       continue
     }
+    if (char === '#') {
+      const newline = source.indexOf('\n', index)
+      index = newline === - 1 ? source.length : newline
+      continue
+    }
     if (char === '\n' || char === ';') {
       tokens.push({
         type: 'separator',

@@ -1,4 +1,4 @@
-import { credentialsForExecutable, ExecErrorT } from '@/sys0/exec'
+import { credentialsForExecutable, displayInterpreterError, ExecErrorT } from '@/sys0/exec'
 import { FOp } from '@/sys0/fs'
 import { createCommand } from '@/sys0/program'
 import { UserError } from '@/utils/errors'
@@ -41,6 +41,10 @@ export const timeout = createCommand(
         case ExecErrorT.FILE_SYSTEM_ERROR:
           proc.error(`${command}: ${FOp.displayError(resolved.err.error)}`)
           return 126
+        case ExecErrorT.INTERPRETER_ERROR:
+        case ExecErrorT.INTERPRETER_LOOP:
+          proc.error(displayInterpreterError(resolved.err))
+          return 126
       }
     }
 
@@ -50,7 +54,7 @@ export const timeout = createCommand(
       name: command,
       processGroup,
       credentials: credentialsForExecutable(resolved.val.inode, proc.credentials),
-    }, ...args)
+    }, ...resolved.val.argvPrefix, ...args)
     const child = proc.subProcesses[0]
     const timer = setTimeout(() => {
       if (! child || child.state === 'exited') return

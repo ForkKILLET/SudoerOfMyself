@@ -474,6 +474,18 @@ describe('hsh control-flow execution', () => {
     expect(shell.output.content).toBe('yes\n')
   })
 
+  it('ignores shell comments including a leading shebang line', async () => {
+    const result = await run([
+      '#!/bin/hsh',
+      'emit before # trailing comment',
+      'emit "#quoted" word#suffix',
+    ].join('\n'), {
+      emit: (proc, _self, ...values) => proc.stdio.writeLn(values.join(' ')) ?? 0,
+    })
+
+    expect(result.output.content).toBe('before\n#quoted word#suffix\n')
+  })
+
   it('uses PS2 for incomplete interactive statements', async () => {
     const output = new MemoryOutput()
     const error = new MemoryOutput()

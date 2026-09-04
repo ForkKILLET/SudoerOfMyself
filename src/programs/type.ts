@@ -1,5 +1,5 @@
 import { createCommand } from '@/sys0/program'
-import { ExecError, ExecErrorT } from '@/sys0/exec'
+import { displayInterpreterError, ExecError, ExecErrorT } from '@/sys0/exec'
 import { FOp } from '@/sys0/fs'
 import { UserError } from '@/utils/errors'
 import { HSH_RESERVED_WORDS } from './hsh/reserved_words'
@@ -15,6 +15,9 @@ const displayResolutionError = (name: string, error: ExecError) => {
       return `${name}: native program '${error.programId}' is unavailable`
     case ExecErrorT.FILE_SYSTEM_ERROR:
       return `${name}: ${FOp.displayError(error.error)}`
+    case ExecErrorT.INTERPRETER_ERROR:
+    case ExecErrorT.INTERPRETER_LOOP:
+      return displayInterpreterError(error)
   }
 }
 

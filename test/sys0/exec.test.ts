@@ -10,7 +10,7 @@ const installedProgram = () => 0
 
 const createExec = () => {
   const fs = new Fs(Vfs.dir({
-    bin: Vfs.dir({
+    'bin': Vfs.dir({
       installed: Vfs.sysExe('installed'),
       unavailable: Vfs.sysExe('unavailable'),
       plain: Vfs.normal('not executable'),
@@ -18,6 +18,11 @@ const createExec = () => {
       malformed: Vfs.normal('#!sys\ninstalled\nextra\n', { mode: 0o755 }),
       private: Vfs.sysExe('installed', { mode: 0o700 }),
     }),
+    'script': Vfs.normal('#!/bin/installed\necho ignored by the loader\n', { mode: 0o755 }),
+    'argument-script': Vfs.normal('#!/bin/installed --mode value\n', { mode: 0o755 }),
+    'broken': Vfs.normal('#!/bin/missing\n', { mode: 0o755 }),
+    'loopA': Vfs.normal('#!/loopB\n', { mode: 0o755 }),
+    'loopB': Vfs.normal('#!/loopA\n', { mode: 0o755 }),
   }), { persistence: new MemoryFsPersistence() })
   const registry: NativeProgramRegistry = {
     installed: installedProgram,
@@ -101,6 +106,32 @@ describe('ExecService', () => {
     const result = exec.resolve('/bin/private', { envPath: '/bin', cwd: '/', fs: session })
 
     expect(result.isErr && result.err.type).toBe(ExecErrorT.NOT_EXECUTABLE)
+  })
+
+  it('resolves shebang interpreters and prepares their argument prefix', () => {
+    const { exec, fs, session } = createExec()
+
+    const plain = exec.resolve('/script', { envPath: '/bin', cwd: '/', fs: session }).unwrap()
+    const withArgument = exec.resolve('/argument-script', {
+      envPath: '/bin',
+      cwd: '/',
+      fs: session,
+    }).unwrap()
+
+    expect(plain.path).toBe('/script')
+    expect(plain.inode).toBe(fs.findInodeU('/bin/installed').inode)
+    expect(plain.argvPrefix).toEqual(['/script'])
+    expect(withArgument.argvPrefix).toEqual(['--mode value', '/argument-script'])
+  })
+
+  it('reports missing and cyclic shebang interpreters', () => {
+    const { exec, session } = createExec()
+
+    const broken = exec.resolve('/broken', { envPath: '/bin', cwd: '/', fs: session })
+    const loop = exec.resolve('/loopA', { envPath: '/bin', cwd: '/', fs: session })
+
+    expect(broken.isErr && broken.err.type).toBe(ExecErrorT.INTERPRETER_ERROR)
+    expect(loop.isErr && loop.err.type).toBe(ExecErrorT.INTERPRETER_LOOP)
   })
 
   it('continues through PATH after a non-executable file', () => {
