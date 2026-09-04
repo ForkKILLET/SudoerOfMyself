@@ -24,7 +24,7 @@ import { Result } from 'fk-result'
 import { credentialsForExecutable, displayInterpreterError, ExecErrorT } from '@/sys0/exec'
 import { normalExit, normalizeExit, ProcessExit } from '@/sys0/process_exit'
 import { createPipe } from '@/sys0/pipe'
-import { formatJobCompletion, JobTable, ProcessGroup } from '@/sys0/job'
+import { formatJobCompletion, type Job, JobTable, ProcessGroup } from '@/sys0/job'
 import {
   consumeLoopControlAtBoundary,
   enterShellLoop,
@@ -825,6 +825,8 @@ export const createHsh = ({
         result.val.handle.write(appendHistoryEntry(content, line, saveSize))
       }
       const readline = new Readline(proc, stdio, ctx.term)
+      const pendingJobNotifications: Job[] = []
+      let isExecutingCommand = false
       const history = new ReadlineHistory(
         [...parseHistoryFile(readHistoryContent()), ''],
         () => parseHistoryLimit(env.HISTSIZE, 1_000),
@@ -873,7 +875,16 @@ export const createHsh = ({
             proc.variables.set('?', '2', { exported: false })
           }
           else {
-            await executeParsedSource(proc, parseResult.val)
+            isExecutingCommand = true
+            try {
+              await executeParsedSource(proc, parseResult.val)
+            }
+            finally {
+              isExecutingCommand = false
+              pendingJobNotifications.splice(0).forEach(job => (
+                stdio.writeLn(formatJobCompletion(job, proc.jobTable?.markerFor(job)))
+              ))
+            }
           }
           commandNumber ++
           if (getShellExitRequest(proc)) loop.stop()
@@ -886,6 +897,10 @@ export const createHsh = ({
       })
       const jobTable = proc.jobTable
       const jobCompletionSubscription = jobTable.on('completed', (job) => {
+        if (isExecutingCommand || ctx.fgProc !== proc) {
+          pendingJobNotifications.push(job)
+          return
+        }
         readline.writeAbove(formatJobCompletion(job, jobTable.markerFor(job)))
       })
       try {
