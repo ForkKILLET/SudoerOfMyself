@@ -19,8 +19,10 @@ export type TermOptions = ITerminalOptions & ITerminalInitOnlyOptions & {
 
 export class Term extends Terminal {
   private readonly events = new Emitter<TerminalEvents>()
+  private applicationKeyHandler: ((event: KeyboardEvent) => boolean) | null = null
 
   doEcho = true
+  signalInterrupt = true
 
   constructor({ useWebglAddon = true, ...options }: TermOptions = {}) {
     super({
@@ -43,16 +45,17 @@ export class Term extends Terminal {
       this.loadAddon(webglAddon)
     }
 
-    this.attachCustomKeyEventHandler(event => (
-      handleTerminalCopyShortcut(event, () => this.getSelection())
-    ))
+    this.attachCustomKeyEventHandler((event) => {
+      if (! handleTerminalCopyShortcut(event, () => this.getSelection())) return false
+      return this.applicationKeyHandler?.(event) ?? true
+    })
 
     this.onData((data) => {
       if (this.doEcho) {
         this.write(this.escape(data))
       }
 
-      if (data === '\x03') { // Ctrl+C
+      if (data === '\x03' && this.signalInterrupt) { // Ctrl+C
         this.emit('interrupt')
         return
       }
@@ -78,6 +81,13 @@ export class Term extends Terminal {
 
   emit<K extends keyof RemoveIndex<TerminalEvents>>(event: K, ...data: TerminalEvents[K]) {
     this.events.emit(event, ...data)
+  }
+
+  setApplicationKeyHandler(handler: ((event: KeyboardEvent) => boolean) | null) {
+    if (handler && this.applicationKeyHandler) {
+      throw new Error('Terminal application key handler is already active')
+    }
+    this.applicationKeyHandler = handler
   }
 
   getStringWidth(str: string) {
