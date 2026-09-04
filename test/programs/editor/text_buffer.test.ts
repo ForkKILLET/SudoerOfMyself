@@ -53,4 +53,57 @@ describe('editor text buffer', () => {
     expect(buffer.redo()).toBe(true)
     expect(buffer.content).toBe('hello world')
   })
+
+  it('searches literally, repeats with wrapping, and leaves the cursor on a miss', () => {
+    const buffer = new TextBuffer('a.b😀\na.b')
+    expect(buffer.findNext('a.b', true)).toEqual({
+      range: { start: { row: 0, column: 0 }, end: { row: 0, column: 3 } },
+      wrapped: false,
+    })
+    expect(buffer.cursor).toEqual({ row: 0, column: 0 })
+    expect(buffer.findNext('a.b')).toEqual({
+      range: { start: { row: 1, column: 0 }, end: { row: 1, column: 3 } },
+      wrapped: false,
+    })
+    expect(buffer.cursor).toEqual({ row: 1, column: 0 })
+    expect(buffer.findNext('a.b')).toEqual({
+      range: { start: { row: 0, column: 0 }, end: { row: 0, column: 3 } },
+      wrapped: true,
+    })
+    expect(buffer.cursor).toEqual({ row: 0, column: 0 })
+    expect(buffer.findNext('missing')).toBeNull()
+    expect(buffer.cursor).toEqual({ row: 0, column: 0 })
+  })
+
+  it('navigates characters and words without splitting surrogate pairs', () => {
+    const buffer = new TextBuffer('😀世界 next\nlast')
+    buffer.moveTo(0, 2)
+    expect(buffer.cursor.column).toBe(3)
+    expect(buffer.characterColumn).toBe(2)
+    buffer.moveWord(1)
+    expect(buffer.cursor.column).toBe(5)
+    buffer.moveWord(- 1)
+    expect(buffer.cursor.column).toBe(2)
+    buffer.moveTo(999, 999)
+    expect(buffer.cursor).toEqual({ row: 1, column: 4 })
+    buffer.moveToFileStart()
+    expect(buffer.cursor).toEqual({ row: 0, column: 0 })
+  })
+
+  it('reads and cuts marked ranges in either direction', () => {
+    const buffer = new TextBuffer('a😀b\n短line')
+    buffer.moveTo(0, 1)
+    const range = buffer.rangeFrom({ row: 1, column: 1 })
+
+    expect(range).toEqual({
+      start: { row: 0, column: 1 },
+      end: { row: 1, column: 1 },
+    })
+    expect(buffer.textInRange(range)).toBe('😀b\n短')
+    expect(buffer.cutRange(range)).toBe('😀b\n短')
+    expect(buffer.content).toBe('aline')
+    expect(buffer.cursor).toEqual({ row: 0, column: 1 })
+    expect(buffer.undo()).toBe(true)
+    expect(buffer.content).toBe('a😀b\n短line')
+  })
 })

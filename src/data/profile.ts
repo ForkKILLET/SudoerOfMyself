@@ -4,6 +4,7 @@ export const DEFAULT_PS2 = String.raw`\[\e[92m\]>\[\e[39m\] `
 export const DEFAULT_PROFILE = [
   `PS1='${DEFAULT_PS1}'`,
   `PS2='${DEFAULT_PS2}'`,
+  'EDITOR=nano',
   'HISTFILE=$HOME/.hsh_history',
   'HISTSIZE=1000',
   'SAVEHIST=1000',

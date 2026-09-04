@@ -22,6 +22,7 @@ import {
 } from '@/sys0/fs/writer_lock'
 import { parseBootMode } from '@/boot_mode'
 import { getStorageNamespace } from '@/storage_namespace'
+import { setupImmersiveMode } from '@/immersive_mode'
 
 const mode = parseBootMode(location.search)
 const storage = getStorageNamespace(mode.debug)
@@ -76,10 +77,18 @@ const start = async () => {
 
     const terminalContainer = document.querySelector<HTMLElement>('#xterm-container')
     if (! terminalContainer) throw new Error('Terminal container not found')
+    const app = document.querySelector<HTMLElement>('#app')
+    const immersiveModeButton = document.querySelector<HTMLButtonElement>('#immersive-mode-button')
+    if (! app || ! immersiveModeButton) throw new Error('Application shell not found')
 
     ctx.attach(terminalContainer)
     ctx.init.spawn(mode.debug ? createGame0(hsh) : game0, { name: 'game0' })
     await Promise.all([ctx.fs.flush(), clockPersistence.flush()])
+    setupImmersiveMode({
+      container: app,
+      button: immersiveModeButton,
+      focusApplication: () => ctx.term.focus(),
+    })
   }
   catch (error) {
     disposeTimePersistence()

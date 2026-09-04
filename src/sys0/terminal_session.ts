@@ -16,6 +16,12 @@ export interface TerminalSessionOptions {
   bracketedPaste?: boolean
   interruptAsInput?: boolean
   interceptBrowserShortcuts?: boolean
+  pageLeaveTarget?: PageLeaveTarget | null
+}
+
+interface PageLeaveTarget {
+  addEventListener(type: 'beforeunload', listener: (event: BeforeUnloadEvent) => void): void
+  removeEventListener(type: 'beforeunload', listener: (event: BeforeUnloadEvent) => void): void
 }
 
 const interceptApplicationShortcut = (event: KeyboardEvent) => {
@@ -30,6 +36,13 @@ export class TerminalSession implements IDisposable {
   private readonly previousEcho: boolean
   private readonly previousSignalInterrupt: boolean
   private readonly bracketedPaste: boolean
+  private readonly pageLeaveTarget: PageLeaveTarget | null
+  private pageLeaveGuarded = false
+
+  private readonly preventPageLeave = (event: BeforeUnloadEvent) => {
+    event.preventDefault()
+    event.returnValue = true
+  }
 
   constructor(
     readonly term: Term,
@@ -37,6 +50,7 @@ export class TerminalSession implements IDisposable {
       bracketedPaste = true,
       interruptAsInput = true,
       interceptBrowserShortcuts = true,
+      pageLeaveTarget = typeof window === 'undefined' ? null : window,
     }: TerminalSessionOptions = {},
   ) {
     if (activeTerms.has(term)) throw new Error('Terminal already has an active full-screen session')
@@ -45,6 +59,7 @@ export class TerminalSession implements IDisposable {
     this.previousEcho = term.doEcho
     this.previousSignalInterrupt = term.signalInterrupt
     this.bracketedPaste = bracketedPaste
+    this.pageLeaveTarget = pageLeaveTarget
     term.doEcho = false
     term.signalInterrupt = ! interruptAsInput
     try {
@@ -76,6 +91,14 @@ export class TerminalSession implements IDisposable {
     this.term.write(data)
   }
 
+  setPageLeaveGuard(enabled: boolean) {
+    if (this.disposed) throw new Error('Terminal session is already disposed')
+    if (! this.pageLeaveTarget || enabled === this.pageLeaveGuarded) return
+    this.pageLeaveGuarded = enabled
+    if (enabled) this.pageLeaveTarget.addEventListener('beforeunload', this.preventPageLeave)
+    else this.pageLeaveTarget.removeEventListener('beforeunload', this.preventPageLeave)
+  }
+
   dispose() {
     if (this.disposed) return
     this.disposed = true
@@ -88,6 +111,10 @@ export class TerminalSession implements IDisposable {
       )
     }
     finally {
+      if (this.pageLeaveGuarded) {
+        this.pageLeaveTarget?.removeEventListener('beforeunload', this.preventPageLeave)
+        this.pageLeaveGuarded = false
+      }
       this.term.setApplicationKeyHandler(null)
       this.term.doEcho = this.previousEcho
       this.term.signalInterrupt = this.previousSignalInterrupt

@@ -3,6 +3,16 @@ export interface EditorCursor {
   column: number
 }
 
+export interface TextRange {
+  start: EditorCursor
+  end: EditorCursor
+}
+
+export interface TextSearchResult {
+  range: TextRange
+  wrapped: boolean
+}
+
 interface BufferSnapshot {
   content: string
   cursor: EditorCursor
@@ -19,14 +29,21 @@ const characterAtOffset = (value: string, offset: number) => (
 )
 
 const previousOffset = (value: string, offset: number) => {
-  const previous = codePoints(value.slice(0, offset)).at(- 1)
-  return offset - (previous?.length ?? 0)
+  if (offset <= 0) return 0
+  const last = value.charCodeAt(offset - 1)
+  const before = value.charCodeAt(offset - 2)
+  const pair = last >= 0xDC00 && last <= 0xDFFF && before >= 0xD800 && before <= 0xDBFF
+  return offset - (pair ? 2 : 1)
 }
 
 const nextOffset = (value: string, offset: number) => {
-  const next = codePoints(value.slice(offset))[0]
-  return offset + (next?.length ?? 0)
+  const next = value.codePointAt(offset)
+  return offset + (next === undefined ? 0 : next > 0xFFFF ? 2 : 1)
 }
+
+const compareCursor = (left: EditorCursor, right: EditorCursor) => (
+  left.row - right.row || left.column - right.column
+)
 
 export class TextBuffer {
   private lines: string[]
@@ -50,6 +67,115 @@ export class TextBuffer {
 
   getLine(row: number) {
     return this.lines[row] ?? ''
+  }
+
+  get characterColumn() {
+    return characterAtOffset(this.getLine(this.cursor.row), this.cursor.column)
+  }
+
+  moveTo(row: number, character = 0) {
+    this.cursor.row = Math.max(0, Math.min(this.lineCount - 1, row))
+    this.cursor.column = offsetAtCharacter(this.getLine(this.cursor.row), Math.max(0, character))
+    this.preferredCharacter = null
+  }
+
+  moveToFileStart() {
+    this.moveTo(0)
+  }
+
+  moveToFileEnd() {
+    this.moveTo(this.lineCount - 1)
+    this.moveToLineEnd()
+  }
+
+  private offsetAtPosition(position: EditorCursor) {
+    return this.lines.slice(0, position.row)
+      .reduce((sum, line) => sum + line.length + 1, 0) + position.column
+  }
+
+  private get cursorOffset() {
+    return this.offsetAtPosition(this.cursor)
+  }
+
+  private positionAtOffset(offset: number): EditorCursor {
+    const before = this.content.slice(0, offset).split('\n')
+    return {
+      row: before.length - 1,
+      column: before.at(- 1) !.length,
+    }
+  }
+
+  private moveToOffset(offset: number) {
+    Object.assign(this.cursor, this.positionAtOffset(offset))
+    this.preferredCharacter = null
+  }
+
+  rangeFrom(anchor: EditorCursor): TextRange {
+    const cursor = { ...this.cursor }
+    const mark = { ...anchor }
+    return compareCursor(mark, cursor) <= 0
+      ? { start: mark, end: cursor }
+      : { start: cursor, end: mark }
+  }
+
+  textInRange(range: TextRange) {
+    return this.content.slice(
+      this.offsetAtPosition(range.start),
+      this.offsetAtPosition(range.end),
+    )
+  }
+
+  cutRange(range: TextRange) {
+    const start = this.offsetAtPosition(range.start)
+    const end = this.offsetAtPosition(range.end)
+    const cut = this.content.slice(start, end)
+    if (! cut) return ''
+    this.mutate(() => {
+      const content = this.content
+      this.lines = (content.slice(0, start) + content.slice(end)).split('\n')
+      this.moveToOffset(start)
+    })
+    return cut
+  }
+
+  findNext(query: string, includeCurrent = false): TextSearchResult | null {
+    if (! query) return null
+    const content = this.content
+    const offset = this.cursorOffset
+    const start = includeCurrent ? offset : offset + 1
+    let found = content.indexOf(query, start)
+    const wrapped = found === - 1
+    if (wrapped) found = content.indexOf(query)
+    if (found === - 1) return null
+    const range = {
+      start: this.positionAtOffset(found),
+      end: this.positionAtOffset(found + query.length),
+    }
+    this.moveToOffset(found)
+    return { range, wrapped }
+  }
+
+  moveWord(direction: - 1 | 1) {
+    const content = this.content
+    let offset = this.cursorOffset
+    const isWord = (char: string) => /[\p{L}\p{N}_]/u.test(char)
+    if (direction === 1) {
+      while (offset < content.length && isWord(String.fromCodePoint(content.codePointAt(offset) !))) {
+        offset = nextOffset(content, offset)
+      }
+      while (offset < content.length && ! isWord(String.fromCodePoint(content.codePointAt(offset) !))) {
+        offset = nextOffset(content, offset)
+      }
+    }
+    else {
+      while (offset > 0 && ! isWord(content.slice(previousOffset(content, offset), offset))) {
+        offset = previousOffset(content, offset)
+      }
+      while (offset > 0 && isWord(content.slice(previousOffset(content, offset), offset))) {
+        offset = previousOffset(content, offset)
+      }
+    }
+    this.moveToOffset(offset)
   }
 
   private snapshot(): BufferSnapshot {
@@ -129,13 +255,14 @@ export class TextBuffer {
   }
 
   cutLine() {
+    if (! this.content) return ''
     let cut = ''
     this.mutate(() => {
       cut = this.getLine(this.cursor.row)
       if (this.lines.length === 1) this.lines[0] = ''
       else this.lines.splice(this.cursor.row, 1)
       this.cursor.row = Math.min(this.cursor.row, this.lines.length - 1)
-      this.cursor.column = Math.min(this.cursor.column, this.getLine(this.cursor.row).length)
+      this.cursor.column = 0
     })
     return cut + '\n'
   }

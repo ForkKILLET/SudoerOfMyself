@@ -51,6 +51,7 @@ import { id } from './id'
 import { umask } from './umask'
 import { whoami } from './whoami'
 import { alias, unalias } from './alias'
+import { nano } from './nano'
 
 export const BUILTINS: Record<string, Program> = {
   [':']: succeed,
@@ -101,6 +102,7 @@ export const PUBLIC_NATIVE_PROGRAMS: Record<string, Program> = {
   ls,
   mkdir,
   mv,
+  nano,
   ps,
   rm,
   rmdir,

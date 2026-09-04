@@ -13,6 +13,10 @@ body {
     color: white;
 }
 
+.terminal-shell {
+    position: relative;
+}
+
 #xterm-container {
     padding: 10px;
     border-radius: 10px;
@@ -22,4 +26,61 @@ body {
 
 .terminal.xterm {
     width: fit-content;
+}
+
+.immersive-mode-button {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 10px);
+    display: grid;
+    width: 34px;
+    height: 34px;
+    padding: 7px;
+    border: 0;
+    border-radius: 10px;
+    box-shadow: #fff 0 0 5px;
+    background: #000;
+    color: #fff;
+    cursor: pointer;
+    opacity: 0.72;
+    place-items: center;
+}
+
+.immersive-mode-button[hidden] {
+    display: none;
+}
+
+.immersive-mode-button:hover,
+.immersive-mode-button:focus-visible {
+    opacity: 1;
+}
+
+.immersive-mode-button:focus-visible {
+    outline: 1px solid #fff;
+    outline-offset: 3px;
+}
+
+.immersive-mode-button:disabled {
+    cursor: default;
+    opacity: 0.3;
+}
+
+.immersive-mode-button__icon {
+    grid-area: 1 / 1;
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+    stroke-width: 1.75;
+}
+
+.immersive-mode-button__exit,
+.immersive-mode-button[data-active='true'] .immersive-mode-button__enter {
+    display: none;
+}
+
+.immersive-mode-button[data-active='true'] .immersive-mode-button__exit {
+    display: block;
 }

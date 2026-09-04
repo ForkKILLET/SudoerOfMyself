@@ -17,6 +17,7 @@ describe('system file-system images', () => {
 
     expect(fs.find('/home/hello.txt').isOk).toBe(true)
     expect(fs.openU('/home/.profile', 'r').handle.read()).toContain('HISTFILE=$HOME/.hsh_history')
+    expect(fs.openU('/home/.profile', 'r').handle.read()).toContain('EDITOR=nano')
     expect(fs.openU('/bin/one', 'r').handle.read()).toBe('#!sys\none\n')
     expect(fs.openU('/bin/two', 'r').handle.read()).toBe('#!sys\ntwo\n')
     expect(fs.statU('/')).toMatchObject({

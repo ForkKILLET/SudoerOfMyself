@@ -15,6 +15,11 @@ export type EditorKey =
   | 'shift-tab'
   | 'tab'
   | 'up'
+  | 'file-start'
+  | 'file-end'
+  | 'word-left'
+  | 'word-right'
+  | `alt-${string}`
   | `ctrl-${string}`
   | `sequence:${string}`
 
@@ -29,8 +34,12 @@ const BRACKETED_PASTE_END = '\x1B[201~'
 const ESCAPE_SEQUENCES: ReadonlyArray<readonly [string, EditorKey]> = [
   ['\x1B[1;5A', 'up'],
   ['\x1B[1;5B', 'down'],
-  ['\x1B[1;5C', 'right'],
-  ['\x1B[1;5D', 'left'],
+  ['\x1B[1;5C', 'word-right'],
+  ['\x1B[1;5D', 'word-left'],
+  ['\x1B[1;5H', 'file-start'],
+  ['\x1B[1;5F', 'file-end'],
+  ['\x1B[1;5~', 'file-start'],
+  ['\x1B[4;5~', 'file-end'],
   ['\x1B[5~', 'page-up'],
   ['\x1B[6~', 'page-down'],
   ['\x1B[3~', 'delete'],
@@ -52,6 +61,8 @@ const normalizePastedText = (value: string) => value.replace(/\r\n?|\n/gu, '\n')
 const controlKey = (char: string): EditorKey | undefined => {
   const code = char.charCodeAt(0)
   if (code >= 1 && code <= 26) return `ctrl-${String.fromCharCode(code + 96)}`
+  if (code === 30) return 'ctrl-6'
+  if (code === 31) return 'ctrl-_'
   return undefined
 }
 
@@ -97,6 +108,12 @@ export class EditorInputDecoder {
         if (unknown) {
           this.pending.push({ type: 'key', key: `sequence:${unknown}` })
           index += unknown.length
+          continue
+        }
+        const meta = data[index + 1]
+        if (meta && /^[\x20-\x7E]$/u.test(meta)) {
+          this.pending.push({ type: 'key', key: `alt-${meta.toLowerCase()}` })
+          index += 2
           continue
         }
         this.pending.push({ type: 'key', key: 'escape' })

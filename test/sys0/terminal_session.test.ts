@@ -21,6 +21,21 @@ const createTerm = () => {
   }
 }
 
+const createPageLeaveTarget = () => {
+  const listeners = new Set<(event: BeforeUnloadEvent) => void>()
+  return {
+    target: {
+      addEventListener: (_type: 'beforeunload', listener: (event: BeforeUnloadEvent) => void) => {
+        listeners.add(listener)
+      },
+      removeEventListener: (_type: 'beforeunload', listener: (event: BeforeUnloadEvent) => void) => {
+        listeners.delete(listener)
+      },
+    },
+    listeners,
+  }
+}
+
 describe('full-screen terminal session', () => {
   it('enters raw alternate-screen mode and restores terminal state', () => {
     const terminal = createTerm()
@@ -67,5 +82,24 @@ describe('full-screen terminal session', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(event.stopPropagation).toHaveBeenCalledOnce()
     session.dispose()
+  })
+
+  it('guards unsaved work from page navigation and removes the guard on disposal', () => {
+    const { term } = createTerm()
+    const page = createPageLeaveTarget()
+    const session = new TerminalSession(term, { pageLeaveTarget: page.target })
+    const event = {
+      preventDefault: vi.fn(),
+      returnValue: false,
+    } as unknown as BeforeUnloadEvent
+
+    session.setPageLeaveGuard(true)
+    expect(page.listeners.size).toBe(1)
+    page.listeners.values().next().value?.(event)
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(event.returnValue).toBe(true)
+
+    session.dispose()
+    expect(page.listeners.size).toBe(0)
   })
 })

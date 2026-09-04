@@ -46,4 +46,23 @@ describe('editor input decoder', () => {
       key: 'sequence:\x1B[9~',
     })
   })
+
+  it('decodes Meta shortcuts and word/file navigation without inserting text', async () => {
+    const decoder = new EditorInputDecoder(new ChunkInput([
+      '\x1Bu\x1Be\x1B6\x1B[1;5C\x1B[1;5D\x1B[1;5H\x1B[1;5F\x1E\x1F',
+    ]))
+    for (const key of [
+      'alt-u',
+      'alt-e',
+      'alt-6',
+      'word-right',
+      'word-left',
+      'file-start',
+      'file-end',
+      'ctrl-6',
+      'ctrl-_',
+    ]) {
+      await expect(decoder.read()).resolves.toEqual({ type: 'key', key })
+    }
+  })
 })
