@@ -62,7 +62,7 @@ export const ls = createCommand('ls', '<path...>', 'List directory contents')
 
     const outputs: string[] = []
     if (otherEntries.length) outputs.push(options.long
-      ? otherEntries.map(({ path, inode }) => longEntry(path, inode)).join('\n')
+      ? otherEntries.map(({ path, inode }) => longEntry(path, inode) + '\n').join('')
       : new GridDisplay(ctx.term, otherEntries.map(prop('path'))).toString())
 
     outputs.push(...dirEntries.map(({ inode, path }) => {
@@ -72,8 +72,8 @@ export const ls = createCommand('ls', '<path...>', 'List directory contents')
       const listing = options.long
         ? children.map((name) => {
             const child = proc.fs.getChildInode(inode.file, name)
-            return child ? longEntry(name, child) : chalk.redBright(name)
-          }).join('\n')
+            return (child ? longEntry(name, child) : chalk.redBright(name)) + '\n'
+          }).join('')
         : new GridDisplay(ctx.term, children.map((name) => {
             if (! options.color) return name
             return displayName(name, proc.fs.getChildInode(inode.file, name) ?? undefined)
