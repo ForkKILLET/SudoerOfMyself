@@ -73,6 +73,25 @@ const createEditorProcess = () => {
 }
 
 describe('nano editor', () => {
+  it.each(['-l', '--linenumbers'])('enables numbers with %s and toggles with Alt+# without editing text', async (option) => {
+    const { fs, process, term } = createEditorProcess()
+    const completion = nano(process, 'nano', option, 'note.txt')
+    expect(stripAnsi(term.writes.at(- 1) !).split('\r\n')[1]).toMatch(/^ 1 /u)
+    term.input('hello\x1B#\x1B#\x0F\r\x18')
+    await expect(completion).resolves.toBe(0)
+    expect(fs.openU('/home/note.txt', 'r').handle.read()).toBe('hello')
+    for (const state of ['disabled', 'enabled']) {
+      const text = `[ Line numbering ${state} ]`
+      const frame = term.writes.find(frame => frame.includes(text))
+      const left = Math.floor((term.cols - text.length) / 2)
+      expect(frame?.split('\r\n').at(- 3)).toBe(
+        ' '.repeat(left) + '\x1B[30;107m' + text + '\x1B[0m'
+        + ' '.repeat(term.cols - left - text.length),
+      )
+      expect(frame?.includes('\x1B[30;107m 1\x1B[0m ')).toBe(state === 'enabled')
+    }
+  })
+
   it('edits a new file, writes it, and restores the terminal on exit', async () => {
     const { fs, process, term } = createEditorProcess()
     const completion = nano(process, 'nano', 'note.txt')
@@ -167,8 +186,8 @@ describe('nano editor', () => {
     expect(term.writes.some(frame => frame.includes(
       '\x1B[4;30;43mn\x1B[0m\x1B[30;43meedle\x1B[0m',
     ))).toBe(true)
-    expect(term.writes.some(frame => frame.includes('\x1B[30;47m[ Search Wrapped ]'))).toBe(true)
-    expect(term.writes.some(frame => frame.includes('\x1B[37;41m[ "missing" not found ]'))).toBe(true)
+    expect(term.writes.some(frame => frame.includes('\x1B[30;107m[ Search Wrapped ]'))).toBe(true)
+    expect(term.writes.some(frame => frame.includes('\x1B[97;41m[ "missing" not found ]'))).toBe(true)
     expect(term.writes.every(frame => ! frame.includes('Found:'))).toBe(true)
   })
 

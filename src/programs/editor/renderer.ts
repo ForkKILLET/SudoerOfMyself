@@ -1,5 +1,6 @@
 import type { TerminalSession } from '@/sys0/terminal_session'
 import type { TextBuffer, TextRange } from './text_buffer'
+import { lineNumber, numberWidth } from './line_numbers'
 import {
   NANO_HELP,
   NANO_SHORTCUTS,
@@ -12,8 +13,9 @@ const INVERSE = '\x1B[7m'
 const SEARCH_HIGHLIGHT = '\x1B[30;43m'
 const SEARCH_CURSOR_HIGHLIGHT = '\x1B[4;30;43m'
 const SELECTION_CURSOR_HIGHLIGHT = '\x1B[4;7m'
-const ERROR_NOTICE = '\x1B[37;41m'
-const WRAPPED_NOTICE = '\x1B[30;47m'
+const ERROR_NOTICE = '\x1B[97;41m'
+const BRIGHT_WHITE = '\x1B[97m'
+const BLACK_ON_WHITE = '\x1B[30;107m'
 const RESET = '\x1B[0m'
 const TAB_SIZE = 4
 
@@ -51,10 +53,11 @@ export interface EditorFooter {
 
 export interface EditorNotice {
   text: string
-  tone: 'error' | 'wrapped'
+  tone: 'error' | 'wrapped' | 'info'
 }
 
 export interface EditorRenderState {
+  lineNumbers?: boolean
   filename?: string
   message?: string
   modified?: boolean
@@ -166,8 +169,9 @@ export class EditorRenderer {
         cursor === cell.sourceStart,
         Boolean(selection),
       )
-      if (begin < left) {
-        const overlap = Math.min(end - left, width - outputWidth)
+      if (begin >= left + width) break
+      if (begin < left || end > left + width) {
+        const overlap = Math.min(end, left + width) - Math.max(begin, left)
         append(' '.repeat(Math.max(0, overlap)), style)
         outputWidth += Math.max(0, overlap)
         continue
@@ -232,7 +236,7 @@ export class EditorRenderer {
           ` ${shortcut.label}`,
           Math.max(0, columnWidth - keyFieldWidth),
         )
-        line += INVERSE + padding + key + RESET + label
+        line += BLACK_ON_WHITE + padding + key + RESET + BRIGHT_WHITE + label + RESET
       }
       return line + ' '.repeat(Math.max(0, columns - gridColumns * columnWidth))
     })
@@ -272,11 +276,11 @@ export class EditorRenderer {
     const help = this.helpLines(columns)
     this.helpTopRow = Math.max(0, Math.min(this.helpTopRow, help.length - pageRows))
     const lines = [
-      `${INVERSE}${this.plainLine('  HumanOS nano - Help', columns)}${RESET}`,
+      `${BLACK_ON_WHITE}${this.plainLine('  HumanOS nano - Help', columns)}${RESET}`,
       ...Array.from({ length: pageRows }, (_, index) => (
         help[this.helpTopRow + index] ?? ' '.repeat(columns)
       )),
-      `${INVERSE}${this.plainLine('^X / Escape: back to editor', columns)}${RESET}`,
+      `${BLACK_ON_WHITE}${this.plainLine('^X / Escape: back to editor', columns)}${RESET}`,
       ...footer,
     ]
     this.session.write(HIDE_CURSOR + HOME + lines.slice(0, rows).join('\r\n'))
@@ -287,10 +291,12 @@ export class EditorRenderer {
     if (row < this.topRow) this.topRow = row
     else if (row >= this.topRow + contentRows) this.topRow = row - contentRows + 1
 
-    const displayColumn = this.widthOf(this.buffer.getLine(row).slice(0, column))
+    const line = this.buffer.getLine(row)
+    const displayColumn = this.widthOf(line.slice(0, column))
+    const cursorWidth = Math.max(1, this.cellsFor(line).find(cell => cell.sourceStart === column)?.width ?? 1)
     if (displayColumn < this.leftColumn) this.leftColumn = displayColumn
-    else if (displayColumn >= this.leftColumn + columns) {
-      this.leftColumn = displayColumn - columns + 1
+    else if (displayColumn + cursorWidth > this.leftColumn + columns) {
+      this.leftColumn = displayColumn + Math.min(cursorWidth, columns) - columns
     }
   }
 
@@ -307,7 +313,8 @@ export class EditorRenderer {
     const value = prompt.label + prompt.value
     const cursor = prompt.label.length + (prompt.cursor ?? prompt.value.length)
     const width = this.widthOf(value.slice(0, cursor))
-    return this.sliceToWidth(value, Math.max(0, width - columns + 1), columns, undefined, cursor)
+    const line = this.sliceToWidth(value, Math.max(0, width - columns + 1), columns, undefined, cursor)
+    return BRIGHT_WHITE + line.replaceAll(RESET, RESET + BRIGHT_WHITE) + RESET
   }
 
   private lineHighlight(range: TextRange | undefined, row: number, lineLength: number) {
@@ -323,7 +330,7 @@ export class EditorRenderer {
     const text = this.plainLine(notice.text, width)
     const left = Math.floor((columns - width) / 2)
     const right = columns - left - width
-    const style = notice.tone === 'error' ? ERROR_NOTICE : WRAPPED_NOTICE
+    const style = notice.tone === 'error' ? ERROR_NOTICE : BLACK_ON_WHITE
     return ' '.repeat(left) + style + text + RESET + ' '.repeat(right)
   }
 
@@ -345,28 +352,30 @@ export class EditorRenderer {
       shortcutLayout?.shortcutColumnWidth,
     )
     const contentRows = Math.max(1, rows - 2 - footer.length)
-    this.ensureCursorVisible(contentRows, columns)
+    const gutter = numberWidth(!! state.lineNumbers, this.buffer.lineCount, columns)
+    const textColumns = columns - gutter
+    this.ensureCursorVisible(contentRows, textColumns)
     const lines: string[] = []
 
-    lines.push(`${INVERSE}${this.header(state, columns)}${RESET}`)
+    lines.push(`${BLACK_ON_WHITE}${this.header(state, columns)}${RESET}`)
     for (let index = 0; index < contentRows; index ++) {
       const row = this.topRow + index
       const line = this.buffer.getLine(row)
       lines.push(row < this.buffer.lineCount
-        ? this.sliceToWidth(
-            line,
-            this.leftColumn,
-            columns,
-            this.lineHighlight(state.searchHighlight, row, line.length),
-            row === this.buffer.cursor.row ? this.buffer.cursor.column : undefined,
-            this.lineHighlight(state.selection, row, line.length),
-          )
+        ? lineNumber(row, gutter, false, BLACK_ON_WHITE) + this.sliceToWidth(
+          line,
+          this.leftColumn,
+          textColumns,
+          this.lineHighlight(state.searchHighlight, row, line.length),
+          row === this.buffer.cursor.row ? this.buffer.cursor.column : undefined,
+          this.lineHighlight(state.selection, row, line.length),
+        )
         : ' '.repeat(columns))
     }
 
     if (state.prompt) lines.push(this.promptLine(state.prompt, columns))
     else if (state.notice) lines.push(this.noticeLine(state.notice, columns))
-    else if (state.message) lines.push(`${INVERSE}${this.plainLine(state.message, columns)}${RESET}`)
+    else if (state.message) lines.push(`${BLACK_ON_WHITE}${this.plainLine(state.message, columns)}${RESET}`)
     else lines.push(' '.repeat(columns))
     lines.push(...footer)
 

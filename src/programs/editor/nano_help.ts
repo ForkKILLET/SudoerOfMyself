@@ -61,6 +61,7 @@ export const NANO_HELP = [
   'Ctrl+Home   Start of file. Ctrl+End: end of file.',
   'M-< / M->   Also move to start/end of file.',
   'Ctrl+Left   Previous word. Ctrl+Right: next word.',
+  'M-#         Toggle line numbers. Start with nano -l / --linenumbers to enable.',
   '',
   'EDITING',
   '^6 / M-A    Set or unset the mark; move the cursor to select text.',

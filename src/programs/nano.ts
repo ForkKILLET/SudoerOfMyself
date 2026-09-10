@@ -45,6 +45,7 @@ class NanoEditor {
     private readonly session: TerminalSession,
     filename: string | undefined,
     content: string,
+    private lineNumbers = false,
   ) {
     this.filename = filename
     this.buffer = new TextBuffer(content)
@@ -61,6 +62,7 @@ class NanoEditor {
     this.session.setPageLeaveGuard(this.modified)
     this.renderer.render({
       filename: this.filename,
+      lineNumbers: this.lineNumbers,
       message: this.message,
       modified: this.modified,
       prompt: this.activePrompt,
@@ -325,6 +327,14 @@ class NanoEditor {
       return
     }
     switch (input.key) {
+      case 'alt-#':
+        this.lineNumbers = ! this.lineNumbers
+        this.message = ''
+        this.notice = {
+          text: `[ Line numbering ${this.lineNumbers ? 'enabled' : 'disabled'} ]`,
+          tone: 'info',
+        }
+        break
       case 'left':
       case 'ctrl-b':
         this.buffer.moveLeft()
@@ -499,9 +509,10 @@ class NanoEditor {
 }
 
 export const nano = createCommand('nano', '[FILE]', 'Edit a text file in the terminal.')
+  .option('linenumbers', '-l, --linenumbers', 'boolean', 'Show line numbers (Alt+# toggles).')
   .help('help')
   .whenUnknownOption('make-arg')
-  .program(async ({ proc }, path, ...extraPaths) => {
+  .program(async ({ proc, options }, path, ...extraPaths) => {
     if (extraPaths.length) throw new UserError('Only one file can be edited at a time')
     if (! proc.stdio.stdin || ! proc.stdio.stdout) {
       throw new UserError('Standard input and output must be a terminal')
@@ -521,7 +532,7 @@ export const nano = createCommand('nano', '[FILE]', 'Edit a text file in the ter
     }
 
     const session = new TerminalSession(proc.ctx.term)
-    const editor = new NanoEditor(proc, session, filename, content)
+    const editor = new NanoEditor(proc, session, filename, content, !! options.linenumbers)
     const resizeSubscription = session.onResize(() => editor.redraw())
     try {
       return await editor.run()

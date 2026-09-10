@@ -65,6 +65,9 @@ persistent root file system.
 
 ## Text editors
 
+`nano -l [FILE]` (or `--linenumbers`) enables line numbers; `Alt+#` toggles
+them while editing.
+
 `vim [FILE]` opens a small modal editor. Press `i` to insert text and `Esc` to
 return to Normal mode. Use `:w` to save, `:q` to quit, `:wq` to save and quit,
 or `:q!` to discard unsaved changes. An unnamed buffer can be saved with

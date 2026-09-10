@@ -26,6 +26,38 @@ const createRenderer = (content: string) => {
 }
 
 describe('editor renderer', () => {
+  it('keeps nano numbers outside horizontally scrolled and highlighted text', () => {
+    const { renderer, writes, buffer, term } = createRenderer('long text here\n界tail')
+    term.cols = 8
+    buffer.moveTo(0, 10)
+    renderer.render({ lineNumbers: true, searchHighlight: { start: { row: 0, column: 10 }, end: { row: 0, column: 14 } } })
+    expect(stripAnsi(writes[0]).split('\r\n')[1]).toBe(' 1 ext h')
+    expect(writes[0].split('\r\n')[1].startsWith('\x1B[30;107m 1\x1B[0m ')).toBe(true)
+    expect(writes[0].split('\r\n')[2].startsWith('\x1B[30;107m 2\x1B[0m ')).toBe(true)
+    expect(writes[0]).toContain('\x1B[4;30;43mh\x1B[0m')
+    buffer.moveTo(1)
+    term.cols = 4
+    renderer.render({ lineNumbers: true })
+    expect(stripAnsi(writes[1]).split('\r\n').every(line => term.getStringWidth(line) === 4)).toBe(true)
+    expect(writes[1]).toContain('\x1B[7m \x1B[0m')
+  })
+
+  it.each([8, 30, 60])('centers and clips line-number notices at %i columns', (columns) => {
+    const { renderer, writes, term } = createRenderer('text')
+    term.cols = columns
+
+    for (const state of ['enabled', 'disabled']) {
+      const text = `[ Line numbering ${state} ]`
+      renderer.render({ notice: { text, tone: 'info' } })
+      const width = Math.min(columns, text.length)
+      const left = Math.floor((columns - width) / 2)
+      expect(writes.at(- 1) !.split('\r\n').at(- 3)).toBe(
+        ' '.repeat(left) + '\x1B[30;107m' + text.slice(0, width) + '\x1B[0m'
+        + ' '.repeat(columns - left - width),
+      )
+    }
+  })
+
   it('renders file control characters as visible text instead of terminal escapes', () => {
     const { renderer, writes } = createRenderer('safe\x1B[31m')
 
@@ -96,8 +128,8 @@ describe('editor renderer', () => {
     renderer.render({ notice: { text: '[ "lost" not found ]', tone: 'error' } })
     renderer.render({ notice: { text: '[ Search Wrapped ]', tone: 'wrapped' } })
 
-    expect(writes[0]).toContain('\x1B[37;41m[ "lost" not found ]\x1B[0m')
-    expect(writes[1]).toContain('\x1B[30;47m[ Search Wrapped ]\x1B[0m')
+    expect(writes[0]).toContain('\x1B[97;41m[ "lost" not found ]\x1B[0m')
+    expect(writes[1]).toContain('\x1B[30;107m[ Search Wrapped ]\x1B[0m')
     for (const frame of writes) {
       const status = stripAnsi(frame).split('\r\n').at(- 3) !
       expect(status).toHaveLength(30)
@@ -120,7 +152,7 @@ describe('editor renderer', () => {
     expect(footer.join('\n')).not.toContain('^G  Help')
     const styledFrame = writes[0]
     for (const shortcut of NANO_SHORTCUTS.slice(0, 4).filter(shortcut => shortcut !== null)) {
-      expect(styledFrame).toContain(`\x1B[7m${shortcut.key}\x1B[0m`)
+      expect(styledFrame).toContain(`\x1B[30;107m${shortcut.key}\x1B[0m\x1B[97m ${shortcut.label}`)
     }
   })
 
@@ -181,8 +213,9 @@ describe('editor renderer', () => {
     expect(footer[1]).toContain('^C Cancel')
     expect(footer.join('\n')).not.toContain('^X  Exit')
     expect(footer.join('\n')).not.toMatch(/Case Sensitive|Regexp|Backwards|Replace|Older|Newer/u)
-    expect(writes[0]).toContain('\x1B[7m^G\x1B[0m')
-    expect(writes[0]).toContain('\x1B[7m^C\x1B[0m')
+    expect(writes[0]).toContain('\x1B[30;107m^G\x1B[0m\x1B[97m Help')
+    expect(writes[0]).toContain('\x1B[30;107m^C\x1B[0m\x1B[97m Cancel')
+    expect(writes[0]).toContain('\x1B[97mSearch: needle\x1B[7m \x1B[0m\x1B[97m')
   })
 
   it('renders a two-column save-confirmation footer', () => {
@@ -205,9 +238,10 @@ describe('editor renderer', () => {
     expect(footer[1].startsWith(' N No')).toBe(true)
     expect(footer[1].indexOf('^C Cancel')).toBe(16)
     expect(footer.join('\n')).not.toContain('^X  Exit')
-    expect(writes[0]).toContain('\x1B[7m Y\x1B[0m')
-    expect(writes[0]).toContain('\x1B[7m N\x1B[0m')
-    expect(writes[0]).toContain('\x1B[7m^C\x1B[0m')
+    expect(writes[0]).toContain('\x1B[30;107m Y\x1B[0m\x1B[97m Yes')
+    expect(writes[0]).toContain('\x1B[30;107m N\x1B[0m\x1B[97m No')
+    expect(writes[0]).toContain('\x1B[30;107m^C\x1B[0m\x1B[97m Cancel')
+    expect(writes[0]).toContain('\x1B[30;107mSave modified buffer?')
   })
 
   it('shows help instead of file content and preserves the editing viewport', () => {
@@ -218,6 +252,7 @@ describe('editor renderer', () => {
     const editingFrame = writes.at(- 1)
     renderer.render({ help: true })
     expect(writes.at(- 1)).toContain('HumanOS nano - Help')
+    expect(writes.at(- 1)).toContain('\x1B[30;107m^X / Escape: back to editor')
     expect(writes.at(- 1)).not.toContain('secret content')
     renderer.scrollHelp(Number.MAX_SAFE_INTEGER)
     renderer.render({ help: true })
