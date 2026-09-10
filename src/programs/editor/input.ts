@@ -70,7 +70,10 @@ export class EditorInputDecoder {
   private readonly pending: EditorInput[] = []
   private paste: string | null = null
 
-  constructor(private readonly input: FRead) {}
+  constructor(
+    private readonly input: FRead,
+    private readonly options: { metaShortcuts?: boolean } = {},
+  ) {}
 
   private consumePaste(data: string) {
     const end = data.indexOf(BRACKETED_PASTE_END)
@@ -111,7 +114,7 @@ export class EditorInputDecoder {
           continue
         }
         const meta = data[index + 1]
-        if (meta && /^[\x20-\x7E]$/u.test(meta)) {
+        if (this.options.metaShortcuts !== false && meta && /^[\x20-\x7E]$/u.test(meta)) {
           this.pending.push({ type: 'key', key: `alt-${meta.toLowerCase()}` })
           index += 2
           continue
@@ -159,7 +162,10 @@ export class EditorInputDecoder {
   }
 
   async read(options?: FReadKeyOptions): Promise<EditorInput> {
-    while (! this.pending.length) this.consume(await this.input.readKey(options))
+    while (! this.pending.length) {
+      if (options?.signal?.aborted) return { type: 'key', key: 'ctrl-c' }
+      this.consume(await this.input.readKey(options))
+    }
     return this.pending.shift() !
   }
 }

@@ -52,6 +52,7 @@ import { umask } from './umask'
 import { whoami } from './whoami'
 import { alias, unalias } from './alias'
 import { nano } from './nano'
+import { vim } from './vim'
 import { createSourceBuiltin } from './source'
 import { returnFromContext } from './return'
 
@@ -108,6 +109,7 @@ export const PUBLIC_NATIVE_PROGRAMS: Record<string, Program> = {
   mkdir,
   mv,
   nano,
+  vim,
   ps,
   rm,
   rmdir,

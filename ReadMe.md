@@ -63,6 +63,53 @@ on every boot, so adding a native command only requires registering its implemen
 the executable image is generated from the registry. `fs_format` resets only the
 persistent root file system.
 
+## Text editors
+
+`vim [FILE]` opens a small modal editor. Press `i` to insert text and `Esc` to
+return to Normal mode. Use `:w` to save, `:q` to quit, `:wq` to save and quit,
+or `:q!` to discard unsaved changes. An unnamed buffer can be saved with
+`:w FILE`. Use `:help` (or `vim --help`) for movement, editing, line copy/paste,
+and undo/redo keys. Named files start with `"path" xL, xB` (UTF-8 bytes); an
+unnamed buffer starts with centered help. The editor preserves whether the
+buffer ends in a newline.
+
+Operators `d`, `c`, and `y` combine with motions, including `w/b/e`, `W/B/E`,
+`0/^/$`, `gg/G`, `f/F/t/T`, `%`, and searches. Examples: `dw`, `c$`, `y2w`,
+`2d3w`. `/pattern` and `?pattern` search in either direction; `n/N` repeat or
+reverse the search. `rCHAR` replaces a character. `:s/old/new/`, `:%s/old/new/g`,
+and `:2,5s/old/new/gi` substitute on the current line, whole file, or a line
+range. Patterns use JavaScript Unicode regular expressions; replacements
+support `&`, `\1`–`\9`, and `\r` for a newline. Each Insert session, change
+operation plus inserted text, or substitution is one undo step. Visual mode,
+text objects, and named registers are not implemented.
+
+vim supports boolean options via `:set`: `number` (`nu`),
+`hlsearch` (`hls`), `wrap`, and `cursorline` (`cul`). Prefix with `no` to disable, append `?` to query,
+`!` to toggle, or `&` to reset; multiple options can be set together. Defaults
+are `nonumber hlsearch wrap cursorline`. `:set` / `:set all` lists their values. Search
+highlighting covers all matches and follows edits; `:noh` clears it until the
+next search. Soft wrap changes only display, not file contents; continuation
+rows have a blank number gutter. `nowrap` uses horizontal scrolling.
+
+The current line number is highlighted when numbers are enabled. `cursorline`
+adds a gray background across the entire logical line, including wrapped rows;
+search matches keep their own highlight colors.
+
+At startup, vim loads `$HOME/.vimrc` from the virtual file system, falling back
+to the account's home directory when `HOME` is unset. The supported configuration
+subset is `set` commands (an optional leading colon is accepted), blank lines,
+and double-quote comments; full Vimscript is not implemented. Invalid lines are
+reported with their line numbers without preventing valid later lines or editing.
+Interactive `:set` changes last only for the current session; they do not rewrite
+the config. For example:
+
+```vim
+" Display settings
+set number
+set cursorline hlsearch
+set nowrap
+```
+
 ## Save recovery
 
 If startup throws, the game replaces the terminal with a recovery screen. The save

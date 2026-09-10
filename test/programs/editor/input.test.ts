@@ -17,6 +17,21 @@ class ChunkInput implements FRead {
 }
 
 describe('editor input decoder', () => {
+  it('can treat Escape followed by printable text as separate modal input', async () => {
+    const decoder = new EditorInputDecoder(new ChunkInput(['\x1B:wq']), { metaShortcuts: false })
+    await expect(decoder.read()).resolves.toEqual({ type: 'key', key: 'escape' })
+    await expect(decoder.read()).resolves.toEqual({ type: 'text', value: ':wq' })
+  })
+
+  it('can abort while waiting for the end of a bracketed paste', async () => {
+    const controller = new AbortController()
+    const input = new ChunkInput(['\x1B[200~unfinished'])
+    const decoder = new EditorInputDecoder(input)
+    const completion = decoder.read({ signal: controller.signal })
+    controller.abort()
+    await expect(completion).resolves.toEqual({ type: 'key', key: 'ctrl-c' })
+  })
+
   it('separates text, terminal key sequences, and control keys from one chunk', async () => {
     const decoder = new EditorInputDecoder(new ChunkInput(['a你\x1B[A\x0F']))
 

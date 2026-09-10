@@ -50,6 +50,7 @@ export class TextBuffer {
   private readonly undoStack: BufferSnapshot[] = []
   private readonly redoStack: BufferSnapshot[] = []
   private preferredCharacter: number | null = null
+  private undoGroup: { before: BufferSnapshot, recorded: boolean } | null = null
 
   readonly cursor: EditorCursor = { row: 0, column: 0 }
 
@@ -193,10 +194,22 @@ export class TextBuffer {
     const before = this.snapshot()
     change()
     if (before.content === this.content) return false
-    this.undoStack.push(before)
+    if (! this.undoGroup) this.undoStack.push(before)
+    else if (! this.undoGroup.recorded) {
+      this.undoStack.push(this.undoGroup.before)
+      this.undoGroup.recorded = true
+    }
     this.redoStack.length = 0
     this.preferredCharacter = null
     return true
+  }
+
+  beginUndoGroup() {
+    this.undoGroup = { before: this.snapshot(), recorded: false }
+  }
+
+  endUndoGroup() {
+    this.undoGroup = null
   }
 
   insert(value: string) {
@@ -310,6 +323,7 @@ export class TextBuffer {
   }
 
   undo() {
+    this.endUndoGroup()
     const snapshot = this.undoStack.pop()
     if (! snapshot) return false
     this.redoStack.push(this.snapshot())
@@ -318,6 +332,7 @@ export class TextBuffer {
   }
 
   redo() {
+    this.endUndoGroup()
     const snapshot = this.redoStack.pop()
     if (! snapshot) return false
     this.undoStack.push(this.snapshot())
