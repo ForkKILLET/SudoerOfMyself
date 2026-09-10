@@ -725,7 +725,7 @@ describe('hsh control-flow execution', () => {
     } as unknown as Term
     const context = {
       fs: new Fs(Vfs.dir({
-        home: Vfs.dir({ '.profile': Vfs.normal(DEFAULT_PROFILE) }),
+        home: Vfs.dir({ '.hshrc': Vfs.normal(DEFAULT_PROFILE) }),
       }), { persistence: new MemoryFsPersistence() }),
       processes: new ProcessTable(),
       term,
@@ -765,7 +765,7 @@ describe('hsh control-flow execution', () => {
     ].join('\n')
     const fs = new Fs(Vfs.dir({
       home: Vfs.dir({
-        '.profile': Vfs.normal(profile),
+        '.hshrc': Vfs.normal(profile),
         'custom_history': Vfs.normal('old command\n'),
       }),
     }), { persistence: new MemoryFsPersistence() })

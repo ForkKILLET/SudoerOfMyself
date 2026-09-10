@@ -1014,7 +1014,7 @@ export const createHsh = ({
       let pendingSource = ''
       let commandNumber = 1
 
-      const profilePath = Path.join(env.HOME, '.profile')
+      const profilePath = Path.join(env.HOME, '.hshrc')
       const profile = proc.fs.open(profilePath, 'r', proc.cwd)
       if (profile.isOk) {
         await executeSource(proc, profile.val.handle.read())
