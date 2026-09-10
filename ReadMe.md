@@ -63,6 +63,17 @@ on every boot, so adding a native command only requires registering its implemen
 the executable image is generated from the registry. `fs_format` resets only the
 persistent root file system.
 
+## Terminal size
+
+Drag the terminal's lower-right corner to resize by character cells; the temporary
+badge shows columns × rows. Escape cancels a drag. Font size stays unchanged.
+
+The size button beside the fullscreen control toggles directly between **Fit to
+window** and **Custom**, restoring the last custom size (initially 97 × 30).
+Dragging switches to Custom. The browser remembers both the mode and custom size.
+Fixed sizes shrink temporarily when space is limited and return when space is
+available again; fit mode follows the window continuously.
+
 ## Text editors
 
 `nano -l [FILE]` (or `--linenumbers`) enables line numbers; `Alt+#` toggles

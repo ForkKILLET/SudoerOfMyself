@@ -8,30 +8,45 @@ body {
     align-items: center;
     justify-content: center;
     height: 100vh;
+    height: 100dvh;
     width: 100vw;
+    box-sizing: border-box;
+    padding: 16px 56px 36px;
     background-color: #282c34;
     color: white;
 }
 
 .terminal-shell {
     position: relative;
+    flex: none;
 }
 
 #xterm-container {
     padding: 10px;
     border-radius: 10px;
-    box-shadow: #fff 0 0 5px;
+    box-shadow: rgb(255 255 255 / 72%) 0 0 5px;
     background-color: #000;
+}
+
+#xterm-container:focus-within {
+    box-shadow: #fff 0 0 5px;
 }
 
 .terminal.xterm {
     width: fit-content;
 }
 
-.immersive-mode-button {
+.terminal-tools {
     position: absolute;
     top: 0;
     left: calc(100% + 10px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2;
+}
+
+.terminal-tool-button {
     display: grid;
     width: 34px;
     height: 34px;
@@ -46,21 +61,21 @@ body {
     place-items: center;
 }
 
-.immersive-mode-button[hidden] {
+.terminal-shell [hidden] {
     display: none;
 }
 
-.immersive-mode-button:hover,
-.immersive-mode-button:focus-visible {
+.terminal-tool-button:hover,
+.terminal-tool-button:focus-visible {
     opacity: 1;
 }
 
-.immersive-mode-button:focus-visible {
+.terminal-tool-button:focus-visible {
     outline: 1px solid #fff;
     outline-offset: 3px;
 }
 
-.immersive-mode-button:disabled {
+.terminal-tool-button:disabled {
     cursor: default;
     opacity: 0.3;
 }
@@ -83,4 +98,61 @@ body {
 
 .immersive-mode-button[data-active='true'] .immersive-mode-button__exit {
     display: block;
+}
+
+.terminal-size-button__custom,
+#terminal-size-button[data-mode='fit'] .terminal-size-button__fit {
+    display: none;
+}
+
+#terminal-size-button[data-mode='fit'] .terminal-size-button__custom {
+    display: block;
+}
+
+.terminal-resize-handle {
+    position: absolute;
+    right: -20px;
+    bottom: -20px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #fff;
+    opacity: 0.65;
+    cursor: nwse-resize;
+    touch-action: none;
+    outline: none;
+}
+
+.terminal-resize-handle svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 2;
+}
+
+.terminal-resize-handle:hover,
+.terminal-shell--resizing .terminal-resize-handle {
+    opacity: 1;
+}
+
+.terminal-shell--resizing {
+    user-select: none;
+}
+
+.terminal-size-feedback {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #000;
+    color: #fff;
+    font: 13px/1.5 monospace;
+    white-space: nowrap;
+    pointer-events: none;
 }

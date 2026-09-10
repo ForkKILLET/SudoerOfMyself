@@ -5,6 +5,7 @@ import { Term } from '@/sys0/term'
 import { errorMessage } from '@/utils/errors'
 import { runRecoveryConsole } from '@/recovery_console'
 import type { StorageNamespace } from '@/storage_namespace'
+import { setupTerminalSize } from '@/terminal_size'
 
 interface FailureModeOptions {
   eyebrow: string
@@ -61,6 +62,10 @@ const showFailureMode = (
     },
   })
   term.open(container)
+  const app = document.getElementById('app')
+  if (app && container.parentElement) {
+    setupTerminalSize({ app, shell: container.parentElement, container, term })
+  }
   term.focus()
 
   const io = Stdio.fromTerm(term)

@@ -7,6 +7,7 @@ import { Emitter, Events } from '@/utils/emitter'
 import { IDisposable } from '@/utils/disposable'
 import { RemoveIndex } from '@/utils/types'
 import { handleTerminalCopyShortcut } from './terminal_shortcuts'
+import { DEFAULT_TERMINAL_SIZE } from './terminal_size'
 
 export interface TerminalEvents extends Events {
   data: [ string ]
@@ -26,8 +27,7 @@ export class Term extends Terminal {
 
   constructor({ useWebglAddon = true, ...options }: TermOptions = {}) {
     super({
-      rows: 30,
-      cols: 97,
+      ...DEFAULT_TERMINAL_SIZE,
       fontFamily: `'Fira Code', 'Jetbrains Mono', 'Consolas', monospace`,
       allowProposedApi: true,
       cursorBlink: true,

@@ -23,6 +23,7 @@ import {
 import { parseBootMode } from '@/boot_mode'
 import { getStorageNamespace } from '@/storage_namespace'
 import { setupImmersiveMode } from '@/immersive_mode'
+import { setupTerminalSize } from '@/terminal_size'
 
 const mode = parseBootMode(location.search)
 const storage = getStorageNamespace(mode.debug)
@@ -82,11 +83,18 @@ const start = async () => {
     if (! app || ! immersiveModeButton) throw new Error('Application shell not found')
 
     ctx.attach(terminalContainer)
+    setupTerminalSize({
+      app,
+      shell: terminalContainer.parentElement !,
+      container: terminalContainer,
+      term: ctx.term,
+    })
     ctx.init.spawn(mode.debug ? createGame0(hsh) : game0, { name: 'game0' })
     await Promise.all([ctx.fs.flush(), clockPersistence.flush()])
     setupImmersiveMode({
       container: app,
       button: immersiveModeButton,
+      keyboardTarget: terminalContainer,
       focusApplication: () => ctx.term.focus(),
     })
   }

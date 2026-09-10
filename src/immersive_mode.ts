@@ -14,8 +14,18 @@ interface FullscreenOptionsWithKeyboardLock extends FullscreenOptions {
 export interface ImmersiveModeOptions {
   container: HTMLElement
   button: HTMLButtonElement
+  keyboardTarget?: HTMLElement
   focusApplication: () => void
 }
+
+export const isImmersiveModeShortcut = (event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey' | 'repeat'>) => (
+  event.key === 'F11'
+  && ! event.ctrlKey
+  && ! event.altKey
+  && ! event.metaKey
+  && ! event.shiftKey
+  && ! event.repeat
+)
 
 const keyboardLockApi = () => {
   const keyboard = (navigator as NavigatorWithKeyboardLock).keyboard
@@ -56,6 +66,7 @@ const enterImmersiveMode = async (container: HTMLElement) => {
 export const setupImmersiveMode = ({
   container,
   button,
+  keyboardTarget,
   focusApplication,
 }: ImmersiveModeOptions) => {
   if (! document.fullscreenEnabled || typeof container.requestFullscreen !== 'function') return
@@ -74,7 +85,7 @@ export const setupImmersiveMode = ({
       ? keyboardLockRequested
         ? 'Immersive mode is active; Ctrl+W capture was requested.'
         : 'Immersive mode is active. Use Ctrl+F for nano search.'
-      : 'Enter fullscreen and request capture of browser keyboard shortcuts.'
+      : 'Enter fullscreen and request capture of browser keyboard shortcuts. Press F11 in the terminal.'
   }
 
   const toggle = async () => {
@@ -107,6 +118,12 @@ export const setupImmersiveMode = ({
     }
     render()
   })
+  keyboardTarget?.addEventListener('keydown', (event) => {
+    if (! isImmersiveModeShortcut(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    void toggle()
+  }, { capture: true })
   button.addEventListener('click', () => void toggle())
   button.hidden = false
   render()
